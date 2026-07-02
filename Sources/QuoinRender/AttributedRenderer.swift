@@ -15,6 +15,25 @@ import UIKit
 public struct RenderedDocument {
     public let attributed: NSAttributedString
     public let blockRanges: [BlockID: NSRange]
+    /// When a block is active in the editor (syntax reveal), its literal
+    /// source is rendered in place; this is that run's location and text.
+    public let activeBlockID: BlockID?
+    public let activeEditableRange: NSRange?
+    public let activeSourceText: String?
+
+    public init(
+        attributed: NSAttributedString,
+        blockRanges: [BlockID: NSRange],
+        activeBlockID: BlockID? = nil,
+        activeEditableRange: NSRange? = nil,
+        activeSourceText: String? = nil
+    ) {
+        self.attributed = attributed
+        self.blockRanges = blockRanges
+        self.activeBlockID = activeBlockID
+        self.activeEditableRange = activeEditableRange
+        self.activeSourceText = activeSourceText
+    }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])
 }
@@ -40,13 +59,25 @@ public struct AttributedRenderer {
         self.loadsRemoteImages = loadsRemoteImages
     }
 
-    public func render(_ document: QuoinDocument) -> RenderedDocument {
+    public func render(_ document: QuoinDocument, activeBlockID: BlockID? = nil) -> RenderedDocument {
         let output = NSMutableAttributedString()
         var blockRanges: [BlockID: NSRange] = [:]
+        var activeEditableRange: NSRange?
+        var activeSourceText: String?
 
         for (index, block) in document.blocks.enumerated() {
             let start = output.length
-            output.append(render(block: block, depth: 0, document: document))
+            if block.id == activeBlockID,
+               let slice = document.source.substring(in: block.range) {
+                // Syntax reveal: the active block shows its literal source,
+                // editable in place. Delimiters visible, subtle tint.
+                let editable = renderEditableSource(slice)
+                activeEditableRange = NSRange(location: start, length: editable.length)
+                activeSourceText = slice
+                output.append(editable)
+            } else {
+                output.append(render(block: block, depth: 0, document: document))
+            }
             if index < document.blocks.count - 1 {
                 output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
             }
@@ -76,7 +107,28 @@ public struct AttributedRenderer {
                 }
             }
         }
-        return RenderedDocument(attributed: output, blockRanges: blockRanges)
+        return RenderedDocument(
+            attributed: output,
+            blockRanges: blockRanges,
+            activeBlockID: activeBlockID,
+            activeEditableRange: activeEditableRange,
+            activeSourceText: activeSourceText
+        )
+    }
+
+    /// The active block's raw markdown, styled for in-place editing:
+    /// body-size text with delimiters visible, on a faint tint so the
+    /// revealed region reads as "open".
+    private func renderEditableSource(_ slice: String) -> NSAttributedString {
+        var attributes = bodyAttributes()
+        attributes[.font] = theme.bodyFont()
+        attributes[.foregroundColor] = theme.ink
+        attributes[.backgroundColor] = theme.accent.withAlphaComponent(0.05)
+        attributes[QuoinAttribute.editableSource] = NSNumber(value: true)
+        let style = paragraphStyle()
+        style.lineHeightMultiple = 1.5
+        attributes[.paragraphStyle] = style
+        return NSAttributedString(string: slice, attributes: attributes)
     }
 
     // MARK: - Blocks

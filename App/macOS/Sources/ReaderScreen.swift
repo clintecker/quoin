@@ -39,7 +39,13 @@ struct ReaderScreen: View {
                     if activeMatch >= count { activeMatch = 0 }
                 },
                 anchorResolver: { slug in model.blockID(forSlug: slug) },
-                onTopBlockChange: { top in topBlockID = top }
+                onTopBlockChange: { top in topBlockID = top },
+                onEditIntent: { range, replacement in
+                    model.applyEdit(relativeRange: range, replacement: replacement)
+                },
+                onActivateBlock: { id in model.activateBlock(id) },
+                caretInActiveBlock: model.caretInActiveBlock,
+                caretGeneration: model.caretGeneration
             )
             statusBar
         }
@@ -96,6 +102,10 @@ struct ReaderScreen: View {
                 .keyboardShortcut("g", modifiers: [.command, .shift])
             Button("") { isOutlineVisible.toggle() }
                 .keyboardShortcut("0", modifiers: [.command, .option])
+            Button("") { model.undo() }
+                .keyboardShortcut("z", modifiers: .command)
+            Button("") { model.redo() }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
         }
         .opacity(0)
         .accessibilityHidden(true)

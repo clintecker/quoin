@@ -16,6 +16,9 @@ public enum QuoinAttribute {
     /// Value: `String` — mermaid source of a diagram block (styled-source
     /// fallback today; QuoinDiagram in M2b).
     public static let diagramSource = NSAttributedString.Key("quoin.diagramSource")
+    /// Value: `NSNumber(true)` — marks the active block's editable source
+    /// run in the editor (the syntax-reveal region).
+    public static let editableSource = NSAttributedString.Key("quoin.editableSource")
 }
 
 /// Custom URL schemes used for in-document interaction via the text view's

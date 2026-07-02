@@ -27,6 +27,19 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// Fires when the topmost visible block changes (status-bar section tracking).
     public let onTopBlockChange: (BlockID?) -> Void
 
+    // MARK: Editing (nil callbacks = read-only reader)
+
+    /// A keystroke inside the active block's revealed source. The range is
+    /// relative to the active block's source slice (UTF-8 bytes); the app
+    /// converts to an absolute `SourceEdit` and routes it through the session.
+    public let onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String) -> Void)?
+    /// Caret entered a block (nil = deactivate, Esc).
+    public let onActivateBlock: ((BlockID?) -> Void)?
+    /// Caret position (UTF-16, relative to the active block's source text)
+    /// to restore after a re-render; `caretGeneration` bumps to re-apply.
+    public let caretInActiveBlock: Int?
+    public let caretGeneration: Int
+
     public init(
         rendered: RenderedDocument,
         theme: Theme = Theme(),
@@ -36,7 +49,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onTaskToggle: @escaping (Int) -> Void = { _ in },
         onMatchCount: @escaping (Int) -> Void = { _ in },
         anchorResolver: @escaping (String) -> BlockID? = { _ in nil },
-        onTopBlockChange: @escaping (BlockID?) -> Void = { _ in }
+        onTopBlockChange: @escaping (BlockID?) -> Void = { _ in },
+        onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String) -> Void)? = nil,
+        onActivateBlock: ((BlockID?) -> Void)? = nil,
+        caretInActiveBlock: Int? = nil,
+        caretGeneration: Int = 0
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -47,6 +64,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.onMatchCount = onMatchCount
         self.anchorResolver = anchorResolver
         self.onTopBlockChange = onTopBlockChange
+        self.onEditIntent = onEditIntent
+        self.onActivateBlock = onActivateBlock
+        self.caretInActiveBlock = caretInActiveBlock
+        self.caretGeneration = caretGeneration
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -63,7 +84,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
         layoutManager.textContainer = container
 
         let textView = NSTextView(frame: .zero, textContainer: container)
-        textView.isEditable = false
+        // Editable when editing callbacks are wired; every keystroke is
+        // gated through shouldChangeTextIn and routed to the session — the
+        // text storage itself is never the source of truth.
+        textView.isEditable = onEditIntent != nil
+        textView.allowsUndo = false // undo lives in DocumentSession
         textView.isSelectable = true
         textView.isRichText = true
         textView.textContainerInset = NSSize(width: theme.contentInset, height: theme.contentInset)
@@ -105,13 +130,32 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
         if coordinator.renderedGeneration !== rendered.attributed {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
+            coordinator.suppressSelectionCallback = true
             textView.textContentStorage?.textStorage?.setAttributedString(rendered.attributed)
             coordinator.renderedGeneration = rendered.attributed
             coordinator.blockRanges = rendered.blockRanges
-            if let anchorID, let range = rendered.blockRanges[anchorID] {
+            // Only re-anchor scroll when the caret isn't being restored —
+            // caret restoration scrolls itself.
+            if caretInActiveBlock == nil, let anchorID, let range = rendered.blockRanges[anchorID] {
                 textView.scrollRangeToVisible(range)
             }
+            coordinator.suppressSelectionCallback = false
             coordinator.appliedQuery = nil // force re-highlight on new content
+        }
+
+        // Restore the caret into the active block after an edit round-trip.
+        if let caret = caretInActiveBlock,
+           caretGeneration != coordinator.appliedCaretGeneration,
+           let active = rendered.activeEditableRange {
+            coordinator.appliedCaretGeneration = caretGeneration
+            let location = min(active.location + caret, active.location + active.length)
+            coordinator.suppressSelectionCallback = true
+            textView.setSelectedRange(NSRange(location: location, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: location, length: 0))
+            coordinator.suppressSelectionCallback = false
+            if textView.window?.firstResponder !== textView {
+                textView.window?.makeFirstResponder(textView)
+            }
         }
 
         coordinator.applySearch(query: searchQuery, activeOrdinal: activeMatchOrdinal)
@@ -134,6 +178,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         var lastScrollTarget: BlockID?
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
+        var appliedCaretGeneration: Int = -1
+        var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
         private var lastReportedTopBlock: BlockID?
@@ -177,6 +223,74 @@ public struct MarkdownReaderView: NSViewRepresentable {
             if let url = link as? URL { return url }
             if let string = link as? String { return URL(string: string) }
             return nil
+        }
+
+        // MARK: Editing
+
+        /// Every keystroke lands here. Inside the active block's revealed
+        /// source it becomes a relative byte-range edit for the session;
+        /// anywhere else it activates the block under the caret instead.
+        /// Always returns false — the text storage is a projection and is
+        /// only ever replaced wholesale by a re-render.
+        public func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+            guard let onEdit = parent.onEditIntent else { return false }
+
+            if let active = parent.rendered.activeEditableRange,
+               let sourceText = parent.rendered.activeSourceText,
+               affectedCharRange.location >= active.location,
+               affectedCharRange.location + affectedCharRange.length <= active.location + active.length {
+                let relStart = affectedCharRange.location - active.location
+                let relRange = relStart..<(relStart + affectedCharRange.length)
+                guard let byteRange = EditMapping.utf8Range(inText: sourceText, utf16Range: relRange) else {
+                    return false
+                }
+                onEdit(byteRange, replacementString ?? "")
+                return false
+            }
+
+            // Keystroke outside the revealed region: open that block.
+            if let id = blockID(atCharIndex: affectedCharRange.location) {
+                parent.onActivateBlock?(id)
+            }
+            return false
+        }
+
+        /// A zero-length click inside a non-active block activates it
+        /// (the syntax-reveal trigger). Range selections stay read-only so
+        /// copying across blocks keeps working.
+        public func textViewDidChangeSelection(_ notification: Notification) {
+            guard !suppressSelectionCallback,
+                  parent.onActivateBlock != nil,
+                  let textView else { return }
+            let selection = textView.selectedRange()
+            guard selection.length == 0 else { return }
+            guard let id = blockID(atCharIndex: selection.location) else { return }
+            if id != parent.rendered.activeBlockID {
+                parent.onActivateBlock?(id)
+            }
+        }
+
+        /// Esc closes the revealed block.
+        public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)),
+               parent.rendered.activeBlockID != nil {
+                parent.onActivateBlock?(nil)
+                return true
+            }
+            return false
+        }
+
+        func blockID(atCharIndex index: Int) -> BlockID? {
+            // Ranges include their trailing separator, so boundaries can
+            // match two blocks; prefer the strictly-containing (earlier) one
+            // deterministically by picking the largest containing start.
+            var best: (id: BlockID, location: Int)?
+            for (id, range) in blockRanges where index >= range.location && index < range.location + range.length {
+                if best == nil || range.location > best!.location {
+                    best = (id, range.location)
+                }
+            }
+            return best?.id
         }
 
         // MARK: Scroll anchoring

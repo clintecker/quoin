@@ -22,6 +22,12 @@ public actor DocumentSession {
     /// Hash of content we ourselves just wrote, so the resulting file-system
     /// event is recognized as self-inflicted and not re-published.
     private var selfWriteHash: String?
+    private var undoStack: [SourceEdit] = []
+    private var redoStack: [SourceEdit] = []
+    private var autosaveTask: Task<Void, Never>?
+    /// Debounce for keystroke-driven autosave; checkbox toggles still write
+    /// immediately.
+    private let autosaveDelay: Duration = .milliseconds(400)
 
     // MARK: - Lifecycle
 
@@ -99,11 +105,67 @@ public actor DocumentSession {
         publish(MarkdownConverter.parse(source))
     }
 
-    /// Applies new source text (the general mutation path; the future edit
-    /// mode feeds keystrokes through here).
+    /// Applies new source text wholesale (no undo tracking; external inputs).
     public func apply(source: String) {
         guard SHA256Hex.hash(of: source) != document.sourceHash else { return }
         publish(MarkdownConverter.parse(source))
+    }
+
+    // MARK: - Editing
+
+    public var canUndo: Bool { !undoStack.isEmpty }
+    public var canRedo: Bool { !redoStack.isEmpty }
+
+    /// The editor's keystroke path: apply a byte-precise edit, re-parse,
+    /// publish, and schedule a debounced autosave. Returns the new document
+    /// so callers can restore the caret synchronously.
+    @discardableResult
+    public func applyEdit(_ edit: SourceEdit) throws -> QuoinDocument {
+        let (newSource, inverse) = try edit.apply(to: document.source)
+        undoStack.append(inverse)
+        redoStack.removeAll()
+        publish(MarkdownConverter.parse(newSource))
+        scheduleAutosave()
+        return document
+    }
+
+    @discardableResult
+    public func undo() throws -> QuoinDocument? {
+        guard let edit = undoStack.popLast() else { return nil }
+        let (newSource, inverse) = try edit.apply(to: document.source)
+        redoStack.append(inverse)
+        publish(MarkdownConverter.parse(newSource))
+        scheduleAutosave()
+        return document
+    }
+
+    @discardableResult
+    public func redo() throws -> QuoinDocument? {
+        guard let edit = redoStack.popLast() else { return nil }
+        let (newSource, inverse) = try edit.apply(to: document.source)
+        undoStack.append(inverse)
+        publish(MarkdownConverter.parse(newSource))
+        scheduleAutosave()
+        return document
+    }
+
+    /// Autosave-in-place, debounced across bursts of keystrokes. The write
+    /// is atomic and marked self-inflicted so the file watcher stays quiet.
+    private func scheduleAutosave() {
+        guard fileURL != nil else { return }
+        autosaveTask?.cancel()
+        autosaveTask = Task { [autosaveDelay] in
+            try? await Task.sleep(for: autosaveDelay)
+            guard !Task.isCancelled else { return }
+            await self.saveNow()
+        }
+    }
+
+    public func saveNow() {
+        guard let fileURL else { return }
+        let source = document.source
+        selfWriteHash = SHA256Hex.hash(of: source)
+        try? Data(source.utf8).write(to: fileURL, options: .atomic)
     }
 
     /// Toggles a task checkbox and writes the change back to disk,
