@@ -33,13 +33,21 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 2)
             capture(name: "02-document")
 
-            // Scroll to the math/diagram sections for the renderer shots.
-            window.scroll(byDeltaX: 0, deltaY: -700)
-            Thread.sleep(forTimeInterval: 1)
-            capture(name: "03-mid-document")
-            window.scroll(byDeltaX: 0, deltaY: -700)
-            Thread.sleep(forTimeInterval: 1)
-            capture(name: "04-math-and-diagrams")
+            // Scroll to the math/diagram sections. Synthesized scroll-wheel
+            // deltas are unreliable on runner Macs; keyboard paging through
+            // the focused text view is deterministic.
+            let textView = app.textViews.firstMatch
+            if textView.waitForExistence(timeout: 3) {
+                textView.click() // focuses — and demos the syntax reveal
+                Thread.sleep(forTimeInterval: 1)
+                textView.typeKey(.pageDown, modifierFlags: [])
+                Thread.sleep(forTimeInterval: 1.5)
+                capture(name: "03-mid-document")
+                textView.typeKey(.pageDown, modifierFlags: [])
+                textView.typeKey(.pageDown, modifierFlags: [])
+                Thread.sleep(forTimeInterval: 1.5)
+                capture(name: "04-math-and-diagrams")
+            }
         }
         app.terminate()
     }
