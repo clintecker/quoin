@@ -17,9 +17,11 @@ final class HTMLExporterTests: XCTestCase {
     }
 
     func testEscaping() {
-        let doc = MarkdownConverter.parse("Angle <brackets> & ampersands.")
+        // Note: `<word>` would be inline HTML per cmark and pass through
+        // raw — that's correct markdown semantics. Bare operators are text.
+        let doc = MarkdownConverter.parse("compare 5 < 6 & 7 > 2 here.")
         let html = HTMLExporter.export(doc)
-        XCTAssertTrue(html.contains("Angle &lt;brackets&gt; &amp; ampersands."))
+        XCTAssertTrue(html.contains("compare 5 &lt; 6 &amp; 7 &gt; 2 here."))
     }
 
     func testRichConstructs() {
@@ -30,7 +32,7 @@ final class HTMLExporterTests: XCTestCase {
         > useful
 
         | a | b |
-        |---|--:|
+        |:--|--:|
         | 1 | 2 |
 
         - [x] done task
