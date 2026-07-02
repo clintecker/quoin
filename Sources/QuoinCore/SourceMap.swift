@@ -46,7 +46,8 @@ struct LineIndex {
     }
 
     /// Converts a swift-markdown source range into a byte range.
-    /// swift-markdown ranges are inclusive of the final character.
+    /// swift-markdown ranges are half-open (`lower ..< upper`), with the
+    /// upper bound one column past the last character.
     func byteRange(of range: SourceRange?) -> ByteRange {
         guard let range else { return ByteRange(offset: 0, length: 0) }
         let start = byteOffset(line: range.lowerBound.line, column: range.lowerBound.column)
