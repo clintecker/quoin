@@ -2,68 +2,123 @@ import SwiftUI
 import QuoinCore
 import QuoinRender
 
-/// One document window: TOC sidebar, reading surface, find bar, stats.
-/// Minimalist by design — panels are closed by default and everything is
-/// keyboard-reachable.
+/// One document window, laid out per the design handoff: editor center
+/// (max 680pt column), outline panel as a trailing inspector (⌥⌘0),
+/// find bar, and a status bar with section + live statistics.
+/// The library sidebar arrives in Phase D.
 struct ReaderScreen: View {
     let fileURL: URL?
     let initialText: String
 
     @StateObject private var model = ReaderModel()
+    private let theme = Theme()
 
+    @State private var isOutlineVisible = true
     @State private var isFindVisible = false
     @State private var searchQuery = ""
     @State private var activeMatch = 0
     @State private var matchCount = 0
     @State private var scrollTarget: BlockID?
+    @State private var topBlockID: BlockID?
     @FocusState private var findFieldFocused: Bool
 
     var body: some View {
-        NavigationSplitView {
-            TOCSidebar(outline: model.outline) { headingID in
+        VStack(spacing: 0) {
+            if isFindVisible {
+                findBar
+            }
+            MarkdownReaderView(
+                rendered: model.rendered,
+                theme: theme,
+                searchQuery: isFindVisible ? searchQuery : "",
+                activeMatchOrdinal: activeMatch,
+                scrollTarget: scrollTarget,
+                onTaskToggle: { offset in model.toggleTask(markerOffset: offset) },
+                onMatchCount: { count in
+                    matchCount = count
+                    if activeMatch >= count { activeMatch = 0 }
+                },
+                anchorResolver: { slug in model.blockID(forSlug: slug) },
+                onTopBlockChange: { top in topBlockID = top }
+            )
+            statusBar
+        }
+        .inspector(isPresented: $isOutlineVisible) {
+            OutlinePanel(
+                outline: model.outline,
+                currentSectionID: currentSection?.id
+            ) { headingID in
                 scrollTarget = headingID
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220)
-        } detail: {
-            VStack(spacing: 0) {
-                if isFindVisible {
-                    findBar
-                }
-                MarkdownReaderView(
-                    rendered: model.rendered,
-                    searchQuery: isFindVisible ? searchQuery : "",
-                    activeMatchOrdinal: activeMatch,
-                    scrollTarget: scrollTarget,
-                    onTaskToggle: { offset in model.toggleTask(markerOffset: offset) },
-                    onMatchCount: { count in
-                        matchCount = count
-                        if activeMatch >= count { activeMatch = 0 }
-                    },
-                    anchorResolver: { slug in model.blockID(forSlug: slug) }
-                )
-            }
+            .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                StatsButton(stats: model.stats)
+                Button {
+                    isOutlineVisible.toggle()
+                } label: {
+                    Label("Outline", systemImage: "sidebar.trailing")
+                }
+                .help("Show or hide the outline (⌥⌘0)")
             }
         }
-        .navigationTitle(fileURL?.lastPathComponent ?? "Untitled")
+        .navigationTitle(fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled")
         .onAppear { model.start(fileURL: fileURL, initialText: initialText) }
         .onDisappear { model.stop() }
-        .background(
-            // Find commands, window-local.
-            Group {
-                Button("") { openFind() }
-                    .keyboardShortcut("f", modifiers: .command)
-                Button("") { nextMatch() }
-                    .keyboardShortcut("g", modifiers: .command)
-                Button("") { previousMatch() }
-                    .keyboardShortcut("g", modifiers: [.command, .shift])
+        .background(hiddenShortcuts)
+    }
+
+    /// The heading governing the top of the viewport.
+    private var currentSection: HeadingInfo? {
+        guard let topBlockID,
+              let topRange = model.rendered.blockRanges[topBlockID] else { return model.outline.first }
+        var current: HeadingInfo?
+        for heading in model.outline {
+            guard let headingRange = model.rendered.blockRanges[heading.id] else { continue }
+            if headingRange.location <= topRange.location {
+                current = heading
+            } else {
+                break
             }
-            .opacity(0)
-            .accessibilityHidden(true)
-        )
+        }
+        return current ?? model.outline.first
+    }
+
+    // MARK: - Keyboard map (conflict-audited; never override ⌘P/⌘E/⌘H)
+
+    private var hiddenShortcuts: some View {
+        Group {
+            Button("") { openFind() }
+                .keyboardShortcut("f", modifiers: .command)
+            Button("") { nextMatch() }
+                .keyboardShortcut("g", modifiers: .command)
+            Button("") { previousMatch() }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+            Button("") { isOutlineVisible.toggle() }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+        }
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
+    // MARK: - Status bar (10.5pt mono, 40% ink, top hairline)
+
+    private var statusBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack {
+                if let section = currentSection {
+                    Text("§ \(section.title)")
+                        .lineLimit(1)
+                }
+                Spacer()
+                StatsButton(stats: model.stats)
+            }
+            .font(.system(size: 10.5, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+        }
     }
 
     // MARK: - Find bar
@@ -132,27 +187,35 @@ struct ReaderScreen: View {
     }
 }
 
-// MARK: - Table of contents
+// MARK: - Outline panel ("ruled tree" per handoff: hairline under each row,
+// indent 0/16/34 by level, H1 bold / H2 semibold / H3+ regular, current
+// section in accent at weight 500)
 
-struct TOCSidebar: View {
+struct OutlinePanel: View {
     let outline: [HeadingInfo]
+    let currentSectionID: BlockID?
     let onSelect: (BlockID) -> Void
 
     var body: some View {
-        List(outline) { heading in
-            Button {
-                onSelect(heading.id)
-            } label: {
-                Text(heading.title)
-                    .lineLimit(2)
-                    .font(heading.level <= 1 ? .body.weight(.semibold) : .body)
-                    .padding(.leading, CGFloat(max(0, heading.level - 1)) * 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("OUTLINE")
+                    .font(.system(size: 10, weight: .semibold))
+                    .kerning(0.5)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 6)
+
+                ForEach(outline) { heading in
+                    OutlineRow(
+                        heading: heading,
+                        isCurrent: heading.id == currentSectionID,
+                        onSelect: onSelect
+                    )
+                }
             }
-            .buttonStyle(.plain)
         }
-        .listStyle(.sidebar)
         .overlay {
             if outline.isEmpty {
                 Text("No headings")
@@ -163,18 +226,71 @@ struct TOCSidebar: View {
     }
 }
 
-// MARK: - Statistics
+private struct OutlineRow: View {
+    let heading: HeadingInfo
+    let isCurrent: Bool
+    let onSelect: (BlockID) -> Void
+
+    private var indent: CGFloat {
+        switch heading.level {
+        case 1: return 0
+        case 2: return 16
+        default: return 34
+        }
+    }
+
+    private var weight: Font.Weight {
+        if isCurrent { return .medium }
+        switch heading.level {
+        case 1: return .bold
+        case 2: return .semibold
+        default: return .regular
+        }
+    }
+
+    var body: some View {
+        Button {
+            onSelect(heading.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(heading.title)
+                    .font(.system(size: 12, weight: weight))
+                    .foregroundStyle(isCurrent ? Color.accentColor : Color.primary)
+                    .lineLimit(1)
+                    .padding(.leading, 12 + indent)
+                    .padding(.trailing, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+                    .padding(.leading, 12)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Statistics ("412 words · 2,304 chars · 2 min read"; click → detail)
 
 struct StatsButton: View {
     let stats: DocumentStats
     @State private var isPresented = false
 
+    private var summary: String {
+        let words = stats.wordCount.formatted()
+        let chars = stats.characterCount.formatted()
+        return "\(words) words · \(chars) chars · \(stats.readingTimeMinutes) min read"
+    }
+
     var body: some View {
         Button {
             isPresented.toggle()
         } label: {
-            Label("Statistics", systemImage: "chart.bar.doc.horizontal")
+            Text(summary)
         }
+        .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             StatsView(stats: stats)
         }

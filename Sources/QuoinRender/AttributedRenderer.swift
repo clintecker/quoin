@@ -94,18 +94,25 @@ public struct AttributedRenderer {
     private func renderHeading(level: Int, inlines: [Inline]) -> NSAttributedString {
         var attributes = bodyAttributes()
         attributes[.font] = theme.headingFont(level: level)
+        // H1–H3 in full ink; H4–H6 at 55% per the element spec.
+        attributes[.foregroundColor] = level <= 3 ? theme.ink : theme.secondaryTextColor
         let style = paragraphStyle()
-        style.paragraphSpacingBefore = theme.paragraphSpacing * (level <= 2 ? 1.6 : 1.2)
-        style.paragraphSpacing = theme.paragraphSpacing * 0.6
+        let spacing = theme.headingSpacing(level: level)
+        style.lineHeightMultiple = theme.headingLineHeightMultiple(level: level)
+        style.paragraphSpacingBefore = spacing.above
+        style.paragraphSpacing = spacing.below
         attributes[.paragraphStyle] = style
         return renderInlines(inlines, base: attributes)
     }
 
     private func renderCodeBlock(language: String?, code: String) -> NSAttributedString {
+        // Code canvas is #1E2430 in BOTH appearances (handoff rule).
         var attributes = bodyAttributes()
-        attributes[.font] = theme.codeFont()
-        attributes[.backgroundColor] = theme.codeBackground
+        attributes[.font] = theme.codeBlockFont()
+        attributes[.foregroundColor] = theme.codeText
+        attributes[.backgroundColor] = theme.codeSurface
         let style = paragraphStyle()
+        style.lineHeightMultiple = 1.6
         style.firstLineHeadIndent = 12
         style.headIndent = 12
         style.tailIndent = -12
@@ -121,7 +128,7 @@ public struct AttributedRenderer {
         output.addAttribute(QuoinAttribute.diagramSource, value: source, range: NSRange(location: 0, length: output.length))
 
         var caption = bodyAttributes()
-        caption[.font] = theme.codeFont()
+        caption[.font] = theme.captionFont()
         caption[.foregroundColor] = theme.secondaryTextColor
         output.append(NSAttributedString(string: "\nmermaid · native diagram rendering coming in a future update", attributes: caption))
         return output
@@ -129,7 +136,7 @@ public struct AttributedRenderer {
 
     private func renderMathBlockFallback(latex: String) -> NSAttributedString {
         var attributes = bodyAttributes()
-        attributes[.font] = theme.codeFont()
+        attributes[.font] = theme.codeBlockFont()
         attributes[.foregroundColor] = theme.secondaryTextColor
         let style = paragraphStyle()
         style.alignment = .center
@@ -246,11 +253,13 @@ public struct AttributedRenderer {
             case .paragraph(let inlines):
                 var attributes = bodyAttributes()
                 attributes[.paragraphStyle] = style
-                var strike = attributes
                 if item.task == .checked {
-                    strike[.foregroundColor] = theme.secondaryTextColor
+                    // Done rows strike and fade to 40% per the element spec.
+                    attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                    attributes[.foregroundColor] = theme.ink.withAlphaComponent(0.4)
+                    attributes[.strikethroughColor] = theme.ink.withAlphaComponent(0.4)
                 }
-                output.append(renderInlines(inlines, base: item.task == .checked ? strike : attributes))
+                output.append(renderInlines(inlines, base: attributes))
             case .list(let nested, let nestedOrdered, let nestedStart):
                 output.append(renderList(items: nested, ordered: nestedOrdered, start: nestedStart, depth: depth + 1))
             default:
@@ -275,18 +284,28 @@ public struct AttributedRenderer {
             style.headIndent += 16
             output.addAttribute(.paragraphStyle, value: style, range: range)
         }
+        // Element spec: pad-left 16, italic, 55% ink. (The 3pt vertical rule
+        // needs custom drawing — arrives with the block decoration pass.)
+        output.enumerateAttribute(.font, in: full) { value, range, _ in
+            let font = value as? PlatformFont ?? theme.bodyFont()
+            output.addAttribute(.font, value: italicVariant(of: font), range: range)
+        }
         output.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: full)
         return output
     }
 
     private func renderThematicBreak() -> NSAttributedString {
+        // 1px hairline @12% ink, 20 above/below. Drawn as a line of box
+        // glyphs until the block decoration pass draws a true rule.
         var attributes = bodyAttributes()
-        attributes[.foregroundColor] = theme.secondaryTextColor
+        attributes[.foregroundColor] = theme.hairline
+        attributes[.font] = PlatformFont.systemFont(ofSize: 8)
         let style = paragraphStyle()
         style.alignment = .center
-        style.paragraphSpacingBefore = theme.paragraphSpacing
+        style.paragraphSpacingBefore = 20
+        style.paragraphSpacing = 20
         attributes[.paragraphStyle] = style
-        return NSAttributedString(string: "· · ·", attributes: attributes)
+        return NSAttributedString(string: String(repeating: "─", count: 60), attributes: attributes)
     }
 
     // MARK: - Inlines
@@ -306,8 +325,8 @@ public struct AttributedRenderer {
 
         case .code(let code):
             var attrs = attributes
-            attrs[.font] = theme.codeFont()
-            attrs[.backgroundColor] = theme.codeBackground
+            attrs[.font] = theme.inlineCodeFont()
+            attrs[.backgroundColor] = theme.inlineCodeFill
             return NSAttributedString(string: code, attributes: attrs)
 
         case .emphasis(let children):
@@ -316,19 +335,25 @@ public struct AttributedRenderer {
             return renderInlines(children, base: attrs)
 
         case .strong(let children):
+            // Bold text is full ink (#1D1D1F) per the element spec.
             var attrs = attributes
             attrs[.font] = boldVariant(of: attrs[.font] as? PlatformFont ?? theme.bodyFont())
+            attrs[.foregroundColor] = theme.ink
             return renderInlines(children, base: attrs)
 
         case .strikethrough(let children):
+            // 45% ink per the element spec.
             var attrs = attributes
             attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-            attrs[.foregroundColor] = theme.secondaryTextColor
+            attrs[.foregroundColor] = theme.ink.withAlphaComponent(0.45)
             return renderInlines(children, base: attrs)
 
         case .link(let destination, let children):
+            // Accent text with a 35%-alpha accent underline.
             var attrs = attributes
             attrs[.foregroundColor] = theme.linkColor
+            attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            attrs[.underlineColor] = theme.linkColor.withAlphaComponent(0.35)
             if let destination {
                 if destination.hasPrefix("#") {
                     attrs[.link] = QuoinLink.anchorURL(slug: String(destination.dropFirst())) as Any
@@ -345,7 +370,7 @@ public struct AttributedRenderer {
             // Styled-source fallback until QuoinMath lands (M2a); the run is
             // tagged for in-place replacement.
             var attrs = attributes
-            attrs[.font] = theme.codeFont()
+            attrs[.font] = theme.inlineCodeFont()
             attrs[.foregroundColor] = theme.secondaryTextColor
             attrs[QuoinAttribute.mathSource] = latex
             return NSAttributedString(string: latex, attributes: attrs)
@@ -358,7 +383,7 @@ public struct AttributedRenderer {
 
         case .html(let raw):
             var attrs = attributes
-            attrs[.font] = theme.codeFont()
+            attrs[.font] = theme.inlineCodeFont()
             attrs[.foregroundColor] = theme.secondaryTextColor
             return NSAttributedString(string: raw, attributes: attrs)
         }
@@ -369,9 +394,9 @@ public struct AttributedRenderer {
     private func renderImage(source: String?, alt: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
         func placeholder(_ label: String) -> NSAttributedString {
             var attrs = attributes
-            attrs[.font] = theme.codeFont()
+            attrs[.font] = theme.inlineCodeFont()
             attrs[.foregroundColor] = theme.secondaryTextColor
-            attrs[.backgroundColor] = theme.codeBackground
+            attrs[.backgroundColor] = theme.inlineCodeFill
             return NSAttributedString(string: " ▢ \(label) ", attributes: attrs)
         }
 
@@ -441,7 +466,7 @@ public struct AttributedRenderer {
 
     private func paragraphStyle() -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineHeightMultiple = theme.lineHeightMultiple
+        style.lineHeightMultiple = theme.bodyLineHeightMultiple
         style.paragraphSpacing = theme.paragraphSpacing
         return style
     }

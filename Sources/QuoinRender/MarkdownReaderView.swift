@@ -24,6 +24,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
     public let onMatchCount: (Int) -> Void
     /// Resolves an internal `#anchor` link to a block.
     public let anchorResolver: (String) -> BlockID?
+    /// Fires when the topmost visible block changes (status-bar section tracking).
+    public let onTopBlockChange: (BlockID?) -> Void
 
     public init(
         rendered: RenderedDocument,
@@ -33,7 +35,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         scrollTarget: BlockID? = nil,
         onTaskToggle: @escaping (Int) -> Void = { _ in },
         onMatchCount: @escaping (Int) -> Void = { _ in },
-        anchorResolver: @escaping (String) -> BlockID? = { _ in nil }
+        anchorResolver: @escaping (String) -> BlockID? = { _ in nil },
+        onTopBlockChange: @escaping (BlockID?) -> Void = { _ in }
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -43,6 +46,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.onTaskToggle = onTaskToggle
         self.onMatchCount = onMatchCount
         self.anchorResolver = anchorResolver
+        self.onTopBlockChange = onTopBlockChange
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -62,13 +66,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
-        textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
         textView.textContainerInset = NSSize(width: theme.contentInset, height: theme.contentInset)
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.delegate = context.coordinator
+        textView.drawsBackground = true
+        textView.backgroundColor = theme.canvas
         textView.linkTextAttributes = [
             .foregroundColor: theme.linkColor,
             .cursor: NSCursor.pointingHand,
@@ -78,7 +82,17 @@ public struct MarkdownReaderView: NSViewRepresentable {
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.backgroundColor = theme.canvas
+
+        // Track scrolling so the status bar can show the current section.
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        context.coordinator.scrollObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView,
+            queue: .main
+        ) { [weak coordinator = context.coordinator] _ in
+            coordinator?.reportTopBlock()
+        }
 
         context.coordinator.textView = textView
         return scrollView
@@ -120,10 +134,26 @@ public struct MarkdownReaderView: NSViewRepresentable {
         var lastScrollTarget: BlockID?
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
+        var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
+        private var lastReportedTopBlock: BlockID?
 
         init(parent: MarkdownReaderView) {
             self.parent = parent
+        }
+
+        deinit {
+            if let scrollObserver {
+                NotificationCenter.default.removeObserver(scrollObserver)
+            }
+        }
+
+        func reportTopBlock() {
+            guard let textView else { return }
+            let top = topVisibleBlockID(in: textView)
+            guard top != lastReportedTopBlock else { return }
+            lastReportedTopBlock = top
+            parent.onTopBlockChange(top)
         }
 
         // MARK: Links & checkboxes
