@@ -33,20 +33,14 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 2)
             capture(name: "02-document")
 
-            // Scroll to the math/diagram sections. Synthesized scroll-wheel
-            // deltas are unreliable on runner Macs; keyboard paging through
-            // the focused text view is deterministic.
-            let textView = app.textViews.firstMatch
-            if textView.waitForExistence(timeout: 3) {
-                textView.click() // focuses — and demos the syntax reveal
-                Thread.sleep(forTimeInterval: 1)
-                textView.typeKey(.pageDown, modifierFlags: [])
-                Thread.sleep(forTimeInterval: 1.5)
-                capture(name: "03-mid-document")
-                textView.typeKey(.pageDown, modifierFlags: [])
-                textView.typeKey(.pageDown, modifierFlags: [])
-                Thread.sleep(forTimeInterval: 1.5)
-                capture(name: "04-math-and-diagrams")
+            // The engines fixture leads with math + diagrams, so the
+            // interesting content is in the first viewport — no synthetic
+            // scrolling (which is unreliable on runner Macs).
+            let engines = app.staticTexts["engines"]
+            if engines.waitForExistence(timeout: 3) {
+                engines.click()
+                Thread.sleep(forTimeInterval: 2)
+                capture(name: "03-native-engines")
             }
         }
         app.terminate()
