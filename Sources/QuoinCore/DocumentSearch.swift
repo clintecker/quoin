@@ -41,16 +41,19 @@ public struct DocumentSearch: Sendable {
                     texts.append(BlockText(blockID: block.id, text: cells.joined(separator: " ")))
                 case .list(let items, _, _):
                     for item in items { walk(item.blocks) }
-                case .blockQuote(let children):
+                case .blockQuote(let children), .callout(_, let children):
                     walk(children)
                 case .htmlBlock(let html):
                     texts.append(BlockText(blockID: block.id, text: html))
-                case .thematicBreak:
+                case .frontMatter(let yaml):
+                    texts.append(BlockText(blockID: block.id, text: yaml))
+                case .thematicBreak, .tableOfContents:
                     break
                 }
             }
         }
         walk(document.blocks)
+        for footnote in document.footnotes { walk(footnote.blocks) }
         self.blockTexts = texts
     }
 

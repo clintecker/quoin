@@ -46,18 +46,42 @@ public struct AttributedRenderer {
 
         for (index, block) in document.blocks.enumerated() {
             let start = output.length
-            output.append(render(block: block, depth: 0))
+            output.append(render(block: block, depth: 0, document: document))
             if index < document.blocks.count - 1 {
                 output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
             }
             blockRanges[block.id] = NSRange(location: start, length: output.length - start)
+        }
+
+        // Footnotes gather at document end: 12/1.6 secondary, top hairline.
+        if !document.footnotes.isEmpty {
+            output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+            output.append(renderThematicBreak())
+            for footnote in document.footnotes {
+                output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+                let start = output.length
+                var marker = bodyAttributes()
+                marker[.font] = PlatformFont.systemFont(ofSize: 12, weight: .semibold)
+                marker[.foregroundColor] = theme.accent
+                output.append(NSAttributedString(string: "\(footnote.index). ", attributes: marker))
+                for block in footnote.blocks {
+                    let body = NSMutableAttributedString(attributedString: render(block: block, depth: 0, document: document))
+                    let full = NSRange(location: 0, length: body.length)
+                    body.addAttribute(.font, value: PlatformFont.systemFont(ofSize: 12), range: full)
+                    body.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: full)
+                    output.append(body)
+                }
+                if let firstBlock = footnote.blocks.first {
+                    blockRanges[firstBlock.id] = NSRange(location: start, length: output.length - start)
+                }
+            }
         }
         return RenderedDocument(attributed: output, blockRanges: blockRanges)
     }
 
     // MARK: - Blocks
 
-    private func render(block: Block, depth: Int) -> NSAttributedString {
+    private func render(block: Block, depth: Int, document: QuoinDocument) -> NSAttributedString {
         let content: NSAttributedString
         switch block.kind {
         case .heading(let level, let inlines, _):
@@ -73,9 +97,15 @@ public struct AttributedRenderer {
         case .table(let header, let rows, let alignments):
             content = renderTable(header: header, rows: rows, alignments: alignments)
         case .list(let items, let ordered, let start):
-            content = renderList(items: items, ordered: ordered, start: start, depth: depth)
+            content = renderList(items: items, ordered: ordered, start: start, depth: depth, document: document)
         case .blockQuote(let children):
-            content = renderBlockQuote(children: children, depth: depth)
+            content = renderBlockQuote(children: children, depth: depth, document: document)
+        case .callout(let kind, let children):
+            content = renderCallout(kind: kind, children: children, depth: depth, document: document)
+        case .frontMatter(let yaml):
+            content = renderFrontMatter(yaml: yaml)
+        case .tableOfContents:
+            content = renderTOC(outline: document.outline)
         case .thematicBreak:
             content = renderThematicBreak()
         case .htmlBlock(let html):
@@ -118,7 +148,100 @@ public struct AttributedRenderer {
         style.tailIndent = -12
         style.paragraphSpacingBefore = theme.paragraphSpacing * 0.6
         attributes[.paragraphStyle] = style
-        return NSAttributedString(string: code, attributes: attributes)
+        let output = NSMutableAttributedString(string: code, attributes: attributes)
+
+        // Native syntax highlighting: six token colors per the design spec.
+        let chars = Array(code)
+        for token in SyntaxHighlighter.highlight(code: code, language: language) {
+            // Character indices align with UTF-16 only for BMP text; compute
+            // the UTF-16 range from the character range.
+            let prefix = String(chars[0..<token.range.lowerBound]).utf16.count
+            let length = String(chars[token.range.lowerBound..<min(token.range.upperBound, chars.count)]).utf16.count
+            let nsRange = NSRange(location: prefix, length: length)
+            guard nsRange.location + nsRange.length <= output.length else { continue }
+            let color: PlatformColor
+            switch token.kind {
+            case .keyword: color = Theme.CodeToken.keyword
+            case .function: color = Theme.CodeToken.function
+            case .type: color = Theme.CodeToken.type
+            case .comment: color = Theme.CodeToken.comment
+            case .string: color = Theme.CodeToken.string
+            case .number: color = Theme.CodeToken.number
+            }
+            output.addAttribute(.foregroundColor, value: color, range: nsRange)
+        }
+        return output
+    }
+
+    private func renderFrontMatter(yaml: String) -> NSAttributedString {
+        // Compact metadata chip above the H1; click-to-edit arrives with the
+        // editor. Rendered as caption-size key/value lines.
+        var attributes = bodyAttributes()
+        attributes[.font] = theme.captionFont()
+        attributes[.foregroundColor] = theme.secondaryTextColor
+        attributes[.backgroundColor] = theme.inlineCodeFill
+        let style = paragraphStyle()
+        style.lineHeightMultiple = 1.4
+        style.firstLineHeadIndent = 8
+        style.headIndent = 8
+        style.tailIndent = -8
+        attributes[.paragraphStyle] = style
+        return NSAttributedString(string: yaml, attributes: attributes)
+    }
+
+    private func renderCallout(kind: CalloutKind, children: [Block], depth: Int, document: QuoinDocument) -> NSAttributedString {
+        let semantic: PlatformColor
+        let symbol: String
+        switch kind {
+        case .note: semantic = .systemBlue; symbol = "ℹ︎"
+        case .tip: semantic = .systemGreen; symbol = "✓"
+        case .warning: semantic = .systemOrange; symbol = "⚠︎"
+        case .danger: semantic = .systemRed; symbol = "✕"
+        }
+
+        let output = NSMutableAttributedString()
+        var title = bodyAttributes()
+        title[.font] = PlatformFont.systemFont(ofSize: 12.5, weight: .semibold)
+        title[.foregroundColor] = semantic
+        output.append(NSAttributedString(string: "\(symbol) \(kind.title)\n", attributes: title))
+
+        for (index, child) in children.enumerated() {
+            if index > 0 {
+                output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+            }
+            output.append(render(block: child, depth: depth + 1, document: document))
+        }
+        // 4% tint background across the callout (border/radius arrive with
+        // the block decoration pass).
+        let full = NSRange(location: 0, length: output.length)
+        output.addAttribute(.backgroundColor, value: semantic.withAlphaComponent(0.06), range: full)
+        output.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
+            let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? paragraphStyle()
+            style.firstLineHeadIndent += 12
+            style.headIndent += 12
+            style.tailIndent = -12
+            output.addAttribute(.paragraphStyle, value: style, range: range)
+        }
+        return output
+    }
+
+    private func renderTOC(outline: [HeadingInfo]) -> NSAttributedString {
+        let output = NSMutableAttributedString()
+        for (index, heading) in outline.enumerated() {
+            var attributes = bodyAttributes()
+            attributes[.foregroundColor] = theme.linkColor
+            attributes[.link] = QuoinLink.anchorURL(slug: heading.slug) as Any
+            let style = paragraphStyle()
+            style.paragraphSpacing = 2
+            style.firstLineHeadIndent = CGFloat(max(0, heading.level - 1)) * 16
+            style.headIndent = style.firstLineHeadIndent
+            attributes[.paragraphStyle] = style
+            output.append(NSAttributedString(
+                string: heading.title + (index < outline.count - 1 ? "\n" : ""),
+                attributes: attributes
+            ))
+        }
+        return output
     }
 
     private func renderMermaidFallback(source: String) -> NSAttributedString {
@@ -204,18 +327,18 @@ public struct AttributedRenderer {
         return output
     }
 
-    private func renderList(items: [QuoinCore.ListItem], ordered: Bool, start: Int, depth: Int) -> NSAttributedString {
+    private func renderList(items: [QuoinCore.ListItem], ordered: Bool, start: Int, depth: Int, document: QuoinDocument) -> NSAttributedString {
         let output = NSMutableAttributedString()
         for (index, item) in items.enumerated() {
             if index > 0 {
                 output.append(NSAttributedString(string: "\n", attributes: bodyAttributes(depth: depth)))
             }
-            output.append(renderListItem(item, ordinal: ordered ? start + index : nil, depth: depth))
+            output.append(renderListItem(item, ordinal: ordered ? start + index : nil, depth: depth, document: document))
         }
         return output
     }
 
-    private func renderListItem(_ item: QuoinCore.ListItem, ordinal: Int?, depth: Int) -> NSAttributedString {
+    private func renderListItem(_ item: QuoinCore.ListItem, ordinal: Int?, depth: Int, document: QuoinDocument) -> NSAttributedString {
         let indent = CGFloat(depth + 1) * 22
         let style = paragraphStyle()
         style.firstLineHeadIndent = indent - 22
@@ -261,21 +384,21 @@ public struct AttributedRenderer {
                 }
                 output.append(renderInlines(inlines, base: attributes))
             case .list(let nested, let nestedOrdered, let nestedStart):
-                output.append(renderList(items: nested, ordered: nestedOrdered, start: nestedStart, depth: depth + 1))
+                output.append(renderList(items: nested, ordered: nestedOrdered, start: nestedStart, depth: depth + 1, document: document))
             default:
-                output.append(render(block: block, depth: depth + 1))
+                output.append(render(block: block, depth: depth + 1, document: document))
             }
         }
         return output
     }
 
-    private func renderBlockQuote(children: [Block], depth: Int) -> NSAttributedString {
+    private func renderBlockQuote(children: [Block], depth: Int, document: QuoinDocument) -> NSAttributedString {
         let output = NSMutableAttributedString()
         for (index, child) in children.enumerated() {
             if index > 0 {
                 output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
             }
-            output.append(render(block: child, depth: depth + 1))
+            output.append(render(block: child, depth: depth + 1, document: document))
         }
         let full = NSRange(location: 0, length: output.length)
         output.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
@@ -374,6 +497,22 @@ public struct AttributedRenderer {
             attrs[.foregroundColor] = theme.secondaryTextColor
             attrs[QuoinAttribute.mathSource] = latex
             return NSAttributedString(string: latex, attributes: attrs)
+
+        case .highlight(let children):
+            // Pill highlight, lime by default (radius arrives with the
+            // block decoration pass; background carries the color now).
+            var attrs = attributes
+            attrs[.backgroundColor] = Theme.Highlight.lime.color
+            attrs[.foregroundColor] = theme.textColor
+            return renderInlines(children, base: attrs)
+
+        case .footnoteReference(_, let index):
+            // Superscript accent marker; bidirectional jump lands in Phase C.
+            var attrs = attributes
+            attrs[.font] = PlatformFont.systemFont(ofSize: theme.bodySize * 0.75)
+            attrs[.foregroundColor] = theme.accent
+            attrs[.baselineOffset] = theme.bodySize * 0.33
+            return NSAttributedString(string: "\(index)", attributes: attrs)
 
         case .softBreak:
             return NSAttributedString(string: " ", attributes: attributes)

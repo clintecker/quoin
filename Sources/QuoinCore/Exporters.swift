@@ -10,6 +10,14 @@ public enum PlainTextExporter {
     public static func export(_ document: QuoinDocument) -> String {
         var out: [String] = []
         render(document.blocks, indent: "", into: &out)
+        if !document.footnotes.isEmpty {
+            out.append("———")
+            for footnote in document.footnotes {
+                var body: [String] = []
+                render(footnote.blocks, indent: "", into: &body)
+                out.append("[\(footnote.index)] " + body.joined(separator: "\n"))
+            }
+        }
         return out.joined(separator: "\n\n") + "\n"
     }
 
@@ -55,6 +63,14 @@ public enum PlainTextExporter {
                 var quoted: [String] = []
                 render(children, indent: indent + "  ", into: &quoted)
                 out.append(quoted.joined(separator: "\n\n"))
+            case .callout(let kind, let children):
+                var body: [String] = []
+                render(children, indent: indent + "  ", into: &body)
+                out.append(indent + kind.title.uppercased() + "\n" + body.joined(separator: "\n\n"))
+            case .frontMatter(let yaml):
+                out.append(yaml.split(separator: "\n").map { indent + $0 }.joined(separator: "\n"))
+            case .tableOfContents:
+                break // navigation aid, not content
             case .thematicBreak:
                 out.append(indent + "———")
             case .htmlBlock(let html):

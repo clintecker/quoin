@@ -1,0 +1,132 @@
+import Foundation
+
+/// Inline post-passes that run after cmark conversion, following the same
+/// philosophy as `MathScanner`: cmark has no extension for these, so Quoin
+/// recognizes them itself and degrades to literal text when unbalanced.
+enum InlinePostPasses {
+
+    // MARK: - ==highlight==
+
+    /// Splices `==highlighted==` spans into an inline list. Spans may cross
+    /// inline nodes (`==bold **text** end==`); an unclosed `==` stays literal.
+    /// Opener must not be followed by whitespace, closer not preceded by it.
+    static func spliceHighlights(into inlines: [Inline], stats: inout DocumentStats) -> [Inline] {
+        var result: [Inline] = []
+        var pending: [Inline] = []       // collected content inside an open ==
+        var isOpen = false
+
+        func flushUnclosed() {
+            guard isOpen else { return }
+            // Reinsert the literal opener and everything collected.
+            result.append(.text("=="))
+            result.append(contentsOf: pending)
+            pending = []
+            isOpen = false
+        }
+
+        func emit(_ inline: Inline) {
+            if isOpen { pending.append(inline) } else { result.append(inline) }
+        }
+
+        for inline in inlines {
+            guard case .text(let text) = inline, text.contains("==") else {
+                emit(inline)
+                continue
+            }
+            var remainder = Substring(text)
+            while let range = remainder.range(of: "==") {
+                let before = String(remainder[..<range.lowerBound])
+                let after = remainder[range.upperBound...]
+                if !isOpen {
+                    // Candidate opener: must be followed by non-whitespace.
+                    if let first = after.first, !first.isWhitespace {
+                        if !before.isEmpty { emit(.text(before)) }
+                        isOpen = true
+                        pending = []
+                    } else {
+                        emit(.text(before + "=="))
+                    }
+                } else {
+                    // Candidate closer: must be preceded by non-whitespace.
+                    if let last = before.last, !last.isWhitespace {
+                        if !before.isEmpty { pending.append(.text(before)) }
+                        isOpen = false
+                        stats.highlightCount += 1
+                        result.append(.highlight(pending))
+                        pending = []
+                    } else {
+                        pending.append(.text(before + "=="))
+                    }
+                }
+                remainder = after
+            }
+            if !remainder.isEmpty { emit(.text(String(remainder))) }
+        }
+        flushUnclosed()
+        return result
+    }
+
+    // MARK: - [^id] footnote references
+
+    /// Replaces `[^id]` occurrences in text runs with footnote references.
+    /// `ordinals` assigns 1-based numbers in order of first appearance.
+    static func spliceFootnoteReferences(
+        into inlines: [Inline],
+        ordinals: inout [String: Int]
+    ) -> [Inline] {
+        func ordinal(_ id: String) -> Int {
+            if let existing = ordinals[id] { return existing }
+            let next = ordinals.count + 1
+            ordinals[id] = next
+            return next
+        }
+        var result: [Inline] = []
+        for inline in inlines {
+            guard case .text(let text) = inline, text.contains("[^") else {
+                result.append(inline)
+                continue
+            }
+            var remainder = Substring(text)
+            while let open = remainder.range(of: "[^") {
+                guard let close = remainder[open.upperBound...].firstIndex(of: "]") else { break }
+                let id = String(remainder[open.upperBound..<close])
+                guard !id.isEmpty, !id.contains(where: \.isWhitespace) else {
+                    // Not a footnote; emit through the bracket and continue.
+                    result.append(.text(String(remainder[..<open.upperBound])))
+                    remainder = remainder[open.upperBound...]
+                    continue
+                }
+                let before = String(remainder[..<open.lowerBound])
+                if !before.isEmpty { result.append(.text(before)) }
+                result.append(.footnoteReference(id: id, index: ordinal(id)))
+                remainder = remainder[remainder.index(after: close)...]
+            }
+            if !remainder.isEmpty { result.append(.text(String(remainder))) }
+        }
+        return result
+    }
+
+    // MARK: - Front matter
+
+    /// Splits leading YAML front matter (`---\n…\n---`) from the source.
+    /// Returns the YAML body and the byte length of the whole front-matter
+    /// block including its closing delimiter line.
+    static func frontMatter(in source: String) -> (yaml: String, byteLength: Int)? {
+        guard source.hasPrefix("---\n") || source.hasPrefix("---\r\n") else { return nil }
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        var yamlLines: [Substring] = []
+        var byteCount = lines[0].utf8.count + 1
+        for line in lines.dropFirst() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "---" || trimmed == "..." {
+                byteCount += line.utf8.count + 1
+                let yaml = yamlLines.joined(separator: "\n")
+                // The final newline may not exist at EOF; clamp.
+                return (yaml: yaml, byteLength: min(byteCount, source.utf8.count))
+            }
+            yamlLines.append(line)
+            byteCount += line.utf8.count + 1
+        }
+        return nil // unterminated — treat as regular content
+    }
+}

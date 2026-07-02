@@ -10,14 +10,35 @@ import Markdown
 public enum MarkdownConverter {
 
     public static func parse(_ source: String) -> QuoinDocument {
-        let document = Markdown.Document(parsing: source)
-        var builder = Builder(source: source)
-        let blocks = builder.convert(children: document.children)
+        // YAML front matter is split off before cmark sees the source; all
+        // ranges downstream are shifted back to absolute source offsets.
+        var parseInput = source
+        var baseOffset = 0
+        var frontMatterYAML: String?
+        if let front = InlinePostPasses.frontMatter(in: source) {
+            frontMatterYAML = front.yaml
+            baseOffset = front.byteLength
+            parseInput = String(decoding: Array(source.utf8)[baseOffset...], as: UTF8.self)
+        }
+
+        let document = Markdown.Document(parsing: parseInput)
+        var builder = Builder(source: source, parseInput: parseInput, baseOffset: baseOffset)
+
+        var blocks: [Block] = []
+        if let frontMatterYAML {
+            blocks.append(builder.makeBlock(
+                kind: .frontMatter(yaml: frontMatterYAML),
+                range: ByteRange(offset: 0, length: baseOffset)
+            ))
+        }
+        blocks.append(contentsOf: builder.convert(children: document.children))
+        let footnotes = builder.gatherFootnotes()
         builder.finalizeStats()
         return QuoinDocument(
             source: source,
             blocks: blocks,
             outline: builder.outline,
+            footnotes: footnotes,
             stats: builder.stats,
             sourceHash: SHA256Hex.hash(of: source)
         )
@@ -29,16 +50,29 @@ public enum MarkdownConverter {
         let source: String
         let sourceBytes: [UInt8]
         let lineIndex: LineIndex
+        /// Byte offset of the parsed remainder within the full source
+        /// (nonzero when front matter was split off).
+        let baseOffset: Int
         var slugger = Slugger()
         var outline: [HeadingInfo] = []
         var stats = DocumentStats()
         var occurrences: [Int: Int] = [:]
         var proseBuffer = ""
+        var footnoteOrdinals: [String: Int] = [:]
+        var footnoteDefinitions: [String: [Block]] = [:]
 
-        init(source: String) {
+        init(source: String, parseInput: String, baseOffset: Int) {
             self.source = source
             self.sourceBytes = Array(source.utf8)
-            self.lineIndex = LineIndex(source: source)
+            self.lineIndex = LineIndex(source: parseInput)
+            self.baseOffset = baseOffset
+        }
+
+        /// Absolute byte range in the full source for a swift-markdown range
+        /// (which is relative to the parsed remainder).
+        func absoluteRange(of range: SourceRange?) -> ByteRange {
+            let relative = lineIndex.byteRange(of: range)
+            return ByteRange(offset: relative.offset + baseOffset, length: relative.length)
         }
 
         // MARK: Identity
@@ -63,7 +97,7 @@ public enum MarkdownConverter {
         }
 
         mutating func convert(markup: Markup) -> [Block] {
-            let range = lineIndex.byteRange(of: markup.range)
+            let range = absoluteRange(of: markup.range)
 
             switch markup {
             case let heading as Markdown.Heading:
@@ -86,6 +120,9 @@ public enum MarkdownConverter {
 
             case let quote as Markdown.BlockQuote:
                 let children = convert(children: quote.children)
+                if let (kind, stripped) = calloutFrom(children) {
+                    return [makeBlock(kind: .callout(kind: kind, children: stripped), range: range)]
+                }
                 return [makeBlock(kind: .blockQuote(children: children), range: range)]
 
             case is Markdown.ThematicBreak:
@@ -104,8 +141,19 @@ public enum MarkdownConverter {
             }
         }
 
+        /// The shared inline post-pass chain: math, then highlights, then
+        /// footnote references. Order matters — `==` inside math or `[^…]`
+        /// inside code never reaches these because math/code are extracted
+        /// first.
+        mutating func postProcess(_ inlines: [Inline], math: Bool = true) -> [Inline] {
+            var out = math ? spliceInlineMath(into: inlines) : inlines
+            out = InlinePostPasses.spliceHighlights(into: out, stats: &stats)
+            out = InlinePostPasses.spliceFootnoteReferences(into: out, ordinals: &footnoteOrdinals)
+            return out
+        }
+
         mutating func convertHeading(_ heading: Markdown.Heading, range: ByteRange) -> Block {
-            let inlines = spliceInlineMath(into: convertInlines(heading.children))
+            let inlines = postProcess(convertInlines(heading.children))
             let title = inlines.plainText.trimmingCharacters(in: .whitespaces)
             let slug = slugger.slug(for: title)
             stats.headingCount += 1
@@ -116,8 +164,30 @@ public enum MarkdownConverter {
         }
 
         mutating func convertParagraph(_ paragraph: Markdown.Paragraph, range: ByteRange) -> [Block] {
+            let slice = source.substring(in: range)
+
+            // `[TOC]` block: a paragraph that is exactly the marker.
+            if let slice, slice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "[toc]" {
+                return [makeBlock(kind: .tableOfContents, range: range)]
+            }
+
+            // Footnote definition: `[^id]: content` — removed from the block
+            // flow and gathered at document end.
+            if let slice, let definition = parseFootnoteDefinition(slice) {
+                let fragment = Markdown.Document(parsing: definition.content)
+                var blocks: [Block] = []
+                for child in fragment.children {
+                    if let para = child as? Markdown.Paragraph {
+                        let inlines = postProcess(convertInlines(para.children))
+                        blocks.append(makeBlock(kind: .paragraph(inlines: inlines), range: range))
+                    }
+                }
+                footnoteDefinitions[definition.id] = blocks
+                return []
+            }
+
             let inlines: [Inline]
-            if let slice = source.substring(in: range),
+            if let slice,
                MathScanner.containsMathDelimiter(slice),
                isSafeForSliceReparse(slice) {
                 // The robust path: scan the raw source slice so that cmark's
@@ -127,13 +197,76 @@ public enum MarkdownConverter {
                     stats.mathCount += 1
                     return [makeBlock(kind: .mathBlock(latex: latex), range: range)]
                 }
-                inlines = assembleInlines(from: segments)
+                inlines = postProcess(assembleInlines(from: segments), math: false)
             } else {
-                inlines = spliceInlineMath(into: convertInlines(paragraph.children))
+                inlines = postProcess(convertInlines(paragraph.children))
             }
             appendProse(inlines.plainText)
             stats.paragraphCount += 1
             return [makeBlock(kind: .paragraph(inlines: inlines), range: range)]
+        }
+
+        /// Parses `[^id]: content` at the start of a paragraph slice.
+        func parseFootnoteDefinition(_ slice: String) -> (id: String, content: String)? {
+            guard slice.hasPrefix("[^"),
+                  let close = slice.firstIndex(of: "]"),
+                  slice.index(after: close) < slice.endIndex,
+                  slice[slice.index(after: close)] == ":"
+            else { return nil }
+            let id = String(slice[slice.index(slice.startIndex, offsetBy: 2)..<close])
+            guard !id.isEmpty, !id.contains(where: \.isWhitespace) else { return nil }
+            let content = String(slice[slice.index(close, offsetBy: 2)...])
+                .trimmingCharacters(in: .whitespaces)
+            return (id: id, content: content)
+        }
+
+        /// Detects a design-spec callout: block quote whose first paragraph
+        /// begins with `[!KIND]`. Returns the kind and children with the
+        /// marker stripped.
+        mutating func calloutFrom(_ children: [Block]) -> (CalloutKind, [Block])? {
+            guard let first = children.first,
+                  case .paragraph(var inlines) = first.kind,
+                  case .text(let text) = inlines.first,
+                  text.hasPrefix("[!"),
+                  let close = text.firstIndex(of: "]"),
+                  let kind = CalloutKind(marker: String(text[text.index(text.startIndex, offsetBy: 2)..<close]))
+            else { return nil }
+
+            let remainder = String(text[text.index(after: close)...])
+                .trimmingCharacters(in: .whitespaces)
+            if remainder.isEmpty {
+                inlines.removeFirst()
+            } else {
+                inlines[0] = .text(remainder)
+            }
+            // Drop leading soft break left behind by `[!NOTE]\n`.
+            if case .softBreak = inlines.first { inlines.removeFirst() }
+
+            var stripped = children
+            if inlines.isEmpty {
+                stripped.removeFirst()
+            } else {
+                stripped[0] = makeBlock(kind: .paragraph(inlines: inlines), range: first.range)
+            }
+            return (kind, stripped)
+        }
+
+        /// Footnotes in reference order; referenced-but-undefined ids get a
+        /// placeholder, defined-but-unreferenced ids are appended after.
+        mutating func gatherFootnotes() -> [Footnote] {
+            var footnotes: [Footnote] = []
+            for (id, index) in footnoteOrdinals.sorted(by: { $0.value < $1.value }) {
+                let blocks = footnoteDefinitions[id]
+                    ?? [makeBlock(kind: .paragraph(inlines: [.text("Missing footnote: \(id)")]), range: ByteRange(offset: 0, length: 0))]
+                footnotes.append(Footnote(id: id, index: index, blocks: blocks))
+            }
+            var nextIndex = footnoteOrdinals.count + 1
+            for (id, blocks) in footnoteDefinitions.sorted(by: { $0.key < $1.key }) where footnoteOrdinals[id] == nil {
+                footnotes.append(Footnote(id: id, index: nextIndex, blocks: blocks))
+                nextIndex += 1
+            }
+            stats.footnoteCount = footnotes.count
+            return footnotes
         }
 
         /// Slice re-parsing is only safe when the paragraph's raw lines are not
@@ -210,7 +343,7 @@ public enum MarkdownConverter {
         }
 
         mutating func convertCell(_ cell: Markdown.Table.Cell) -> TableCell {
-            let inlines = spliceInlineMath(into: convertInlines(cell.children))
+            let inlines = postProcess(convertInlines(cell.children))
             appendProse(inlines.plainText)
             return TableCell(inlines: inlines)
         }
@@ -219,7 +352,7 @@ public enum MarkdownConverter {
             var listItems: [ListItem] = []
             for item in items {
                 guard let item = item as? Markdown.ListItem else { continue }
-                let itemRange = lineIndex.byteRange(of: item.range)
+                let itemRange = absoluteRange(of: item.range)
                 let blocks = convert(children: item.children)
                 var task: TaskState?
                 var markerRange: ByteRange?

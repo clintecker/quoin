@@ -1,7 +1,28 @@
+---
+title: Quoin Showcase
+author: quoin
+tags: [demo, fixtures]
+---
+
 # Quoin Showcase
 
 A quick tour of everything the reading core should handle. Open this file
 in Quoin and edit it in another editor to watch live reloading.
+
+[TOC]
+
+## Extended syntax
+
+Text can be ==highlighted like this== and claims can carry footnotes.[^one]
+Even ==highlights with **bold** inside== work.
+
+> [!NOTE]
+> Callouts render with a semantic tint and title.
+
+> [!WARNING]
+> Four kinds: note, tip, warning, danger.
+
+[^one]: Footnotes gather at the end of the document.
 
 ## Text
 
