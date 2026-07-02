@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(CoreGraphics)
+// On Apple platforms the CGRect/CGPoint conveniences (midX, init(x:y:…))
+// live in CoreGraphics; on Linux swift-corelibs-foundation provides them.
+import CoreGraphics
+#endif
 
 /// Measures a text label at a font size — injected by the renderer so the
 /// layout engines stay platform-free and unit-testable.
