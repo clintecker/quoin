@@ -7,7 +7,7 @@ final class ScreenshotTests: XCTestCase {
 
     private var outputDirectory: URL {
         let path = ProcessInfo.processInfo.environment["QUOIN_SCREENSHOT_DIR"]
-            ?? NSTemporaryDirectory() + "/quoin-shots"
+            ?? "/tmp/quoin-shots"
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 

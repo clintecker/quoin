@@ -48,11 +48,14 @@ jobs:
           set -o pipefail
           mkdir -p /tmp/quoin-fixtures /tmp/quoin-shots
           cp ../../Fixtures/*.md /tmp/quoin-fixtures/
+          # TEST_RUNNER_ vars must be real environment variables of
+          # xcodebuild, not build-setting arguments.
+          export TEST_RUNNER_QUOIN_SCREENSHOT_DIR=/tmp/quoin-shots
+          export TEST_RUNNER_QUOIN_FIXTURES=/tmp/quoin-fixtures
           xcodebuild -project Quoin.xcodeproj -scheme Quoin -configuration Debug \
             CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" \
-            TEST_RUNNER_QUOIN_SCREENSHOT_DIR=/tmp/quoin-shots \
-            TEST_RUNNER_QUOIN_FIXTURES=/tmp/quoin-fixtures \
-            test 2>&1 | tail -60
+            test 2>&1 | tail -25
+          ls -la /tmp/quoin-shots
 
       - name: Upload screenshots
         if: always()
