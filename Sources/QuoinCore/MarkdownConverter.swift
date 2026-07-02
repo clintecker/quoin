@@ -191,11 +191,11 @@ public enum MarkdownConverter {
         }
 
         mutating func convertTable(_ table: Markdown.Table, range: ByteRange) -> Block {
-            let header = table.head.children.compactMap { $0 as? Markdown.Table.Cell }.map(convertCell)
+            let header = table.head.children.compactMap { $0 as? Markdown.Table.Cell }.map { convertCell($0) }
             var rows: [[TableCell]] = []
             for row in table.body.children {
                 guard let row = row as? Markdown.Table.Row else { continue }
-                rows.append(row.children.compactMap { $0 as? Markdown.Table.Cell }.map(convertCell))
+                rows.append(row.children.compactMap { $0 as? Markdown.Table.Cell }.map { convertCell($0) })
             }
             let alignments: [TableAlignment] = table.columnAlignments.map { alignment in
                 switch alignment {
