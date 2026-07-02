@@ -66,6 +66,15 @@
   <h1>Quoin — Technical Design</h1>
   <p class="subtitle">Fully native, zero JavaScript, one shared core — built to grow an editor.</p>
 
+  <div class="callout">
+    <p><strong>Scope update (2026-07-02):</strong> per the design handoff in
+    <code>docs/design/handoff.md</code>, Quoin is now a WYSIWYG editor. The
+    architecture here stands — the editor is a new mutation source feeding
+    the <code>DocumentSession</code> pipeline (§06), exactly as designed.
+    The handoff's constraints (AST as sole source of truth, NSDocument
+    autosave, byte-lossless round-trip) are binding.</p>
+  </div>
+
   <h2><span class="num">01</span>Architecture at a Glance</h2>
   <p>Four decisions define the system; everything else follows from them:</p>
   <ul>
