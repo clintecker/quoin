@@ -24,3 +24,15 @@ jobs:
 
       - name: Test
         run: swift test
+
+      # The app target lives outside the package; generate and build it so
+      # the SwiftUI/AppKit shell is compile-verified too.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build macOS app
+        working-directory: App/macOS
+        run: |
+          xcodegen
+          xcodebuild -project Quoin.xcodeproj -scheme Quoin -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" build | tail -40
