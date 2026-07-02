@@ -14,8 +14,14 @@ final class LibraryModel: ObservableObject {
     @Published private(set) var rootURL: URL?
     @Published var quickOpenQuery = ""
     @Published private(set) var quickOpenResults: [QuickOpen.Result] = []
+    /// Persistent library-wide search (⇧⌘F) shown in the sidebar.
+    @Published var librarySearchQuery = ""
+    @Published private(set) var librarySearchResults: [QuickOpen.Result] = []
 
     private var accessedURL: URL?
+    private var eventsWatcher: FSEventsWatcher?
+    /// Inverse file moves for ⌘Z (design rule: sidebar moves are undoable).
+    private var moveUndoStack: [(from: URL, to: URL)] = []
 
     init() {
         // `-QuoinLibraryPath /path` (launch argument → UserDefaults) bypasses
@@ -79,6 +85,14 @@ final class LibraryModel: ObservableObject {
         accessedURL = url
         rootURL = url
         rescan()
+        // Keep the sidebar live for external changes (Finder, sync, other
+        // editors). FSEvents debounces internally.
+        eventsWatcher = FSEventsWatcher(url: url) { [weak self] in
+            self?.rescan()
+            if let self, !self.librarySearchQuery.isEmpty {
+                self.runLibrarySearch()
+            }
+        }
     }
 
     // MARK: - Tree
@@ -103,10 +117,46 @@ final class LibraryModel: ObservableObject {
         return renamed
     }
 
+    /// Sidebar drag-to-move: a real file move, recorded for ⌘Z.
+    @discardableResult
     func move(url: URL, into folder: URL) -> URL? {
-        guard let moved = try? Library.move(url, into: folder) else { return nil }
+        guard url.deletingLastPathComponent() != folder,
+              folder != url, // no folder-into-itself
+              let moved = try? Library.move(url, into: folder)
+        else { return nil }
+        moveUndoStack.append((from: moved, to: url.deletingLastPathComponent()))
         rescan()
         return moved
+    }
+
+    var canUndoMove: Bool { !moveUndoStack.isEmpty }
+
+    /// Undoes the most recent sidebar move (moves the file back on disk).
+    func undoLastMove() {
+        guard let last = moveUndoStack.popLast() else { return }
+        _ = try? Library.move(last.from, into: last.to)
+        rescan()
+    }
+
+    // MARK: - Library-wide search (⇧⌘F)
+
+    func runLibrarySearch() {
+        guard let root else {
+            librarySearchResults = []
+            return
+        }
+        let query = librarySearchQuery
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            librarySearchResults = []
+            return
+        }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let results = QuickOpen.search(query: query, in: root, maxResults: 40)
+            await MainActor.run {
+                guard let self, self.librarySearchQuery == query else { return }
+                self.librarySearchResults = results
+            }
+        }
     }
 
     /// New untitled document in the library root (design: first H1 renames

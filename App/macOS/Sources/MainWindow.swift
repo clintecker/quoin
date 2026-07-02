@@ -11,11 +11,16 @@ struct MainWindow: View {
     @State private var openTabs: [URL] = []
     @State private var activeTab: URL?
     @State private var isQuickOpenVisible = false
+    @State private var isLibrarySearchVisible = false
 
     var body: some View {
         NavigationSplitView {
             if library.hasLibrary {
-                LibrarySidebar(library: library, selection: $sidebarSelection) { url in
+                LibrarySidebar(
+                    library: library,
+                    selection: $sidebarSelection,
+                    isSearchVisible: $isLibrarySearchVisible
+                ) { url in
                     open(url)
                 }
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
@@ -93,6 +98,14 @@ struct MainWindow: View {
                 if let activeTab { close(activeTab) }
             }
             .keyboardShortcut("w", modifiers: .command)
+            Button("") { isLibrarySearchVisible.toggle() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+            // ⌘Z undoes sidebar file moves when no document is open;
+            // with a document open, its edit-undo owns the shortcut.
+            if activeTab == nil {
+                Button("") { library.undoLastMove() }
+                    .keyboardShortcut("z", modifiers: .command)
+            }
             ForEach(1..<10) { index in
                 Button("") {
                     if openTabs.indices.contains(index - 1) {

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import QuoinCore
 import QuoinRender
 
@@ -58,6 +59,27 @@ struct ReaderScreen: View {
                 formatCommand: formatCommand,
                 formatGeneration: formatGeneration
             )
+            // Dropping an image file copies it into assets/ and inserts
+            // the markdown reference at the caret.
+            .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                var handled = false
+                for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                    handled = true
+                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                        let url: URL?
+                        if let data = item as? Data {
+                            url = URL(dataRepresentation: data, relativeTo: nil)
+                        } else {
+                            url = item as? URL
+                        }
+                        guard let url,
+                              ReaderModel.imageExtensions.contains(url.pathExtension.lowercased())
+                        else { return }
+                        Task { @MainActor in model.insertImage(from: url) }
+                    }
+                }
+                return handled
+            }
             statusBar
         }
         .inspector(isPresented: $isOutlineVisible) {

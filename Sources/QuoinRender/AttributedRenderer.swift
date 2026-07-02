@@ -52,11 +52,20 @@ public struct AttributedRenderer {
     public let baseURL: URL?
     /// Remote images are opt-in per document (local-only by default).
     public let loadsRemoteImages: Bool
+    /// Fired (off-main) when an async-decoded image becomes available and
+    /// the document should re-render to pick it up.
+    public let onContentReady: (@Sendable () -> Void)?
 
-    public init(theme: Theme = Theme(), baseURL: URL? = nil, loadsRemoteImages: Bool = false) {
+    public init(
+        theme: Theme = Theme(),
+        baseURL: URL? = nil,
+        loadsRemoteImages: Bool = false,
+        onContentReady: (@Sendable () -> Void)? = nil
+    ) {
         self.theme = theme
         self.baseURL = baseURL
         self.loadsRemoteImages = loadsRemoteImages
+        self.onContentReady = onContentReady
     }
 
     public func render(_ document: QuoinDocument, activeBlockID: BlockID? = nil) -> RenderedDocument {
@@ -643,8 +652,17 @@ public struct AttributedRenderer {
             return placeholder(alt.isEmpty ? source : alt)
         }
 
-        guard let image = downsampledImage(at: fileURL, maxDimension: theme.maxContentWidth * 2) else {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return placeholder("missing image: \(source)")
+        }
+        // Async decode: first render shows a quiet placeholder, the decoded
+        // image arrives via onContentReady → re-render (cache hit).
+        guard let image = AsyncImageStore.shared.image(
+            at: fileURL,
+            maxDimension: theme.maxContentWidth * 2,
+            onReady: onContentReady ?? {}
+        ) else {
+            return placeholder(alt.isEmpty ? "loading image…" : alt)
         }
 
         let attachment = NSTextAttachment()
@@ -660,24 +678,6 @@ public struct AttributedRenderer {
         return output
     }
 
-    /// Decodes at display size via ImageIO so a 20 MP photo doesn't cost
-    /// 80 MB of memory to show at 680 points wide.
-    private func downsampledImage(at url: URL, maxDimension: CGFloat) -> PlatformImage? {
-        let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, options as CFDictionary) else { return nil }
-        let thumbnailOptions: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: Int(maxDimension),
-            kCGImageSourceShouldCacheImmediately: true,
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else { return nil }
-        #if canImport(AppKit)
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        #else
-        return UIImage(cgImage: cgImage)
-        #endif
-    }
 
     // MARK: - Attribute helpers
 

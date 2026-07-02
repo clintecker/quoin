@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import QuoinCore
 
 /// The library sidebar: classic tree per the handoff (icons, disclosure
@@ -8,18 +9,21 @@ import QuoinCore
 struct LibrarySidebar: View {
     @ObservedObject var library: LibraryModel
     @Binding var selection: URL?
+    @Binding var isSearchVisible: Bool
     let onOpen: (URL) -> Void
+
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            List(selection: $selection) {
-                if let children = library.root?.children {
-                    ForEach(children) { node in
-                        LibraryRow(node: node, onOpen: onOpen, library: library)
-                    }
-                }
+            if isSearchVisible {
+                searchField
             }
-            .listStyle(.sidebar)
+            if isSearchVisible && !library.librarySearchQuery.isEmpty {
+                searchResults
+            } else {
+                tree
+            }
 
             Divider()
             HStack {
@@ -45,7 +49,110 @@ struct LibrarySidebar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
         }
+        .onChange(of: isSearchVisible) { _, visible in
+            if visible { searchFocused = true } else { library.librarySearchQuery = "" }
+        }
     }
+
+    private var tree: some View {
+        List(selection: $selection) {
+            if let children = library.root?.children {
+                ForEach(children) { node in
+                    LibraryRow(node: node, onOpen: onOpen, library: library)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        // Dropping onto empty sidebar space moves to the library root.
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            guard let root = library.rootURL else { return false }
+            return handleFileDrop(providers, into: root, library: library)
+        }
+    }
+
+    // MARK: - Library-wide search (⇧⌘F, persistent per handoff)
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+            TextField("Search library", text: $library.librarySearchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .focused($searchFocused)
+                .onExitCommand { isSearchVisible = false }
+                .onChange(of: library.librarySearchQuery) { _, _ in
+                    library.runLibrarySearch()
+                }
+            if !library.librarySearchQuery.isEmpty {
+                Button {
+                    library.librarySearchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(6)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+
+    private var searchResults: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(library.librarySearchResults) { result in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(result.title)
+                            .font(.system(size: 12.5, weight: .medium))
+                        if !result.snippet.isEmpty {
+                            Text(result.snippet)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onOpen(result.url) }
+                }
+                if library.librarySearchResults.isEmpty {
+                    Text("No matches")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .padding(10)
+                }
+            }
+        }
+    }
+}
+
+/// Loads file URLs off the drag pasteboard and performs the library move.
+@discardableResult
+func handleFileDrop(_ providers: [NSItemProvider], into folder: URL, library: LibraryModel) -> Bool {
+    var handled = false
+    for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+        handled = true
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            let url: URL?
+            if let data = item as? Data {
+                url = URL(dataRepresentation: data, relativeTo: nil)
+            } else {
+                url = item as? URL
+            }
+            guard let url else { return }
+            Task { @MainActor in
+                library.move(url: url, into: folder)
+            }
+        }
+    }
+    return handled
 }
 
 private struct LibraryRow: View {
@@ -65,9 +172,15 @@ private struct LibraryRow: View {
             } label: {
                 Label(node.name, systemImage: "folder")
                     .font(.system(size: 12.5))
+                    .onDrag { NSItemProvider(object: node.url as NSURL) }
+                    // Dropping a file onto a folder moves it there (⌘Z undoes).
+                    .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                        handleFileDrop(providers, into: node.url, library: library)
+                    }
             }
         } else {
             row
+                .onDrag { NSItemProvider(object: node.url as NSURL) }
         }
     }
 

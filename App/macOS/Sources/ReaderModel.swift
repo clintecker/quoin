@@ -38,7 +38,13 @@ final class ReaderModel: ObservableObject {
         guard session == nil else { return }
         self.fileURL = fileURL
         let theme = Theme()
-        renderer = AttributedRenderer(theme: theme, baseURL: fileURL?.deletingLastPathComponent())
+        renderer = AttributedRenderer(
+            theme: theme,
+            baseURL: fileURL?.deletingLastPathComponent(),
+            onContentReady: { [weak self] in
+                Task { @MainActor in self?.scheduleAsyncContentRerender() }
+            }
+        )
 
         let session: DocumentSession
         if let fileURL, let opened = try? DocumentSession.open(fileURL: fileURL) {
@@ -103,6 +109,19 @@ final class ReaderModel: ObservableObject {
             caretInActiveBlock = nil
         }
         rerender()
+    }
+
+    private var asyncRerenderTask: Task<Void, Never>?
+
+    /// Coalesces re-renders when async images finish decoding — a document
+    /// with 30 photos triggers one re-render, not 30.
+    private func scheduleAsyncContentRerender() {
+        asyncRerenderTask?.cancel()
+        asyncRerenderTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            self?.rerender()
+        }
     }
 
     private func rerender() {
@@ -232,6 +251,51 @@ final class ReaderModel: ObservableObject {
         }
         caretGeneration += 1
         rerender()
+    }
+
+    // MARK: - Image drop
+
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
+
+    /// Drag-dropped image: copy the asset next to the document (assets/),
+    /// insert `![](assets/…)` at the caret (or document end).
+    func insertImage(from sourceURL: URL) {
+        guard let session,
+              let docURL = fileURL,
+              Self.imageExtensions.contains(sourceURL.pathExtension.lowercased())
+        else { return }
+
+        let assetsFolder = docURL.deletingLastPathComponent().appendingPathComponent("assets", isDirectory: true)
+        try? FileManager.default.createDirectory(at: assetsFolder, withIntermediateDirectories: true)
+
+        // Silent-suffix collision handling, same rule as document names.
+        let base = sourceURL.deletingPathExtension().lastPathComponent
+        let ext = sourceURL.pathExtension
+        var destination = assetsFolder.appendingPathComponent(sourceURL.lastPathComponent)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: destination.path) {
+            destination = assetsFolder.appendingPathComponent("\(base) \(counter)").appendingPathExtension(ext)
+            counter += 1
+        }
+        guard (try? FileManager.default.copyItem(at: sourceURL, to: destination)) != nil else { return }
+
+        let markdown = "\n\n![](assets/\(destination.lastPathComponent))\n"
+        let offset: Int
+        if let activeBlockID,
+           let block = document.blocks.first(where: { $0.id == activeBlockID }),
+           let caret = caretInActiveBlock,
+           let slice = document.source.substring(in: block.range),
+           let caretUTF8 = EditMapping.utf8Offset(inText: slice, utf16Offset: caret) {
+            offset = block.range.offset + caretUTF8
+        } else {
+            offset = document.source.utf8.count
+        }
+
+        let edit = SourceEdit(range: ByteRange(offset: offset, length: 0), replacement: markdown)
+        Task {
+            guard let newDocument = try? await session.applyEdit(edit) else { return }
+            self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
+        }
     }
 
     // MARK: - Checkbox & anchors
