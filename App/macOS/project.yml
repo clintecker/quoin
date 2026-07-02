@@ -8,7 +8,29 @@ packages:
   QuoinPackages:
     path: ../..
 
+schemes:
+  Quoin:
+    build:
+      targets:
+        Quoin: all
+        QuoinUITests: [test]
+    test:
+      targets:
+        - QuoinUITests
+
 targets:
+  QuoinUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - UITests
+    dependencies:
+      - target: Quoin
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        TEST_TARGET_NAME: Quoin
+
   Quoin:
     type: application
     platform: macOS

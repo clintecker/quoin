@@ -17,7 +17,14 @@ final class LibraryModel: ObservableObject {
     private var accessedURL: URL?
 
     init() {
-        restoreBookmark()
+        // `-QuoinLibraryPath /path` (launch argument → UserDefaults) bypasses
+        // the folder picker — used by UI tests/screenshot automation and
+        // handy for local development.
+        if let path = UserDefaults.standard.string(forKey: "QuoinLibraryPath") {
+            adopt(rootURL: URL(fileURLWithPath: path, isDirectory: true))
+        } else {
+            restoreBookmark()
+        }
     }
 
     deinit {
