@@ -292,15 +292,27 @@ public struct AttributedRenderer {
     }
 
     private func renderMermaidFallback(source: String) -> NSAttributedString {
-        // Styled-source fallback until QuoinDiagram lands (M2b). The run is
-        // tagged so the diagram engine can replace it in place.
+        // Native rendering for supported diagram types (flowchart, sequence,
+        // pie); everything else keeps the styled-source fallback.
+        if let native = DiagramRenderer.attachmentString(source: source, theme: theme) {
+            let output = NSMutableAttributedString(attributedString: native)
+            let style = paragraphStyle()
+            style.paragraphSpacingBefore = theme.paragraphSpacing
+            style.paragraphSpacing = theme.paragraphSpacing
+            output.addAttributes([
+                .paragraphStyle: style,
+                QuoinAttribute.diagramSource: source,
+            ], range: NSRange(location: 0, length: output.length))
+            return output
+        }
+
         let output = NSMutableAttributedString(attributedString: renderCodeBlock(language: "mermaid", code: source))
         output.addAttribute(QuoinAttribute.diagramSource, value: source, range: NSRange(location: 0, length: output.length))
 
         var caption = bodyAttributes()
         caption[.font] = theme.captionFont()
         caption[.foregroundColor] = theme.secondaryTextColor
-        output.append(NSAttributedString(string: "\nmermaid · native diagram rendering coming in a future update", attributes: caption))
+        output.append(NSAttributedString(string: "\nmermaid · this diagram type isn't natively rendered yet", attributes: caption))
         return output
     }
 
