@@ -5,6 +5,9 @@ on:
     branches: ["main", "claude/**"]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     name: swift test (macOS)
@@ -64,3 +67,25 @@ jobs:
           name: screenshots
           path: /tmp/quoin-shots
           if-no-files-found: ignore
+
+      # Also publish to a branch: artifact downloads go through Azure blob
+      # storage, which restricted environments can't always reach; a git
+      # branch is fetchable anywhere the repo is.
+      - name: Publish screenshots branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! ls /tmp/quoin-shots/*.png >/dev/null 2>&1; then
+            echo "no screenshots to publish"; exit 0
+          fi
+          dir=$(mktemp -d)
+          cd "$dir"
+          git init -q -b ci-screenshots
+          cp /tmp/quoin-shots/*.png .
+          git add .
+          git -c user.name="quoin-ci" -c user.email="ci@quoin.invalid" \
+            commit -q -m "Screenshots from $GITHUB_SHA"
+          git push -q --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            ci-screenshots
