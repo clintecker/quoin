@@ -17,7 +17,7 @@ final class ReaderModel: ObservableObject {
     @Published private(set) var caretInActiveBlock: Int?
     @Published private(set) var caretGeneration = 0
 
-    private var document: QuoinDocument = .empty
+    private(set) var document: QuoinDocument = .empty
     private var session: DocumentSession?
     private var snapshotTask: Task<Void, Never>?
     private var renderer = AttributedRenderer()

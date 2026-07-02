@@ -10,6 +10,7 @@ struct QuoinApp: App {
         WindowGroup {
             MainWindow()
         }
+        .defaultSize(width: 1180, height: 760) // handoff: default ~1180×760pt
         .commands {
             // Save is automatic (autosave-in-place); undo lives in the
             // document session, wired via window-local shortcuts.

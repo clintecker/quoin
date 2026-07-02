@@ -234,6 +234,9 @@ public struct AttributedRenderer {
         attributes[.backgroundColor] = theme.inlineCodeFill
         let style = paragraphStyle()
         style.lineHeightMultiple = 1.4
+        // One visual chip: no spacing between the YAML lines.
+        style.paragraphSpacing = 0
+        style.paragraphSpacingBefore = 0
         style.firstLineHeadIndent = 8
         style.headIndent = 8
         style.tailIndent = -8

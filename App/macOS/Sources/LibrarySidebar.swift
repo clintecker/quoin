@@ -23,7 +23,7 @@ struct LibrarySidebar: View {
 
             Divider()
             HStack {
-                Text("\(library.documentCount) documents")
+                Text(library.documentCount == 1 ? "1 document" : "\(library.documentCount) documents")
                 Spacer()
             }
             .font(.system(size: 10.5))

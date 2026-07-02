@@ -15,6 +15,7 @@ struct ReaderScreen: View {
     private let theme = Theme()
 
     @State private var isOutlineVisible = true
+    @State private var isExportVisible = false
     @State private var isFindVisible = false
     @State private var searchQuery = ""
     @State private var activeMatch = 0
@@ -69,6 +70,13 @@ struct ReaderScreen: View {
                 .help("Show or hide the outline (⌥⌘0)")
             }
         }
+        .sheet(isPresented: $isExportVisible) {
+            ExportSheet(
+                documentName: fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled",
+                document: model.document,
+                isPresented: $isExportVisible
+            )
+        }
         .navigationTitle(fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled")
         .onAppear { model.start(fileURL: fileURL, initialText: initialText) }
         .onDisappear { model.stop() }
@@ -107,6 +115,8 @@ struct ReaderScreen: View {
                 .keyboardShortcut("z", modifiers: .command)
             Button("") { model.redo() }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
+            Button("") { isExportVisible = true }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
         }
         .opacity(0)
         .accessibilityHidden(true)
