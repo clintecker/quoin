@@ -125,7 +125,7 @@ final class ReaderModel: ObservableObject {
     func undo() {
         guard let session else { return }
         Task {
-            if let doc = try? await session.undo(), let doc {
+            if let doc = try? await session.undo() {
                 self.restoreCaret(in: doc, atUTF8Offset: nil)
             }
         }
@@ -134,7 +134,7 @@ final class ReaderModel: ObservableObject {
     func redo() {
         guard let session else { return }
         Task {
-            if let doc = try? await session.redo(), let doc {
+            if let doc = try? await session.redo() {
                 self.restoreCaret(in: doc, atUTF8Offset: nil)
             }
         }
