@@ -65,8 +65,18 @@ final class EditMappingTests: XCTestCase {
 
     func testRangeConversion() {
         let text = "aé🎉z"
-        let range = EditMapping.utf8Range(inText: text, utf16Range: 1..<3)
-        XCTAssertEqual(range, ByteRange(offset: 1, length: 2)) // covers é
+        // 1..<2 covers é exactly (2 UTF-8 bytes).
+        XCTAssertEqual(
+            EditMapping.utf8Range(inText: text, utf16Range: 1..<2),
+            ByteRange(offset: 1, length: 2)
+        )
+        // 1..<3 would split the emoji's surrogate pair — refused.
+        XCTAssertNil(EditMapping.utf8Range(inText: text, utf16Range: 1..<3))
+        // 1..<4 covers é + the whole emoji (2 + 4 UTF-8 bytes).
+        XCTAssertEqual(
+            EditMapping.utf8Range(inText: text, utf16Range: 1..<4),
+            ByteRange(offset: 1, length: 6)
+        )
     }
 
     func testOutOfBounds() {
