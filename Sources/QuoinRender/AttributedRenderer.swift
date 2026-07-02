@@ -117,18 +117,10 @@ public struct AttributedRenderer {
     }
 
     /// The active block's raw markdown, styled for in-place editing:
-    /// body-size text with delimiters visible, on a faint tint so the
-    /// revealed region reads as "open".
+    /// content approximates its rendered look, delimiters stay visible at
+    /// 35% ink mono (syntax reveal), and the character mapping stays 1:1.
     private func renderEditableSource(_ slice: String) -> NSAttributedString {
-        var attributes = bodyAttributes()
-        attributes[.font] = theme.bodyFont()
-        attributes[.foregroundColor] = theme.ink
-        attributes[.backgroundColor] = theme.accent.withAlphaComponent(0.05)
-        attributes[QuoinAttribute.editableSource] = NSNumber(value: true)
-        let style = paragraphStyle()
-        style.lineHeightMultiple = 1.5
-        attributes[.paragraphStyle] = style
-        return NSAttributedString(string: slice, attributes: attributes)
+        MarkdownSourceStyler(theme: theme).style(slice)
     }
 
     // MARK: - Blocks

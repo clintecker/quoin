@@ -29,8 +29,15 @@ struct MainWindow: View {
                 }
                 if let activeTab {
                     // Keyed by URL: each document gets its own model/session.
-                    ReaderScreen(fileURL: activeTab, initialText: "")
-                        .id(activeTab)
+                    ReaderScreen(fileURL: activeTab, initialText: "", onFileRenamed: { newURL in
+                        if let index = openTabs.firstIndex(of: activeTab) {
+                            openTabs[index] = newURL
+                        }
+                        self.activeTab = newURL
+                        sidebarSelection = newURL
+                        library.rescan()
+                    })
+                    .id(activeTab)
                 } else {
                     emptyState
                 }

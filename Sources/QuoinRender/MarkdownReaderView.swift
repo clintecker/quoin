@@ -3,6 +3,11 @@ import AppKit
 import SwiftUI
 import QuoinCore
 
+/// Format commands the window can send to the editor's selection.
+public enum FormatCommand: Equatable, Sendable {
+    case bold, italic, highlight, link
+}
+
 /// The reading surface: a TextKit 2 `NSTextView` wrapped for SwiftUI.
 ///
 /// TextKit 2 does viewport-based layout — only visible content is laid out —
@@ -31,14 +36,21 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
     /// A keystroke inside the active block's revealed source. The range is
     /// relative to the active block's source slice (UTF-8 bytes); the app
-    /// converts to an absolute `SourceEdit` and routes it through the session.
-    public let onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String) -> Void)?
+    /// converts to an absolute `SourceEdit` and routes it through the
+    /// session. `caretDelta` overrides where the caret lands (UTF-8 bytes
+    /// from the range start; nil = end of replacement) — smart pairs use it
+    /// to park the caret between the inserted delimiters.
+    public let onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String, _ caretDelta: Int?) -> Void)?
     /// Caret entered a block (nil = deactivate, Esc).
     public let onActivateBlock: ((BlockID?) -> Void)?
     /// Caret position (UTF-16, relative to the active block's source text)
     /// to restore after a re-render; `caretGeneration` bumps to re-apply.
     public let caretInActiveBlock: Int?
     public let caretGeneration: Int
+    /// Format command to apply to the current selection (⌘B/⌘I/⌘K/⇧⌘H);
+    /// `formatGeneration` bumps to fire.
+    public let formatCommand: FormatCommand?
+    public let formatGeneration: Int
 
     public init(
         rendered: RenderedDocument,
@@ -50,10 +62,12 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onMatchCount: @escaping (Int) -> Void = { _ in },
         anchorResolver: @escaping (String) -> BlockID? = { _ in nil },
         onTopBlockChange: @escaping (BlockID?) -> Void = { _ in },
-        onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String) -> Void)? = nil,
+        onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String, _ caretDelta: Int?) -> Void)? = nil,
         onActivateBlock: ((BlockID?) -> Void)? = nil,
         caretInActiveBlock: Int? = nil,
-        caretGeneration: Int = 0
+        caretGeneration: Int = 0,
+        formatCommand: FormatCommand? = nil,
+        formatGeneration: Int = 0
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -68,6 +82,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.onActivateBlock = onActivateBlock
         self.caretInActiveBlock = caretInActiveBlock
         self.caretGeneration = caretGeneration
+        self.formatCommand = formatCommand
+        self.formatGeneration = formatGeneration
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -160,6 +176,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
         coordinator.applySearch(query: searchQuery, activeOrdinal: activeMatchOrdinal)
 
+        if let formatCommand, formatGeneration != coordinator.appliedFormatGeneration {
+            coordinator.appliedFormatGeneration = formatGeneration
+            coordinator.applyFormat(formatCommand, in: textView)
+        }
+
         if let scrollTarget, scrollTarget != coordinator.lastScrollTarget {
             coordinator.lastScrollTarget = scrollTarget
             if let range = rendered.blockRanges[scrollTarget] {
@@ -179,6 +200,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
         var appliedCaretGeneration: Int = -1
+        var appliedFormatGeneration: Int = 0
         var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
@@ -244,7 +266,29 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 guard let byteRange = EditMapping.utf8Range(inText: sourceText, utf16Range: relRange) else {
                     return false
                 }
-                onEdit(byteRange, replacementString ?? "")
+
+                // Smart pairs: a lone delimiter keystroke may complete to a
+                // pair (caret inside) or type over an existing closer.
+                if affectedCharRange.length == 0,
+                   let replacement = replacementString,
+                   replacement.count == 1,
+                   let character = replacement.first,
+                   let completion = SmartPairs.completion(typing: character, inText: sourceText, caretUTF16: relStart) {
+                    if completion.insert.isEmpty {
+                        // Type-over: rewrite the existing closer with itself,
+                        // which just advances the caret past it.
+                        let overRange = relStart..<(relStart + 1)
+                        guard let overBytes = EditMapping.utf8Range(inText: sourceText, utf16Range: overRange) else { return false }
+                        let existing = (sourceText as NSString).substring(with: NSRange(location: relStart, length: 1))
+                        onEdit(overBytes, existing, existing.utf8.count)
+                    } else {
+                        let caretDelta = EditMapping.utf8Offset(inText: completion.insert, utf16Offset: completion.caretOffset)
+                        onEdit(byteRange, completion.insert, caretDelta)
+                    }
+                    return false
+                }
+
+                onEdit(byteRange, replacementString ?? "", nil)
                 return false
             }
 
@@ -268,6 +312,39 @@ public struct MarkdownReaderView: NSViewRepresentable {
             if id != parent.rendered.activeBlockID {
                 parent.onActivateBlock?(id)
             }
+        }
+
+        /// Applies a format command to the selection inside the active
+        /// block's revealed source.
+        func applyFormat(_ command: FormatCommand, in textView: NSTextView) {
+            guard let onEdit = parent.onEditIntent,
+                  let active = parent.rendered.activeEditableRange,
+                  let sourceText = parent.rendered.activeSourceText
+            else { return }
+            let selection = textView.selectedRange()
+            guard selection.location >= active.location,
+                  selection.location + selection.length <= active.location + active.length
+            else { return }
+
+            let relStart = selection.location - active.location
+            let relRange = relStart..<(relStart + selection.length)
+            guard let byteRange = EditMapping.utf8Range(inText: sourceText, utf16Range: relRange) else { return }
+            let selected = (sourceText as NSString).substring(
+                with: NSRange(location: relStart, length: selection.length)
+            )
+
+            let change: Formatting.Change
+            switch command {
+            case .bold: change = Formatting.toggleWrap(selection: selected, delimiter: "**")
+            case .italic: change = Formatting.toggleWrap(selection: selected, delimiter: "*")
+            case .highlight: change = Formatting.toggleWrap(selection: selected, delimiter: "==")
+            case .link: change = Formatting.makeLink(selection: selected)
+            }
+            let caretDelta = EditMapping.utf8Offset(
+                inText: change.replacement,
+                utf16Offset: change.selectionOffset + change.selectionLength
+            )
+            onEdit(byteRange, change.replacement, caretDelta)
         }
 
         /// Esc closes the revealed block.

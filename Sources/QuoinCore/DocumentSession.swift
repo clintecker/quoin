@@ -15,7 +15,12 @@ public enum SessionError: Error {
 public actor DocumentSession {
 
     public private(set) var document: QuoinDocument
-    public let fileURL: URL?
+    public private(set) var fileURL: URL?
+    /// Set when an external change lands while local edits are unsaved;
+    /// the UI shows a non-blocking merge banner (handoff rule) instead of
+    /// silently replacing.
+    public var onConflict: (@Sendable (String) -> Void)?
+    private var isDirty = false
 
     private var watcher: FileWatcher?
     private var continuations: [UUID: AsyncStream<QuoinDocument>.Continuation] = [:]
@@ -60,6 +65,19 @@ public actor DocumentSession {
         watcher = nil
     }
 
+    public func setConflictHandler(_ handler: @escaping @Sendable (String) -> Void) {
+        onConflict = handler
+    }
+
+    /// Follows a file rename (first-H1-renames-file): future saves and
+    /// watching target the new URL.
+    public func relocate(to url: URL) {
+        let wasWatching = watcher != nil
+        stopWatching()
+        fileURL = url
+        if wasWatching { startWatching() }
+    }
+
     // MARK: - Snapshots
 
     /// A stream of document snapshots, starting with the current one.
@@ -102,7 +120,29 @@ public actor DocumentSession {
             selfWriteHash = nil
             return
         }
+        // Clean → reload silently. Dirty → surface a merge banner instead
+        // of clobbering unsaved local edits. The pending autosave is
+        // cancelled so it can't overwrite the disk version while the user
+        // decides.
+        if isDirty {
+            autosaveTask?.cancel()
+            onConflict?(source)
+            return
+        }
         publish(MarkdownConverter.parse(source))
+    }
+
+    /// Merge-banner resolution: overwrite disk with the local version.
+    public func resolveConflictKeepingMine() {
+        saveNow()
+    }
+
+    /// Merge-banner resolution: adopt the on-disk version, discarding
+    /// unsaved local edits.
+    public func resolveConflictTakingDisk(_ diskSource: String) {
+        isDirty = false
+        autosaveTask?.cancel()
+        publish(MarkdownConverter.parse(diskSource))
     }
 
     /// Applies new source text wholesale (no undo tracking; external inputs).
@@ -153,6 +193,7 @@ public actor DocumentSession {
     /// is atomic and marked self-inflicted so the file watcher stays quiet.
     private func scheduleAutosave() {
         guard fileURL != nil else { return }
+        isDirty = true
         autosaveTask?.cancel()
         autosaveTask = Task { [autosaveDelay] in
             try? await Task.sleep(for: autosaveDelay)
@@ -166,6 +207,7 @@ public actor DocumentSession {
         let source = document.source
         selfWriteHash = SHA256Hex.hash(of: source)
         try? Data(source.utf8).write(to: fileURL, options: .atomic)
+        isDirty = false
     }
 
     /// Toggles a task checkbox and writes the change back to disk,

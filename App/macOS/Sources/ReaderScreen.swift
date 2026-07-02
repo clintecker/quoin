@@ -10,9 +10,13 @@ import QuoinRender
 struct ReaderScreen: View {
     let fileURL: URL?
     let initialText: String
+    var onFileRenamed: (URL) -> Void = { _ in }
 
     @StateObject private var model = ReaderModel()
     private let theme = Theme()
+
+    @State private var formatCommand: FormatCommand?
+    @State private var formatGeneration = 0
 
     @State private var isOutlineVisible = true
     @State private var isExportVisible = false
@@ -29,6 +33,9 @@ struct ReaderScreen: View {
             if isFindVisible {
                 findBar
             }
+            if model.conflictDiskSource != nil {
+                conflictBanner
+            }
             MarkdownReaderView(
                 rendered: model.rendered,
                 theme: theme,
@@ -42,12 +49,14 @@ struct ReaderScreen: View {
                 },
                 anchorResolver: { slug in model.blockID(forSlug: slug) },
                 onTopBlockChange: { top in topBlockID = top },
-                onEditIntent: { range, replacement in
-                    model.applyEdit(relativeRange: range, replacement: replacement)
+                onEditIntent: { range, replacement, caretDelta in
+                    model.applyEdit(relativeRange: range, replacement: replacement, caretDelta: caretDelta)
                 },
                 onActivateBlock: { id in model.activateBlock(id) },
                 caretInActiveBlock: model.caretInActiveBlock,
-                caretGeneration: model.caretGeneration
+                caretGeneration: model.caretGeneration,
+                formatCommand: formatCommand,
+                formatGeneration: formatGeneration
             )
             statusBar
         }
@@ -77,8 +86,11 @@ struct ReaderScreen: View {
                 isPresented: $isExportVisible
             )
         }
-        .navigationTitle(fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled")
-        .onAppear { model.start(fileURL: fileURL, initialText: initialText) }
+        .navigationTitle((model.fileURL ?? fileURL)?.deletingPathExtension().lastPathComponent ?? "Untitled")
+        .onAppear {
+            model.onFileRenamed = onFileRenamed
+            model.start(fileURL: fileURL, initialText: initialText)
+        }
         .onDisappear { model.stop() }
         .background(hiddenShortcuts)
     }
@@ -117,9 +129,43 @@ struct ReaderScreen: View {
                 .keyboardShortcut("z", modifiers: [.command, .shift])
             Button("") { isExportVisible = true }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+            Button("") { fireFormat(.bold) }
+                .keyboardShortcut("b", modifiers: .command)
+            Button("") { fireFormat(.italic) }
+                .keyboardShortcut("i", modifiers: .command)
+            Button("") { fireFormat(.highlight) }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+            Button("") { fireFormat(.link) }
+                .keyboardShortcut("k", modifiers: .command)
         }
         .opacity(0)
         .accessibilityHidden(true)
+    }
+
+    private func fireFormat(_ command: FormatCommand) {
+        formatCommand = command
+        formatGeneration += 1
+    }
+
+    // MARK: - Merge banner (non-blocking, per handoff)
+
+    private var conflictBanner: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("This file changed on disk while you had unsaved edits.")
+                    .font(.system(size: 12))
+                Spacer()
+                Button("Keep Mine") { model.resolveConflictKeepingMine() }
+                Button("Use Disk Version") { model.resolveConflictTakingDisk() }
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.08))
+            Divider()
+        }
     }
 
     // MARK: - Status bar (10.5pt mono, 40% ink, top hairline)

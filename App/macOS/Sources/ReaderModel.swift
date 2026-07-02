@@ -17,15 +17,26 @@ final class ReaderModel: ObservableObject {
     @Published private(set) var caretInActiveBlock: Int?
     @Published private(set) var caretGeneration = 0
 
+    /// Non-nil while an external change conflicts with unsaved local edits;
+    /// holds the on-disk source for "use disk version".
+    @Published private(set) var conflictDiskSource: String?
+    /// The document's current URL; changes when the first H1 renames an
+    /// Untitled file (design rule).
+    @Published private(set) var fileURL: URL?
+
+    var onFileRenamed: ((URL) -> Void)?
+
     private(set) var document: QuoinDocument = .empty
     private var session: DocumentSession?
     private var snapshotTask: Task<Void, Never>?
     private var renderer = AttributedRenderer()
+    private var renameTask: Task<Void, Never>?
 
     private var slugToBlock: [String: BlockID] = [:]
 
     func start(fileURL: URL?, initialText: String) {
         guard session == nil else { return }
+        self.fileURL = fileURL
         let theme = Theme()
         renderer = AttributedRenderer(theme: theme, baseURL: fileURL?.deletingLastPathComponent())
 
@@ -38,12 +49,33 @@ final class ReaderModel: ObservableObject {
         self.session = session
 
         snapshotTask = Task { [weak self] in
+            await session.setConflictHandler { diskSource in
+                Task { @MainActor [weak self] in
+                    self?.conflictDiskSource = diskSource
+                }
+            }
             await session.startWatching()
             let snapshots = await session.snapshots()
             for await document in snapshots {
                 await self?.ingest(document)
             }
         }
+    }
+
+    // MARK: - Merge banner
+
+    func resolveConflictKeepingMine() {
+        conflictDiskSource = nil
+        guard let session else { return }
+        Task { await session.resolveConflictKeepingMine() }
+    }
+
+    func resolveConflictTakingDisk() {
+        guard let session, let diskSource = conflictDiskSource else { return }
+        conflictDiskSource = nil
+        activeBlockID = nil
+        caretInActiveBlock = nil
+        Task { await session.resolveConflictTakingDisk(diskSource) }
     }
 
     func stop() {
@@ -102,8 +134,10 @@ final class ReaderModel: ObservableObject {
     // MARK: - Edits
 
     /// A keystroke from the revealed block: `relativeRange` is UTF-8 bytes
-    /// within the active block's source slice.
-    func applyEdit(relativeRange: ByteRange, replacement: String) {
+    /// within the active block's source slice. `caretDelta` (UTF-8 from the
+    /// edit start) overrides the landing spot for smart pairs and format
+    /// commands.
+    func applyEdit(relativeRange: ByteRange, replacement: String, caretDelta: Int? = nil) {
         guard let session,
               let activeBlockID,
               let block = document.blocks.first(where: { $0.id == activeBlockID })
@@ -113,13 +147,49 @@ final class ReaderModel: ObservableObject {
             offset: block.range.offset + relativeRange.offset,
             length: relativeRange.length
         )
-        let caretUTF8 = absolute.offset + replacement.utf8.count
+        let caretUTF8 = absolute.offset + (caretDelta ?? replacement.utf8.count)
         let edit = SourceEdit(range: absolute, replacement: replacement)
 
         Task {
             guard let newDocument = try? await session.applyEdit(edit) else { return }
             self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8)
+            self.scheduleH1Rename(for: newDocument)
         }
+    }
+
+    // MARK: - First H1 renames Untitled files (debounced, silent suffix)
+
+    private func scheduleH1Rename(for doc: QuoinDocument) {
+        guard let url = fileURL,
+              url.deletingPathExtension().lastPathComponent.hasPrefix("Untitled"),
+              let first = doc.outline.first, first.level == 1
+        else { return }
+        let title = sanitizedFilename(first.title)
+        guard !title.isEmpty, title != url.deletingPathExtension().lastPathComponent else { return }
+
+        renameTask?.cancel()
+        renameTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else { return }
+            await self?.performH1Rename(to: title)
+        }
+    }
+
+    private func performH1Rename(to title: String) async {
+        guard let session, let url = fileURL else { return }
+        await session.saveNow()
+        guard let renamed = try? Library.rename(url, to: title) else { return }
+        await session.relocate(to: renamed)
+        fileURL = renamed
+        onFileRenamed?(renamed)
+    }
+
+    private func sanitizedFilename(_ title: String) -> String {
+        let cleaned = title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(cleaned.prefix(80))
     }
 
     func undo() {
