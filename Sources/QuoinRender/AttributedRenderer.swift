@@ -305,6 +305,23 @@ public struct AttributedRenderer {
     }
 
     private func renderMathBlockFallback(latex: String) -> NSAttributedString {
+        // Display math: natively typeset, centered, 16pt above/below per the
+        // element spec. Unsupported LaTeX keeps the styled-source fallback.
+        if let native = MathImageRenderer.attachmentString(
+            latex: latex, display: true, theme: theme, baseSize: theme.bodySize
+        ) {
+            let output = NSMutableAttributedString(attributedString: native)
+            let style = paragraphStyle()
+            style.alignment = .center
+            style.paragraphSpacingBefore = 16
+            style.paragraphSpacing = 16
+            output.addAttributes([
+                .paragraphStyle: style,
+                QuoinAttribute.mathSource: latex,
+            ], range: NSRange(location: 0, length: output.length))
+            return output
+        }
+
         var attributes = bodyAttributes()
         attributes[.font] = theme.codeBlockFont()
         attributes[.foregroundColor] = theme.secondaryTextColor
@@ -537,8 +554,18 @@ public struct AttributedRenderer {
             return renderImage(source: source, alt: alt, attributes: attributes)
 
         case .math(let latex):
-            // Styled-source fallback until QuoinMath lands (M2a); the run is
-            // tagged for in-place replacement.
+            // Natively typeset inline math, baseline-aligned with the text;
+            // unsupported LaTeX degrades to marked styled source (PRD rule).
+            if let native = MathImageRenderer.attachmentString(
+                latex: latex, display: false, theme: theme, baseSize: theme.bodySize
+            ) {
+                let output = NSMutableAttributedString(attributedString: native)
+                var carried = attributes
+                carried[QuoinAttribute.mathSource] = latex
+                carried.removeValue(forKey: .font)
+                output.addAttributes(carried, range: NSRange(location: 0, length: output.length))
+                return output
+            }
             var attrs = attributes
             attrs[.font] = theme.inlineCodeFont()
             attrs[.foregroundColor] = theme.secondaryTextColor
