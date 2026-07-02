@@ -32,6 +32,14 @@ final class ScreenshotTests: XCTestCase {
             row.click()
             Thread.sleep(forTimeInterval: 2)
             capture(name: "02-document")
+
+            // Scroll to the math/diagram sections for the renderer shots.
+            window.scroll(byDeltaX: 0, deltaY: -700)
+            Thread.sleep(forTimeInterval: 1)
+            capture(name: "03-mid-document")
+            window.scroll(byDeltaX: 0, deltaY: -700)
+            Thread.sleep(forTimeInterval: 1)
+            capture(name: "04-math-and-diagrams")
         }
         app.terminate()
     }
