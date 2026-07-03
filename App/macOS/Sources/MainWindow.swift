@@ -65,6 +65,38 @@ struct MainWindow: View {
                 open(url)
             }
         }
+        .onAppear(perform: applyShotState)
+    }
+
+    /// Screenshot automation: `-QuoinShotOpen name.md` opens a library file
+    /// at launch; `-QuoinShotState quickopen|libsearch` presets window
+    /// chrome. Deterministic state beats synthetic keyboard events on
+    /// headless runners.
+    private func applyShotState() {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: "QuoinShotOpen") != nil
+                || defaults.string(forKey: "QuoinShotState") != nil else { return }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1)) // let the library scan land
+            if let name = defaults.string(forKey: "QuoinShotOpen"), let root = library.rootURL {
+                open(root.appendingPathComponent(name))
+            }
+            switch defaults.string(forKey: "QuoinShotState") {
+            case "quickopen":
+                isQuickOpenVisible = true
+                library.quickOpenQuery = "show"
+                try? await Task.sleep(for: .milliseconds(500))
+                library.runQuickOpen()
+            case "libsearch":
+                isLibrarySearchVisible = true
+                library.librarySearchQuery = "engine"
+                try? await Task.sleep(for: .milliseconds(500))
+                library.runLibrarySearch()
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - Tabs

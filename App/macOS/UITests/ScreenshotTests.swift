@@ -49,82 +49,43 @@ final class ScreenshotTests: XCTestCase {
                 capture(name: "03-native-engines")
             }
 
-            captureChrome(app)
+            // Syntax reveal: click into the document body.
+            let textView = app.textViews.firstMatch
+            if textView.exists {
+                textView.click()
+                Thread.sleep(forTimeInterval: 1.5)
+                capture(name: "07-syntax-reveal")
+            }
         }
         app.terminate()
     }
 
-    /// Walks the window chrome: syntax reveal, find bar, export sheet,
-    /// quick open, library search, stats popover. Each interaction is
-    /// best-effort — a missed element skips its shot rather than failing
-    /// the suite.
-    private func captureChrome(_ app: XCUIApplication) {
-        // Syntax reveal: click into the document body.
-        let textView = app.textViews.firstMatch
-        if textView.exists {
-            textView.click()
-            Thread.sleep(forTimeInterval: 1.5)
-            capture(name: "07-syntax-reveal")
-            app.typeKey(.escape, modifierFlags: [])
-            Thread.sleep(forTimeInterval: 0.5)
-        }
+    /// Chrome states are driven by launch arguments (deterministic) rather
+    /// than synthetic keyboard events (flaky on headless runners): one
+    /// short launch per state.
+    func testCaptureChromeStates() throws {
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
-        // Find bar (⌘F) with live matches. Click the field before typing —
-        // typeText into unfocused UI is the classic synthesis failure.
-        app.typeKey("f", modifierFlags: [.command])
-        Thread.sleep(forTimeInterval: 0.7)
-        let findField = app.textFields.firstMatch
-        if findField.waitForExistence(timeout: 2) {
-            findField.click()
-            findField.typeText("math")
-        }
-        Thread.sleep(forTimeInterval: 1)
-        capture(name: "08-find-bar")
-        app.typeKey(.escape, modifierFlags: [])
-        Thread.sleep(forTimeInterval: 0.5)
+        let states: [(state: String, open: String?, shot: String)] = [
+            ("find", "engines.md", "08-find-bar"),
+            ("export", "engines.md", "09-export-sheet"),
+            ("quickopen", nil, "10-quick-open"),
+            ("libsearch", nil, "11-library-search"),
+        ]
 
-        // Export sheet (⇧⌘E).
-        app.typeKey("e", modifierFlags: [.command, .shift])
-        Thread.sleep(forTimeInterval: 1.2)
-        capture(name: "09-export-sheet")
-        app.typeKey(.escape, modifierFlags: [])
-        Thread.sleep(forTimeInterval: 0.7)
-
-        // Quick open (⇧⌘O) with a query.
-        app.typeKey("o", modifierFlags: [.command, .shift])
-        Thread.sleep(forTimeInterval: 0.7)
-        let quickOpenField = app.textFields.firstMatch
-        if quickOpenField.waitForExistence(timeout: 2) {
-            quickOpenField.click()
-            quickOpenField.typeText("show")
-        }
-        Thread.sleep(forTimeInterval: 1)
-        capture(name: "10-quick-open")
-        app.typeKey(.escape, modifierFlags: [])
-        Thread.sleep(forTimeInterval: 0.5)
-
-        // Library search (⇧⌘F) with full-text hits.
-        app.typeKey("f", modifierFlags: [.command, .shift])
-        Thread.sleep(forTimeInterval: 0.7)
-        let libraryField = app.textFields.firstMatch
-        if libraryField.waitForExistence(timeout: 2) {
-            libraryField.click()
-            libraryField.typeText("engine")
-        }
-        Thread.sleep(forTimeInterval: 1.2)
-        capture(name: "11-library-search")
-        app.typeKey(.escape, modifierFlags: [])
-        Thread.sleep(forTimeInterval: 0.5)
-
-        // Statistics popover from the status bar.
-        let stats = app.staticTexts.matching(
-            NSPredicate(format: "value CONTAINS 'words' OR label CONTAINS 'words'")
-        ).firstMatch
-        if stats.exists {
-            stats.click()
-            Thread.sleep(forTimeInterval: 1)
-            capture(name: "12-stats-popover")
-            app.typeKey(.escape, modifierFlags: [])
+        for entry in states {
+            let app = XCUIApplication()
+            var arguments = ["-QuoinLibraryPath", fixturesPath, "-QuoinShotState", entry.state]
+            if let open = entry.open {
+                arguments += ["-QuoinShotOpen", open]
+            }
+            app.launchArguments = arguments
+            app.launch()
+            let window = app.windows.firstMatch
+            XCTAssertTrue(window.waitForExistence(timeout: 10))
+            Thread.sleep(forTimeInterval: 3.5)
+            capture(name: entry.shot)
+            app.terminate()
         }
     }
 

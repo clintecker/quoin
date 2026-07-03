@@ -112,6 +112,19 @@ struct ReaderScreen: View {
         .onAppear {
             model.onFileRenamed = onFileRenamed
             model.start(fileURL: fileURL, initialText: initialText)
+            // Screenshot automation presets (see MainWindow.applyShotState).
+            switch UserDefaults.standard.string(forKey: "QuoinShotState") {
+            case "find":
+                isFindVisible = true
+                searchQuery = "math"
+            case "export":
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1))
+                    isExportVisible = true
+                }
+            default:
+                break
+            }
         }
         .onDisappear { model.stop() }
         .background(hiddenShortcuts)
