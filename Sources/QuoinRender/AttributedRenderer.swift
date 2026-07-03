@@ -489,15 +489,16 @@ public struct AttributedRenderer {
             return output
         }
 
-        var attributes = bodyAttributes()
-        attributes[.font] = theme.codeBlockFont()
-        attributes[.foregroundColor] = theme.secondaryTextColor
-        let style = paragraphStyle()
-        style.alignment = .center
-        style.paragraphSpacingBefore = theme.paragraphSpacing
-        attributes[.paragraphStyle] = style
-        attributes[QuoinAttribute.mathSource] = latex
-        return NSAttributedString(string: latex, attributes: attributes)
+        // Unsupported LaTeX: the same tidy source-card treatment as an
+        // unrenderable mermaid diagram — a dark canvas with a caption — so
+        // degradation reads as intentional, never as a broken half-render.
+        let output = NSMutableAttributedString(attributedString: renderCodeBlock(language: "latex", code: latex))
+        output.addAttribute(QuoinAttribute.mathSource, value: latex, range: NSRange(location: 0, length: output.length))
+        var caption = bodyAttributes()
+        caption[.font] = theme.captionFont()
+        caption[.foregroundColor] = theme.secondaryTextColor
+        output.append(NSAttributedString(string: "\nmath · this LaTeX isn't natively typeset yet", attributes: caption))
+        return output
     }
 
     private func renderTable(header: [TableCell], rows: [[TableCell]], alignments: [TableAlignment]) -> NSAttributedString {
