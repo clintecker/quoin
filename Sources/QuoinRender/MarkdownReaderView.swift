@@ -617,14 +617,25 @@ public struct MarkdownReaderView: NSViewRepresentable {
         }
 
         func topVisibleBlockID(in textView: NSTextView) -> BlockID? {
-            guard let storage = textView.textContentStorage?.textStorage, storage.length > 0 else { return nil }
-            // Sample below the jump-to-section pin gap (scrollBlockToTop parks a
-            // heading ~8pt down): a 1pt sample lands on the tail of the previous
-            // block, so the outline highlighted the section above the target.
-            let topPoint = NSPoint(x: textView.visibleRect.minX + 1, y: textView.visibleRect.minY + 12)
-            let index = textView.characterIndexForInsertion(at: topPoint)
-            guard index >= 0, index < storage.length else { return nil }
-            guard let idString = storage.attribute(QuoinAttribute.blockID, at: index, effectiveRange: nil) as? String else { return nil }
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentManager = layoutManager.textContentManager,
+                  let storage = textView.textContentStorage?.textStorage, storage.length > 0
+            else { return nil }
+            // Ask TextKit 2 which layout fragment owns the top of the viewport.
+            // Unlike characterIndexForInsertion, a fragment's frame includes its
+            // 28–32pt heading spacing-before, so a heading pinned (or scrolled)
+            // to the top resolves to the heading itself — not the tail of the
+            // previous block, which was highlighting the section above (−1).
+            let origin = textView.textContainerOrigin
+            let y = textView.visibleRect.minY - origin.y + 1
+            let point = CGPoint(x: 1, y: max(0, y))
+            guard let fragment = layoutManager.textLayoutFragment(for: point) else { return nil }
+            let offset = layoutManager.offset(
+                from: contentManager.documentRange.location, to: fragment.rangeInElement.location
+            )
+            guard offset >= 0, offset < storage.length,
+                  let idString = storage.attribute(QuoinAttribute.blockID, at: offset, effectiveRange: nil) as? String
+            else { return nil }
             return blockRanges.first(where: { $0.key.description == idString })?.key
         }
 
