@@ -156,16 +156,22 @@ public struct MarkdownReaderView: NSViewRepresentable {
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
 
-        if coordinator.renderedGeneration !== rendered.attributed {
+        if coordinator.renderedGeneration !== rendered.attributed,
+           let storage = textView.textContentStorage?.textStorage {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
             coordinator.suppressSelectionCallback = true
-            textView.textContentStorage?.textStorage?.setAttributedString(rendered.attributed)
+            // Splice only the changed span into the live storage rather than
+            // replacing the whole document. TextKit 2 then re-lays-out just
+            // that region, so unchanged content keeps its exact layout and the
+            // scroll offset never jumps.
+            let splicedRange = Coordinator.spliceChanges(in: storage, to: rendered.attributed)
             (textView as? QuoinTextView)?.invalidateDecorations()
             coordinator.renderedGeneration = rendered.attributed
             coordinator.blockRanges = rendered.blockRanges
-            // Only re-anchor scroll when the caret isn't being restored —
-            // caret restoration scrolls itself.
-            if caretInActiveBlock == nil, let anchorID, let range = rendered.blockRanges[anchorID] {
+            // Re-anchor only on a full/large replacement (splice returned nil);
+            // an in-place splice preserves the viewport by construction.
+            if splicedRange == nil, caretInActiveBlock == nil,
+               let anchorID, let range = rendered.blockRanges[anchorID] {
                 textView.scrollRangeToVisible(range)
             }
             coordinator.suppressSelectionCallback = false
@@ -218,6 +224,52 @@ public struct MarkdownReaderView: NSViewRepresentable {
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
         private var lastReportedTopBlock: BlockID?
+
+        /// Replaces only the changed span of `storage`, so a re-render doesn't
+        /// re-lay-out the whole document. Compares the common prefix and suffix
+        /// of the old and new strings and splices the differing middle. Returns
+        /// the new range that was spliced, or nil when it fell back to a full
+        /// replacement (empty storage, or nearly everything changed) — the
+        /// caller re-anchors scroll only in that case.
+        static func spliceChanges(in storage: NSTextStorage, to newAttr: NSAttributedString) -> NSRange? {
+            let old = storage.string as NSString
+            let new = newAttr.string as NSString
+            let oldLen = old.length
+            let newLen = new.length
+            guard oldLen > 0 else {
+                storage.setAttributedString(newAttr)
+                return nil
+            }
+
+            let bound = min(oldLen, newLen)
+            var prefix = 0
+            while prefix < bound, old.character(at: prefix) == new.character(at: prefix) {
+                prefix += 1
+            }
+            var suffix = 0
+            let suffixBound = bound - prefix
+            while suffix < suffixBound,
+                  old.character(at: oldLen - 1 - suffix) == new.character(at: newLen - 1 - suffix) {
+                suffix += 1
+            }
+
+            let oldChanged = NSRange(location: prefix, length: oldLen - prefix - suffix)
+            let newChangedLen = newLen - prefix - suffix
+            // If most of the document changed, a single set is simpler and a
+            // scroll re-anchor is warranted.
+            if oldChanged.length + newChangedLen > (oldLen + newLen) * 3 / 4 {
+                storage.setAttributedString(newAttr)
+                return nil
+            }
+
+            let replacement = newAttr.attributedSubstring(
+                from: NSRange(location: prefix, length: newChangedLen)
+            )
+            storage.beginEditing()
+            storage.replaceCharacters(in: oldChanged, with: replacement)
+            storage.endEditing()
+            return NSRange(location: prefix, length: newChangedLen)
+        }
 
         init(parent: MarkdownReaderView) {
             self.parent = parent
