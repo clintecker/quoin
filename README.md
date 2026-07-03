@@ -16,7 +16,8 @@ chase — the small, precise tool that makes the whole page hold.
   mermaid post-passes, `DocumentSession` actor (edits, undo, autosave,
   conflicts), file watching, block diffing, search, statistics, library
   tree + quick open, the QuoinMath LaTeX parser, the Mermaid parser and
-  layout engines, TXT/MD/HTML exporters.
+  layout engines (flowchart, sequence, pie, state, class, ER),
+  TXT/MD/HTML exporters.
 - `Sources/QuoinRender` — AST → attributed strings, TextKit 2 reader/editor
   views for macOS and iOS, the native math typesetter and diagram drawing,
   PDF/RTF export, themes (Apple platforms, `#if canImport` guarded).
