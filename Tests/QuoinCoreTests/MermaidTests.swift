@@ -149,6 +149,21 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertFalse(layout.arrows[1].isSelfMessage)
     }
 
+    func testSelfMessageLabelOnLastLifelineWidensCanvas() {
+        guard case .sequence(let seq)? = MermaidParser.parse("""
+        sequenceDiagram
+            A->>B: ask
+            B->>B: a fairly long self-message label
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(seq, measure: measure)
+        let loop = layout.arrows[1]
+        XCTAssertTrue(loop.isSelfMessage)
+        // The label draws starting 8pt right of the loop; the canvas must
+        // contain it, not clip it at the participant-derived width.
+        let labelRight = loop.toX + 8 + measure(loop.text, 10.5).width
+        XCTAssertGreaterThanOrEqual(layout.size.width, labelRight)
+    }
+
     func testPieAnglesSumToFullCircle() {
         guard case .pie(let pie)? = MermaidParser.parse("pie\n \"A\" : 1\n \"B\" : 3") else {
             return XCTFail("parse failed")

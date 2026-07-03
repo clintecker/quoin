@@ -285,8 +285,15 @@ public enum DiagramLayoutEngine {
         }
 
         let bottom = arrowsTop + CGFloat(max(diagram.messages.count, 1)) * rowHeight
+        // Self-message labels sit to the right of the loop; widen the canvas
+        // so a self-message on the last lifeline doesn't clip its label.
+        var width = x - 24 + margin
+        for arrow in arrows where arrow.isSelfMessage && !arrow.text.isEmpty {
+            let labelRight = arrow.toX + 8 + measure(arrow.text, labelFontSize).width
+            width = max(width, labelRight + margin)
+        }
         return SequenceLayout(
-            size: CGSize(width: x - 24 + margin, height: bottom + margin),
+            size: CGSize(width: width, height: bottom + margin),
             heads: heads,
             lifelineBottom: bottom,
             arrows: arrows
