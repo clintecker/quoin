@@ -33,6 +33,9 @@ final class ReaderModel: ObservableObject {
     private var renameTask: Task<Void, Never>?
 
     private var slugToBlock: [String: BlockID] = [:]
+    /// Per-block rendered fragments reused across re-renders so a keystroke
+    /// only rebuilds the block that changed (see AttributedRenderer.render).
+    private var fragmentCache: [BlockID: NSAttributedString] = [:]
 
     func start(fileURL: URL?, initialText: String) {
         guard session == nil else { return }
@@ -125,7 +128,7 @@ final class ReaderModel: ObservableObject {
     }
 
     private func rerender() {
-        rendered = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock)
+        rendered = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
         outline = document.outline
         stats = document.stats
         slugToBlock = Dictionary(

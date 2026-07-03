@@ -6,6 +6,55 @@ and Clint's direct feedback. Ordered by "does the app feel broken" first, then
 polish, then coverage. Each item lists the symptom, the suspected cause, the
 approach, and rough size (S/M/L).
 
+## North star: speed, and never surprising the reader
+
+Every change below is measured against these, not just correctness:
+
+- **Time to first text.** Opening a document shows text fast; layout is
+  viewport-lazy (TextKit 2 already does this), so the only O(n) cost is building
+  the attributed string — keep that cheap and, for very large docs, chunked.
+- **Cheap reflows.** A keystroke re-projects and re-lays-out only the block(s)
+  that changed, never the whole document. Target: keystroke→paint within one
+  frame (~16 ms) for typical docs.
+- **Minimal repaint.** Decoration redraws invalidate only the dirty rect, not the
+  whole view.
+- **No viewport jumps.** Unchanged content keeps its exact layout and scroll
+  offset across edits and reveals; the caret stays where the user put it.
+- **No confusion.** Rendered↔source transitions are local and predictable; a
+  click never teleports the caret or reflows unrelated content.
+
+### The one architectural change that unlocks all of them: incremental render
+
+Today `ReaderModel.rerender()` rebuilds the entire `NSAttributedString` and
+`updateNSView` calls `setAttributedString` — a full re-layout on every keystroke.
+That is the root cause of slow reflows *and* viewport jumps on big docs.
+
+**Plan (foundational, do first):**
+1. `AttributedRenderer` caches a per-block rendered fragment keyed by `BlockID`
+   (+ a small key for separator context). `BlockID` is content-hash-stable, so an
+   unchanged block reuses its fragment for free.
+2. On a new snapshot, `BlockDiff.between(old,new)` (already exists) says which
+   blocks are inserted/removed/unchanged. Rebuild only changed fragments.
+3. Splice into the live `NSTextStorage` with `replaceCharacters(in:with:)` inside
+   one `beginEditing/endEditing` transaction, covering only the changed character
+   range. TextKit 2 re-lays-out just that region → unchanged fragments keep their
+   layout and the scroll offset is preserved with no re-anchor. `scrollAnchor`
+   (already exists) is the fallback when a change is above the viewport.
+4. Decorations: recompute only for the spliced range; `invalidateDecorations`
+   scopes `setNeedsDisplay` to the affected rect.
+
+This single change makes edits O(changed blocks), removes the whole-doc
+re-layout, and eliminates the caret/scroll jump — serving reflow speed, repaint
+cost, and no-jump at once. Everything in Phase 1–3 is then built on top without
+reintroducing full re-renders.
+
+### Measurement & budgets (CI harness alongside 1.1)
+
+- Instrument parse / render / splice separately; log on the real fixtures.
+- Assert budgets: 1 MB parse < 1 s; single-edit re-render+splice < 16 ms;
+  TTFT for a 70 k-char doc < 150 ms. Snapshot both stress fixtures so diagram
+  and layout regressions can't creep back.
+
 ## Done (recent)
 
 - Long-doc scrolling (NSTextView maxSize).

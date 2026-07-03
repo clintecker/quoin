@@ -68,15 +68,38 @@ public struct AttributedRenderer {
         self.onContentReady = onContentReady
     }
 
+    /// Convenience for callers that don't keep a cache (exporters, tests).
     public func render(
         _ document: QuoinDocument,
         activeBlockID: BlockID? = nil,
         activeCaret: Int? = nil
     ) -> RenderedDocument {
+        var throwaway: [BlockID: NSAttributedString] = [:]
+        return render(document, activeBlockID: activeBlockID, activeCaret: activeCaret, cache: &throwaway)
+    }
+
+    /// A block's rendered fragment is a pure function of the block, so an
+    /// unchanged block (same content-hashed `BlockID`) reuses its cached
+    /// fragment instead of being rebuilt. This turns a keystroke's re-render
+    /// from O(document) into O(changed blocks) — the whole-doc rebuild was the
+    /// dominant per-keystroke cost. TOC is excluded because it reflects the
+    /// document-wide outline, not just its own content.
+    private func isCacheable(_ kind: BlockKind) -> Bool {
+        if case .tableOfContents = kind { return false }
+        return true
+    }
+
+    public func render(
+        _ document: QuoinDocument,
+        activeBlockID: BlockID? = nil,
+        activeCaret: Int? = nil,
+        cache: inout [BlockID: NSAttributedString]
+    ) -> RenderedDocument {
         let output = NSMutableAttributedString()
         var blockRanges: [BlockID: NSRange] = [:]
         var activeEditableRange: NSRange?
         var activeSourceText: String?
+        var newCache: [BlockID: NSAttributedString] = [:]
 
         for (index, block) in document.blocks.enumerated() {
             let start = output.length
@@ -84,13 +107,19 @@ public struct AttributedRenderer {
                let slice = document.source.substring(in: block.range) {
                 // Syntax reveal: the active block shows its literal source,
                 // editable in place. Only the caret's span reveals its
-                // delimiters (handoff span-level rule).
+                // delimiters (handoff span-level rule). Never cached — its
+                // fragment changes as the caret moves.
                 let editable = renderEditableSource(slice, caretOffset: activeCaret)
                 activeEditableRange = NSRange(location: start, length: editable.length)
                 activeSourceText = slice
                 output.append(editable)
+            } else if isCacheable(block.kind), let cached = cache[block.id] {
+                newCache[block.id] = cached
+                output.append(cached)
             } else {
-                output.append(render(block: block, depth: 0, document: document))
+                let fragment = render(block: block, depth: 0, document: document)
+                if isCacheable(block.kind) { newCache[block.id] = fragment }
+                output.append(fragment)
             }
             if index < document.blocks.count - 1 {
                 // Boxed blocks (callouts, code, tables, diagrams, the
@@ -146,6 +175,8 @@ public struct AttributedRenderer {
                 }
             }
         }
+        // Keep only fragments for blocks still present; drops removed blocks.
+        cache = newCache
         return RenderedDocument(
             attributed: output,
             blockRanges: blockRanges,
