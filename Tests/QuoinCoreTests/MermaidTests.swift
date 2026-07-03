@@ -183,6 +183,22 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertTrue(layout.edges.contains { $0.points.count == 4 })
     }
 
+    func testCycleBackEdgeDoesNotPushStateDeeper() {
+        guard case .flowchart(let chart)? = MermaidParser.parse("""
+        stateDiagram-v2
+            [*] --> Idle
+            Idle --> Loading: open
+            Loading --> Idle: retry
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(chart, measure: measure)
+        let idle = layout.nodes.first { $0.id == "Idle" }
+        let loading = layout.nodes.first { $0.id == "Loading" }
+        // The retry back-edge must not push Idle below Loading.
+        XCTAssertNotNil(idle)
+        XCTAssertNotNil(loading)
+        XCTAssertLessThan(idle!.frame.minY, loading!.frame.minY)
+    }
+
     func testStateDiagramMapsToFlowchart() {
         guard case .flowchart(let chart)? = MermaidParser.parse("""
         stateDiagram-v2

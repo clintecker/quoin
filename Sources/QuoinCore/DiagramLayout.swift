@@ -152,13 +152,39 @@ public enum DiagramLayoutEngine {
     public static func layout(_ chart: Flowchart, measure: DiagramTextMeasurer) -> FlowchartLayout {
         let horizontal = chart.direction == .leftRight || chart.direction == .rightLeft
 
-        // 1. Longest-path layering (cycle-safe via relaxation cap).
+        // 1. Longest-path layering. Back edges (cycles — a state machine's
+        // "retry" loop) are excluded so they don't push their target deeper;
+        // they still draw, just against the flow.
+        var adjacency: [String: [Int]] = [:]
+        for (index, edge) in chart.edges.enumerated() {
+            adjacency[edge.from, default: []].append(index)
+        }
+        var backEdges = Set<Int>()
+        var visited = Set<String>()
+        var onStack = Set<String>()
+        func markBackEdges(from id: String) {
+            visited.insert(id)
+            onStack.insert(id)
+            for index in adjacency[id] ?? [] {
+                let target = chart.edges[index].to
+                if onStack.contains(target) {
+                    backEdges.insert(index)
+                } else if !visited.contains(target) {
+                    markBackEdges(from: target)
+                }
+            }
+            onStack.remove(id)
+        }
+        for node in chart.nodes where !visited.contains(node.id) {
+            markBackEdges(from: node.id)
+        }
+
         var layerOf: [String: Int] = [:]
         for node in chart.nodes { layerOf[node.id] = 0 }
         let maxPasses = chart.nodes.count + 1
         for _ in 0..<maxPasses {
             var changed = false
-            for edge in chart.edges {
+            for (index, edge) in chart.edges.enumerated() where !backEdges.contains(index) {
                 guard let from = layerOf[edge.from], let to = layerOf[edge.to] else { continue }
                 if to < from + 1 {
                     layerOf[edge.to] = from + 1
