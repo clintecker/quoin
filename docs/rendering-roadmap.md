@@ -66,6 +66,20 @@ reintroducing full re-renders.
 - Real gaps between adjacent cards; blockquote rule moved into the gutter.
 - Double-click to edit embeds; smart-pair wrap-selection; word-under-caret
   formatting.
+- **1.2** Incremental render + splice (fragment cache, viewport-stable edits);
+  caret lands where clicked instead of jumping to block end.
+- **1.3** Nested cards (code/table/diagram/callout) inside a blockquote keep
+  their own decoration — the quote styling flows around them.
+- **2.1** Class & ER diagrams: shared orthogonal fan-out router
+  (`routeBoxEdges`), relationship markers (▷ ◆ ◇, crow's feet); parser strips
+  Mermaid multiplicity labels.
+- **2.2** State diagrams: first-class recursive `StateDiagram` with composite
+  containers, choice diamonds, fork/join bars, per-scope `[*]` terminals;
+  `layeredPlacement` gained DFS back-edge detection for cyclic machines.
+- **3.2** Math environments: `\begin{matrix|pmatrix|…|cases|aligned|align|
+  alignedat}` grid layout; `\[…\]` / `\(…\)` delimiters recognised.
+- Graceful fallback: unsupported math blocks degrade to the same tidy source
+  card as unsupported mermaid.
 
 ## Phase 1 — Interaction correctness (the app must feel reliable)
 
@@ -144,7 +158,20 @@ reintroducing full re-renders.
 - **Graceful fallback style (S):** one consistent "unsupported, shown as source"
   treatment for math/mermaid/extensions so degradation looks intentional.
 
+## Remaining
+
+- **3.1** More native Mermaid types (gantt, gitGraph, mindmap, timeline). Each
+  is parser + layout + renderer; until added they degrade to the tidy source
+  card, so they're "not broken," just not drawn.
+- **3.2 stretch** Math accents (`\vec` `\hat` `\bar` `\overline`), `\hline` /
+  array column rules — would let a few more fixture blocks render natively
+  instead of falling back.
+- **Cross-cutting** CI conformance harness rendering both stress fixtures so
+  these fixes can't regress.
+
 ## Suggested order
 
 1.1 → 1.2 (near-term) → 1.3 → 2.1 → 2.2 → 3.x, with the conformance harness added
-alongside 1.1 so fixes stay fixed.
+alongside 1.1 so fixes stay fixed. **Status: 1.1, 1.2, 1.3, 2.1, 2.2, and 3.2
+are done and verified live on the stress fixtures; 3.1 and the CI harness
+remain.**
