@@ -165,7 +165,16 @@ private struct LibraryRow: View {
 
     var body: some View {
         if node.kind == .folder {
-            DisclosureGroup {
+            DisclosureGroup(isExpanded: Binding(
+                get: { library.expandedFolders.contains(node.url.standardizedFileURL.path) },
+                set: { expanded in
+                    if expanded {
+                        library.expandedFolders.insert(node.url.standardizedFileURL.path)
+                    } else {
+                        library.expandedFolders.remove(node.url.standardizedFileURL.path)
+                    }
+                }
+            )) {
                 ForEach(node.children ?? []) { child in
                     LibraryRow(node: child, onOpen: onOpen, library: library)
                 }
@@ -315,6 +324,8 @@ struct DocumentTabBar: View {
     @Binding var activeTab: URL?
     let onClose: (URL) -> Void
 
+    @State private var hoveredTab: URL?
+
     var body: some View {
         if tabs.count > 1 {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -331,11 +342,14 @@ struct DocumentTabBar: View {
 
     private func tab(_ url: URL) -> some View {
         let isActive = url == activeTab
+        let isHovered = url == hoveredTab
         return HStack(spacing: 6) {
             Text(url.deletingPathExtension().lastPathComponent)
                 .font(.system(size: 12, weight: isActive ? .medium : .regular))
                 .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.5))
                 .lineLimit(1)
+            // Close affordance appears on hover (handoff: the unsaved dot
+            // swaps to ✕ on hover; ✕ stays hidden otherwise).
             Button {
                 onClose(url)
             } label: {
@@ -344,7 +358,8 @@ struct DocumentTabBar: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .opacity(isActive ? 1 : 0.4)
+            .opacity(isHovered ? 1 : 0)
+            .accessibilityLabel("Close tab")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -352,5 +367,8 @@ struct DocumentTabBar: View {
         .background(isActive ? Color(nsColor: .textBackgroundColor) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture { activeTab = url }
+        .onHover { inside in
+            hoveredTab = inside ? url : (hoveredTab == url ? nil : hoveredTab)
+        }
     }
 }

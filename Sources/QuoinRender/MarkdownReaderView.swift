@@ -23,8 +23,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
     public let searchQuery: String
     /// Which match is "current" (⌘G cycling); scrolled into view.
     public let activeMatchOrdinal: Int
-    /// TOC navigation target; changing it scrolls to that block.
+    /// TOC navigation target; `scrollGeneration` bumps to re-apply, so
+    /// clicking the same heading twice still scrolls.
     public let scrollTarget: BlockID?
+    public let scrollGeneration: Int
     public let onTaskToggle: (Int) -> Void
     public let onMatchCount: (Int) -> Void
     /// Resolves an internal `#anchor` link to a block.
@@ -58,6 +60,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         searchQuery: String = "",
         activeMatchOrdinal: Int = 0,
         scrollTarget: BlockID? = nil,
+        scrollGeneration: Int = 0,
         onTaskToggle: @escaping (Int) -> Void = { _ in },
         onMatchCount: @escaping (Int) -> Void = { _ in },
         anchorResolver: @escaping (String) -> BlockID? = { _ in nil },
@@ -74,6 +77,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.searchQuery = searchQuery
         self.activeMatchOrdinal = activeMatchOrdinal
         self.scrollTarget = scrollTarget
+        self.scrollGeneration = scrollGeneration
         self.onTaskToggle = onTaskToggle
         self.onMatchCount = onMatchCount
         self.anchorResolver = anchorResolver
@@ -99,7 +103,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         container.widthTracksTextView = true
         layoutManager.textContainer = container
 
-        let textView = NSTextView(frame: .zero, textContainer: container)
+        let textView = QuoinTextView(frame: .zero, textContainer: container)
         // Editable when editing callbacks are wired; every keystroke is
         // gated through shouldChangeTextIn and routed to the session — the
         // text storage itself is never the source of truth.
@@ -153,6 +157,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
             coordinator.suppressSelectionCallback = true
             textView.textContentStorage?.textStorage?.setAttributedString(rendered.attributed)
+            (textView as? QuoinTextView)?.invalidateDecorations()
             coordinator.renderedGeneration = rendered.attributed
             coordinator.blockRanges = rendered.blockRanges
             // Only re-anchor scroll when the caret isn't being restored —
@@ -186,8 +191,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
             coordinator.applyFormat(formatCommand, in: textView)
         }
 
-        if let scrollTarget, scrollTarget != coordinator.lastScrollTarget {
-            coordinator.lastScrollTarget = scrollTarget
+        if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {
+            coordinator.appliedScrollGeneration = scrollGeneration
             if let range = rendered.blockRanges[scrollTarget] {
                 textView.scrollRangeToVisible(range)
             }
@@ -201,7 +206,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         weak var textView: NSTextView?
         var renderedGeneration: NSAttributedString?
         var blockRanges: [BlockID: NSRange] = [:]
-        var lastScrollTarget: BlockID?
+        var appliedScrollGeneration = 0
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
         var appliedCaretGeneration: Int = -1
@@ -235,6 +240,15 @@ public struct MarkdownReaderView: NSViewRepresentable {
             guard let url = linkURL(from: link) else { return false }
             if let offset = QuoinLink.markerOffset(from: url) {
                 parent.onTaskToggle(offset)
+                return true
+            }
+            if QuoinLink.isCopyURL(url) {
+                if let storage = textView.textContentStorage?.textStorage,
+                   charIndex < storage.length,
+                   let code = storage.attribute(QuoinAttribute.copySource, at: charIndex, effectiveRange: nil) as? String {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(code, forType: .string)
+                }
                 return true
             }
             if let slug = QuoinLink.anchorSlug(from: url) {
@@ -373,6 +387,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 )
             }
             storage.endEditing()
+            // Delimiter fonts flip between 1pt and full size — a reflow —
+            // so block chrome below the caret must redraw in place.
+            (textView as? QuoinTextView)?.invalidateDecorations()
         }
 
         /// Applies a format command to the selection inside the active
@@ -505,6 +522,178 @@ public struct MarkdownReaderView: NSViewRepresentable {
             else { return nil }
             return NSTextRange(location: start, end: end)
         }
+    }
+}
+
+// MARK: - Decorated text view
+
+/// `NSTextView` subclass that draws block decorations — code canvases,
+/// callout boxes, quote rules, diagram frames, chips, table rules — behind
+/// the text. The renderer tags block ranges with `QuoinAttribute
+/// .blockDecoration`; geometry comes from the laid-out fragment frames, so
+/// the shapes track reflow exactly.
+final class QuoinTextView: NSTextView {
+
+    private var decorationRuns: [(range: NSRange, decoration: BlockDecoration)] = []
+    private var runsAreStale = true
+
+    func invalidateDecorations() {
+        runsAreStale = true
+        needsDisplay = true
+        // Second pass once TextKit settles: fragment frames queried during
+        // the first draw can predate a reflow (estimated geometry), which
+        // leaves decorations offset from their text until the next redraw.
+        DispatchQueue.main.async { [weak self] in
+            self?.needsDisplay = true
+        }
+    }
+
+    // Any live layout change (viewport re-layout after estimates resolve)
+    // must redraw decorations, or boxes lag behind their text.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsDisplay = true
+    }
+
+    private func refreshRunsIfNeeded() {
+        guard runsAreStale, let storage = textContentStorage?.textStorage else { return }
+        runsAreStale = false
+        decorationRuns.removeAll()
+        storage.enumerateAttribute(
+            QuoinAttribute.blockDecoration,
+            in: NSRange(location: 0, length: storage.length)
+        ) { value, range, _ in
+            if let decoration = value as? BlockDecoration {
+                decorationRuns.append((range, decoration))
+            }
+        }
+    }
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        refreshRunsIfNeeded()
+        guard !decorationRuns.isEmpty,
+              let layoutManager = textLayoutManager,
+              let contentManager = layoutManager.textContentManager
+        else { return }
+
+        let origin = textContainerOrigin
+        for run in decorationRuns {
+            guard let textRange = textRange(for: run.range, in: contentManager) else { continue }
+
+            var frames: [CGRect] = []
+            var textWidth: CGFloat = 0
+            layoutManager.enumerateTextLayoutFragments(
+                from: textRange.location,
+                options: [.ensuresLayout]
+            ) { fragment in
+                if fragment.rangeInElement.location.compare(textRange.endLocation) != .orderedAscending {
+                    return false
+                }
+                frames.append(fragment.layoutFragmentFrame)
+                for line in fragment.textLineFragments {
+                    textWidth = max(textWidth, line.typographicBounds.width)
+                }
+                return true
+            }
+            guard var union = frames.first else { continue }
+            for frame in frames.dropFirst() { union = union.union(frame) }
+
+            // Full-width chrome spans the text column regardless of how
+            // wide the laid-out lines happen to be.
+            if let container = textContainer {
+                switch run.decoration.kind {
+                case .codeCanvas, .callout, .diagramFrame:
+                    union.origin.x = 0
+                    union.size.width = container.size.width
+                default:
+                    break
+                }
+            }
+
+            let box = union.offsetBy(dx: origin.x, dy: origin.y)
+            guard box.insetBy(dx: -8, dy: -8).intersects(rect) else { continue }
+            draw(
+                run.decoration,
+                box: box,
+                frames: frames.map { $0.offsetBy(dx: origin.x, dy: origin.y) },
+                textWidth: textWidth
+            )
+        }
+    }
+
+    private func draw(_ decoration: BlockDecoration, box: CGRect, frames: [CGRect], textWidth: CGFloat) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+
+        switch decoration.kind {
+        case .codeCanvas(let fill):
+            let rect = box.insetBy(dx: 0, dy: -2)
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: 8, cornerHeight: 8, transform: nil))
+            context.setFillColor(fill.cgColor)
+            context.fillPath()
+
+        case .callout(let color):
+            var rect = box.insetBy(dx: 0, dy: -2)
+            rect.size.height += 4 // clear the last line's descenders
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: 8, cornerHeight: 8, transform: nil))
+            context.setFillColor(color.withAlphaComponent(0.05).cgColor)
+            context.fillPath()
+            context.addPath(CGPath(
+                roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
+                cornerWidth: 7.5, cornerHeight: 7.5, transform: nil
+            ))
+            context.setStrokeColor(color.withAlphaComponent(0.15).cgColor)
+            context.setLineWidth(1)
+            context.strokePath()
+
+        case .quoteRule(let color):
+            let bar = CGRect(x: box.minX + 2, y: box.minY + 3, width: 3, height: box.height - 6)
+            context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil))
+            context.setFillColor(color.cgColor)
+            context.fillPath()
+
+        case .diagramFrame(let color):
+            let rect = box.insetBy(dx: 0, dy: -4)
+            context.addPath(CGPath(
+                roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
+                cornerWidth: 8, cornerHeight: 8, transform: nil
+            ))
+            context.setStrokeColor(color.cgColor)
+            context.setLineWidth(1)
+            context.strokePath()
+
+        case .chip(let fill):
+            let rect = CGRect(
+                x: box.minX,
+                y: box.minY + 1,
+                width: min(textWidth + 16, box.width),
+                height: box.height - 2
+            )
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil))
+            context.setFillColor(fill.cgColor)
+            context.fillPath()
+
+        case .tableRules(let width, let header, let body):
+            let lineWidth = min(width + 24, box.width)
+            for (index, frame) in frames.enumerated() {
+                let y = frame.maxY - (index == 0 ? 0.75 : 0.5)
+                context.setStrokeColor((index == 0 ? header : body).cgColor)
+                context.setLineWidth(index == 0 ? 1.5 : 1)
+                context.move(to: CGPoint(x: frame.minX, y: y))
+                context.addLine(to: CGPoint(x: frame.minX + lineWidth, y: y))
+                context.strokePath()
+            }
+        }
+    }
+
+    private func textRange(for range: NSRange, in contentManager: NSTextContentManager) -> NSTextRange? {
+        let documentStart = contentManager.documentRange.location
+        guard let start = contentManager.location(documentStart, offsetBy: range.location),
+              let end = contentManager.location(start, offsetBy: range.length)
+        else { return nil }
+        return NSTextRange(location: start, end: end)
     }
 }
 #endif

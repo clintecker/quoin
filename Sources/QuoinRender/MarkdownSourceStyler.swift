@@ -124,23 +124,106 @@ struct MarkdownSourceStyler {
 
     private func styleSpans(in output: NSMutableAttributedString, text: NSString, caretOffset: Int?) {
         // Order matters: code spans first (their interiors are then left
-        // alone), then double-char delimiters before their single-char
-        // prefixes.
+        // alone), then bracket constructs, then double-char delimiters
+        // before their single-char prefixes (claimed ranges keep the `*` of
+        // a styled `**` from matching again).
+        var claimed: [NSRange] = []
+
         styleDelimited(in: output, text: text, delimiter: "`", contentAttributes: [
             .font: theme.inlineCodeFont(),
             .backgroundColor: theme.inlineCodeFill,
-        ], excludeCode: false, caretOffset: caretOffset)
+        ], excludeCode: false, caretOffset: caretOffset, claimed: &claimed)
+
+        styleLinks(in: output, text: text, caretOffset: caretOffset, claimed: &claimed)
 
         styleDelimited(in: output, text: text, delimiter: "**", contentAttributes: [
             .font: theme.boldBodyFont(),
-        ], caretOffset: caretOffset)
+        ], caretOffset: caretOffset, claimed: &claimed)
+        styleDelimited(in: output, text: text, delimiter: "~~", contentAttributes: [
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            .foregroundColor: theme.ink.withAlphaComponent(0.45),
+        ], caretOffset: caretOffset, claimed: &claimed)
         styleDelimited(in: output, text: text, delimiter: "==", contentAttributes: [
             .backgroundColor: Theme.Highlight.lime.color,
-        ], caretOffset: caretOffset)
+        ], caretOffset: caretOffset, claimed: &claimed)
+        styleDelimited(in: output, text: text, delimiter: "*", contentAttributes: [
+            .font: italicFont(),
+        ], caretOffset: caretOffset, claimed: &claimed)
+        styleDelimited(in: output, text: text, delimiter: "_", contentAttributes: [
+            .font: italicFont(),
+        ], caretOffset: caretOffset, claimed: &claimed)
         styleDelimited(in: output, text: text, delimiter: "$", contentAttributes: [
             .font: theme.inlineCodeFont(),
             .foregroundColor: theme.accent,
-        ], caretOffset: caretOffset)
+        ], caretOffset: caretOffset, claimed: &claimed)
+    }
+
+    private func italicFont() -> PlatformFont {
+        #if canImport(AppKit)
+        return NSFontManager.shared.convert(theme.bodyFont(), toHaveTrait: .italicFontMask)
+        #else
+        let base = theme.bodyFont()
+        guard let descriptor = base.fontDescriptor.withSymbolicTraits(
+            base.fontDescriptor.symbolicTraits.union(.traitItalic)
+        ) else { return base }
+        return UIFont(descriptor: descriptor, size: base.pointSize)
+        #endif
+    }
+
+    /// Links `[text](url)` and footnote refs `[^n]`: the brackets and URL
+    /// are delimiters (caret-scoped), the link text styles accent+underline.
+    private func styleLinks(
+        in output: NSMutableAttributedString,
+        text: NSString,
+        caretOffset: Int?,
+        claimed: inout [NSRange]
+    ) {
+        let source = text as String
+        // Footnote refs first so `[^1]` isn't half-matched as a link label.
+        if let footnotes = try? NSRegularExpression(pattern: #"\[\^([^\]\n]+)\]"#) {
+            for match in footnotes.matches(in: source, range: NSRange(location: 0, length: text.length)) {
+                let whole = match.range
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= whole.location + whole.length } ?? true
+                output.addAttributes(
+                    caretInSpan ? delimiterAttributes : hiddenDelimiterAttributes,
+                    range: whole
+                )
+                if caretInSpan {
+                    output.addAttribute(.foregroundColor, value: theme.accent, range: whole)
+                } else {
+                    // Collapsed: show just the index as the superscript marker.
+                    output.addAttributes([
+                        .font: PlatformFont.systemFont(ofSize: theme.bodySize * 0.75),
+                        .foregroundColor: theme.accent,
+                        .baselineOffset: theme.bodySize * 0.33,
+                    ], range: match.range(at: 1))
+                }
+                claimed.append(whole)
+            }
+        }
+
+        if let links = try? NSRegularExpression(pattern: #"\[([^\]\n]*)\]\(([^)\n]*)\)"#) {
+            for match in links.matches(in: source, range: NSRange(location: 0, length: text.length)) {
+                let whole = match.range
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                let label = match.range(at: 1)
+                let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= whole.location + whole.length } ?? true
+                let marks = caretInSpan ? delimiterAttributes : hiddenDelimiterAttributes
+                // Brackets + (url) are delimiters; the label keeps link styling.
+                output.addAttributes(marks, range: NSRange(location: whole.location, length: label.location - whole.location))
+                output.addAttributes(marks, range: NSRange(
+                    location: label.location + label.length,
+                    length: whole.location + whole.length - label.location - label.length
+                ))
+                output.addAttributes([
+                    .foregroundColor: theme.accent,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .underlineColor: theme.accent.withAlphaComponent(0.35),
+                ], range: label)
+                claimed.append(whole)
+            }
+        }
     }
 
     /// Finds `delimiter…delimiter` pairs on a single line and styles the
@@ -154,20 +237,37 @@ struct MarkdownSourceStyler {
         delimiter: String,
         contentAttributes: [NSAttributedString.Key: Any],
         excludeCode: Bool = true,
-        caretOffset: Int?
+        caretOffset: Int?,
+        claimed: inout [NSRange]
     ) {
         let delimiterLength = delimiter.utf16.count
         var search = NSRange(location: 0, length: text.length)
 
+        func isClaimed(_ range: NSRange) -> Bool {
+            claimed.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+
         while search.length > delimiterLength {
             let open = text.range(of: delimiter, options: [], range: search)
             guard open.location != NSNotFound else { break }
+            // A delimiter already consumed by an earlier pass (`**` before
+            // `*`, link URLs) doesn't open a new span.
+            if isClaimed(open) {
+                let next = open.location + delimiterLength
+                search = NSRange(location: next, length: text.length - next)
+                continue
+            }
             let afterOpen = NSRange(
                 location: open.location + delimiterLength,
                 length: text.length - open.location - delimiterLength
             )
             guard afterOpen.length > 0 else { break }
-            let close = text.range(of: delimiter, options: [], range: afterOpen)
+            var close = text.range(of: delimiter, options: [], range: afterOpen)
+            while close.location != NSNotFound, isClaimed(close) {
+                let next = close.location + delimiterLength
+                guard next < text.length else { close = NSRange(location: NSNotFound, length: 0); break }
+                close = text.range(of: delimiter, options: [], range: NSRange(location: next, length: text.length - next))
+            }
             guard close.location != NSNotFound else { break }
 
             let contentRange = NSRange(
@@ -184,6 +284,8 @@ struct MarkdownSourceStyler {
                 output.addAttributes(marks, range: open)
                 output.addAttributes(marks, range: NSRange(location: close.location, length: delimiterLength))
                 output.addAttributes(contentAttributes, range: contentRange)
+                claimed.append(open)
+                claimed.append(NSRange(location: close.location, length: delimiterLength))
             }
 
             let next = close.location + delimiterLength

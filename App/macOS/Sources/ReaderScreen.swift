@@ -26,6 +26,7 @@ struct ReaderScreen: View {
     @State private var activeMatch = 0
     @State private var matchCount = 0
     @State private var scrollTarget: BlockID?
+    @State private var scrollGeneration = 0
     @State private var topBlockID: BlockID?
     @FocusState private var findFieldFocused: Bool
 
@@ -37,12 +38,14 @@ struct ReaderScreen: View {
             if model.conflictDiskSource != nil {
                 conflictBanner
             }
+            ZStack(alignment: .topTrailing) {
             MarkdownReaderView(
                 rendered: model.rendered,
                 theme: theme,
                 searchQuery: isFindVisible ? searchQuery : "",
                 activeMatchOrdinal: activeMatch,
                 scrollTarget: scrollTarget,
+                scrollGeneration: scrollGeneration,
                 onTaskToggle: { offset in model.toggleTask(markerOffset: offset) },
                 onMatchCount: { count in
                     matchCount = count
@@ -80,6 +83,12 @@ struct ReaderScreen: View {
                 }
                 return handled
             }
+            // Format pill (handoff: B/I/U, radius 14, hairline border,
+            // floats over the content at the top of the editor).
+            formatPill
+                .padding(.top, 10)
+                .padding(.trailing, 16)
+            }
             statusBar
         }
         .inspector(isPresented: $isOutlineVisible) {
@@ -88,6 +97,7 @@ struct ReaderScreen: View {
                 currentSectionID: currentSection?.id
             ) { headingID in
                 scrollTarget = headingID
+                scrollGeneration += 1
             }
             .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
         }
@@ -127,7 +137,50 @@ struct ReaderScreen: View {
             }
         }
         .onDisappear { model.stop() }
+        // ⌥⌘0 / View ▸ Show/Hide Outline (menu command, handoff keyboard map).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleOutlineNotification)) { _ in
+            isOutlineVisible.toggle()
+        }
         .background(hiddenShortcuts)
+    }
+
+    // MARK: - Format pill (B/I/U + link, floats over the editor)
+
+    private var formatPill: some View {
+        HStack(spacing: 2) {
+            formatPillButton("bold", command: .bold, help: "Bold (⌘B)")
+            formatPillButton("italic", command: .italic, help: "Italic (⌘I)")
+            formatPillButton("highlighter", command: .highlight, help: "Highlight (⇧⌘H)")
+            Divider()
+                .frame(height: 14)
+                .padding(.horizontal, 2)
+            formatPillButton("link", command: .link, help: "Link (⌘K)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+    }
+
+    private func formatPillButton(_ symbol: String, command: FormatCommand, help: String) -> some View {
+        Button {
+            fireFormat(command)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 
     /// The heading governing the top of the viewport.
@@ -156,8 +209,7 @@ struct ReaderScreen: View {
                 .keyboardShortcut("g", modifiers: .command)
             Button("") { previousMatch() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-            Button("") { isOutlineVisible.toggle() }
-                .keyboardShortcut("0", modifiers: [.command, .option])
+            // ⌘0/⌥⌘0 live in the View menu (QuoinApp.commands).
             Button("") { model.undo() }
                 .keyboardShortcut("z", modifiers: .command)
             Button("") { model.redo() }

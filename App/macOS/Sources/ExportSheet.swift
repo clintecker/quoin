@@ -13,6 +13,25 @@ struct ExportSheet: View {
 
     @State private var selected: ExportFormat = .pdf
     @State private var exportError: String?
+    @State private var includeFootnotes = true
+    @State private var appearance: ExportAppearance = .auto
+    @State private var escapeMonitor: Any?
+
+    /// PDF/print theme override (handoff: options row theme picker).
+    enum ExportAppearance: String, CaseIterable, Identifiable {
+        case auto = "Match System"
+        case light = "Light"
+        case dark = "Dark"
+        var id: String { rawValue }
+
+        var nsAppearance: NSAppearance? {
+            switch self {
+            case .auto: return nil
+            case .light: return NSAppearance(named: .aqua)
+            case .dark: return NSAppearance(named: .darkAqua)
+            }
+        }
+    }
 
     enum ExportFormat: String, CaseIterable, Identifiable {
         case pdf = "PDF"
@@ -66,6 +85,23 @@ struct ExportSheet: View {
                 disabledCard(title: "DOCX", caption: "Later")
             }
 
+            // Options row per handoff §3.
+            HStack(spacing: 16) {
+                Toggle("Include footnotes", isOn: $includeFootnotes)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+                Spacer()
+                Picker("Theme", selection: $appearance) {
+                    ForEach(ExportAppearance.allCases) { choice in
+                        Text(choice.rawValue).tag(choice)
+                    }
+                }
+                .font(.system(size: 12))
+                .fixedSize()
+                .disabled(selected != .pdf)
+                .help("PDF color theme")
+            }
+
             if let exportError {
                 Text(exportError)
                     .font(.system(size: 11))
@@ -83,6 +119,23 @@ struct ExportSheet: View {
         }
         .padding(20)
         .frame(width: 440)
+        // Escape reliably cancels the sheet even when focus sits in the
+        // format grid (cancelAction alone doesn't fire from every responder).
+        .onAppear {
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                if event.keyCode == 53 { // Escape
+                    isPresented = false
+                    return nil
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let escapeMonitor {
+                NSEvent.removeMonitor(escapeMonitor)
+                self.escapeMonitor = nil
+            }
+        }
     }
 
     private func formatCard(_ format: ExportFormat) -> some View {
@@ -134,19 +187,34 @@ struct ExportSheet: View {
         panel.nameFieldStringValue = "\(documentName).\(selected.fileExtension)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        // Include-footnotes off: export a copy without the gathered
+        // footnote definitions (inline refs remain, like a print excerpt).
+        let exported = includeFootnotes ? document : QuoinDocument(
+            source: document.source,
+            blocks: document.blocks,
+            outline: document.outline,
+            footnotes: [],
+            stats: document.stats,
+            sourceHash: document.sourceHash
+        )
+
         do {
             let data: Data
             switch selected {
             case .pdf:
-                data = try DocumentExporters.pdf(from: document, title: documentName)
+                data = try DocumentExporters.pdf(
+                    from: exported,
+                    title: documentName,
+                    forcedAppearance: appearance.nsAppearance
+                )
             case .html:
-                data = Data(HTMLExporter.export(document, title: documentName).utf8)
+                data = Data(HTMLExporter.export(exported, title: documentName).utf8)
             case .markdown:
-                data = Data(MarkdownExporter.export(document).utf8)
+                data = Data(MarkdownExporter.export(exported).utf8)
             case .rtf:
-                data = try DocumentExporters.rtf(from: document)
+                data = try DocumentExporters.rtf(from: exported)
             case .txt:
-                data = Data(PlainTextExporter.export(document).utf8)
+                data = Data(PlainTextExporter.export(exported).utf8)
             }
             try data.write(to: url)
             isPresented = false

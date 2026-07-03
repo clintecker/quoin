@@ -19,6 +19,12 @@ public enum QuoinAttribute {
     /// Value: `NSNumber(true)` — marks the active block's editable source
     /// run in the editor (the syntax-reveal region).
     public static let editableSource = NSAttributedString.Key("quoin.editableSource")
+    /// Value: `BlockDecoration` — block-level chrome (code canvas, callout
+    /// box, quote rule…) drawn behind the text by the reader view.
+    public static let blockDecoration = NSAttributedString.Key("quoin.blockDecoration")
+    /// Value: `String` — text placed on the pasteboard when the run's
+    /// copy link is clicked (code block header buttons).
+    public static let copySource = NSAttributedString.Key("quoin.copySource")
 }
 
 /// Custom URL schemes used for in-document interaction via the text view's
@@ -26,6 +32,12 @@ public enum QuoinAttribute {
 public enum QuoinLink {
     public static let taskScheme = "quoin-task"
     public static let anchorScheme = "quoin-anchor"
+    public static let copyScheme = "quoin-copy"
+
+    /// quoin-copy://block — clicking copies the run's `copySource` text.
+    public static var copyURL: URL? { URL(string: "\(copyScheme)://block") }
+
+    public static func isCopyURL(_ url: URL) -> Bool { url.scheme == copyScheme }
 
     /// quoin-task://toggle?offset=N — a clickable checkbox.
     public static func taskURL(markerOffset: Int) -> URL? {

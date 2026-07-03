@@ -16,6 +16,19 @@ struct QuoinApp: App {
             // document session, wired via window-local shortcuts.
             CommandGroup(replacing: .saveItem) {}
             CommandGroup(replacing: .undoRedo) {}
+            // View menu: the handoff's panel toggles (⌘0 sidebar, ⌥⌘0
+            // outline), delivered to the key window via notifications.
+            CommandGroup(before: .sidebar) {
+                Button("Show/Hide Sidebar") {
+                    NotificationCenter.default.post(name: AppDelegate.toggleSidebarNotification, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+                Button("Show/Hide Outline") {
+                    NotificationCenter.default.post(name: AppDelegate.toggleOutlineNotification, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+                Divider()
+            }
         }
     }
 }
@@ -23,8 +36,13 @@ struct QuoinApp: App {
 /// Handles Finder "Open With Quoin" for individual files.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let openDocumentNotification = Notification.Name("quoin.openDocument")
+    static let toggleSidebarNotification = Notification.Name("quoin.toggleSidebar")
+    static let toggleOutlineNotification = Notification.Name("quoin.toggleOutline")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Quoin has its own document tabs; the system window-tab items
+        // ("Show Tab Bar" etc.) would only confuse the View menu.
+        NSWindow.allowsAutomaticWindowTabbing = false
         // Screenshot automation: -QuoinForceDarkMode YES pins the app to
         // dark appearance (the AppleInterfaceStyle default doesn't reach
         // SwiftUI apps launched by the UI-test runner).

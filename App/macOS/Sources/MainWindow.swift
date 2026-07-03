@@ -12,9 +12,10 @@ struct MainWindow: View {
     @State private var activeTab: URL?
     @State private var isQuickOpenVisible = false
     @State private var isLibrarySearchVisible = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             if library.hasLibrary {
                 LibrarySidebar(
                     library: library,
@@ -65,6 +66,12 @@ struct MainWindow: View {
                 open(url)
             }
         }
+        // ⌘0 / View ▸ Show/Hide Sidebar (handoff keyboard map).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleSidebarNotification)) { _ in
+            withAnimation {
+                columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+            }
+        }
         .onAppear(perform: applyShotState)
     }
 
@@ -107,6 +114,9 @@ struct MainWindow: View {
         }
         activeTab = url
         sidebarSelection = url
+        // Reveal in the tree: expand ancestor folders so the selection is
+        // visible when the doc was opened via quick open or Finder.
+        library.reveal(url: url)
     }
 
     private func close(_ url: URL) {

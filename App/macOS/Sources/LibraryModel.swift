@@ -17,6 +17,21 @@ final class LibraryModel: ObservableObject {
     /// Persistent library-wide search (⇧⌘F) shown in the sidebar.
     @Published var librarySearchQuery = ""
     @Published private(set) var librarySearchResults: [QuickOpen.Result] = []
+    /// Expanded folders in the tree (standardized paths). `reveal(url:)`
+    /// expands a document's ancestors so opening via quick open or Finder
+    /// shows the selection.
+    @Published var expandedFolders: Set<String> = []
+
+    /// Expand every ancestor folder of `url` up to the library root.
+    func reveal(url: URL) {
+        guard let rootURL else { return }
+        let rootPath = rootURL.standardizedFileURL.path
+        var directory = url.deletingLastPathComponent().standardizedFileURL
+        while directory.path.hasPrefix(rootPath), directory.path != rootPath {
+            expandedFolders.insert(directory.path)
+            directory = directory.deletingLastPathComponent()
+        }
+    }
 
     private var accessedURL: URL?
     private var eventsWatcher: FSEventsWatcher?

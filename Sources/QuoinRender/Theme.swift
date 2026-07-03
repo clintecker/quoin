@@ -2,10 +2,13 @@
 import AppKit
 public typealias PlatformFont = NSFont
 public typealias PlatformColor = NSColor
+public typealias PlatformAppearance = NSAppearance
 #elseif canImport(UIKit)
 import UIKit
 public typealias PlatformFont = UIFont
 public typealias PlatformColor = UIColor
+/// UIKit has no NSAppearance analogue; exports use trait collections there.
+public typealias PlatformAppearance = NSObject
 #endif
 
 #if canImport(AppKit) || canImport(UIKit)
@@ -33,6 +36,12 @@ public struct Theme: Sendable {
         #else
         prefersDark = false
         #endif
+    }
+
+    /// Pinned appearance, for exports that force light or dark output
+    /// regardless of the app's current appearance.
+    public init(prefersDark: Bool) {
+        self.prefersDark = prefersDark
     }
 
     // MARK: - Spacing & metrics (handoff: 4 · 8 · 12 · 16 · 24 · 32)
@@ -185,6 +194,11 @@ public struct Theme: Sendable {
     /// Blockquote rule: 15% ink, 3pt wide.
     public var quoteRule: PlatformColor {
         dynamic(light: rgb(0x000000, alpha: 0.15), dark: rgb(0xFFFFFF, alpha: 0.15))
+    }
+
+    /// Table body-row hairline: 7% ink (header rule uses `quoteRule`, 15%).
+    public var tableRule: PlatformColor {
+        dynamic(light: rgb(0x000000, alpha: 0.07), dark: rgb(0xFFFFFF, alpha: 0.09))
     }
 
     /// Highlight palette (≥4.5:1 with ink.body); dark variants desaturated ~15%.

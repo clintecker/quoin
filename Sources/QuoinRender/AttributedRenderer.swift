@@ -194,19 +194,47 @@ public struct AttributedRenderer {
     }
 
     private func renderCodeBlock(language: String?, code: String) -> NSAttributedString {
-        // Code canvas is #1E2430 in BOTH appearances (handoff rule).
+        // Code canvas is #1E2430 in BOTH appearances (handoff rule). The
+        // canvas itself is a block decoration drawn by the reader view; the
+        // text carries a header row (language chip + copy button) and the
+        // highlighted code, single-spaced.
+        let output = NSMutableAttributedString()
+
+        let headerStyle = paragraphStyle()
+        headerStyle.alignment = .right
+        headerStyle.paragraphSpacingBefore = 8
+        headerStyle.paragraphSpacing = 2
+        headerStyle.firstLineHeadIndent = 12
+        headerStyle.headIndent = 12
+        headerStyle.tailIndent = -12
+        var chip = bodyAttributes()
+        chip[.font] = theme.captionFont()
+        chip[.foregroundColor] = PlatformColor.white.withAlphaComponent(0.45)
+        chip[.paragraphStyle] = headerStyle
+        if let language, !language.isEmpty {
+            output.append(NSAttributedString(string: "\(language)    ", attributes: chip))
+        }
+        var copy = chip
+        copy[QuoinAttribute.copySource] = code
+        if let url = QuoinLink.copyURL {
+            copy[.link] = url
+        }
+        output.append(NSAttributedString(string: "⧉ copy\n", attributes: copy))
+
         var attributes = bodyAttributes()
         attributes[.font] = theme.codeBlockFont()
         attributes[.foregroundColor] = theme.codeText
-        attributes[.backgroundColor] = theme.codeSurface
         let style = paragraphStyle()
         style.lineHeightMultiple = 1.6
         style.firstLineHeadIndent = 12
         style.headIndent = 12
         style.tailIndent = -12
-        style.paragraphSpacingBefore = theme.paragraphSpacing * 0.6
+        // One visual block: code lines are paragraphs but must not inherit
+        // the body's inter-paragraph gap.
+        style.paragraphSpacing = 0
+        style.paragraphSpacingBefore = 0
         attributes[.paragraphStyle] = style
-        let output = NSMutableAttributedString(string: code, attributes: attributes)
+        let body = NSMutableAttributedString(string: code, attributes: attributes)
 
         // Native syntax highlighting: six token colors per the design spec.
         let chars = Array(code)
@@ -216,7 +244,7 @@ public struct AttributedRenderer {
             let prefix = String(chars[0..<token.range.lowerBound]).utf16.count
             let length = String(chars[token.range.lowerBound..<min(token.range.upperBound, chars.count)]).utf16.count
             let nsRange = NSRange(location: prefix, length: length)
-            guard nsRange.location + nsRange.length <= output.length else { continue }
+            guard nsRange.location + nsRange.length <= body.length else { continue }
             let color: PlatformColor
             switch token.kind {
             case .keyword: color = Theme.CodeToken.keyword
@@ -226,28 +254,50 @@ public struct AttributedRenderer {
             case .string: color = Theme.CodeToken.string
             case .number: color = Theme.CodeToken.number
             }
-            output.addAttribute(.foregroundColor, value: color, range: nsRange)
+            body.addAttribute(.foregroundColor, value: color, range: nsRange)
         }
+
+        // Bottom padding inside the canvas: the last code paragraph carries it.
+        let text = body.string as NSString
+        if text.length > 0 {
+            let lastLine = text.lineRange(for: NSRange(location: text.length - 1, length: 0))
+            let padded = style.mutableCopy() as! NSMutableParagraphStyle
+            padded.paragraphSpacing = 8
+            body.addAttribute(.paragraphStyle, value: padded, range: lastLine)
+        }
+        output.append(body)
+
+        output.addAttribute(
+            QuoinAttribute.blockDecoration,
+            value: BlockDecoration(kind: .codeCanvas(fill: theme.codeSurface)),
+            range: NSRange(location: 0, length: output.length)
+        )
         return output
     }
 
     private func renderFrontMatter(yaml: String) -> NSAttributedString {
-        // Compact metadata chip above the H1; click-to-edit arrives with the
-        // editor. Rendered as caption-size key/value lines.
+        // Compact metadata chip above the H1 (spec): the fields collapse to
+        // one truncated caption line; clicking the block reveals the full
+        // YAML source for editing (block activation).
+        let condensed = yaml
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "   ·   ")
         var attributes = bodyAttributes()
         attributes[.font] = theme.captionFont()
         attributes[.foregroundColor] = theme.secondaryTextColor
-        attributes[.backgroundColor] = theme.inlineCodeFill
         let style = paragraphStyle()
         style.lineHeightMultiple = 1.4
-        // One visual chip: no spacing between the YAML lines.
-        style.paragraphSpacing = 0
-        style.paragraphSpacingBefore = 0
+        style.lineBreakMode = .byTruncatingTail
+        style.paragraphSpacing = 4
+        style.paragraphSpacingBefore = 2
         style.firstLineHeadIndent = 8
         style.headIndent = 8
         style.tailIndent = -8
         attributes[.paragraphStyle] = style
-        return NSAttributedString(string: yaml, attributes: attributes)
+        attributes[QuoinAttribute.blockDecoration] = BlockDecoration(kind: .chip(fill: theme.inlineCodeFill))
+        return NSAttributedString(string: condensed, attributes: attributes)
     }
 
     private func renderCallout(kind: CalloutKind, children: [Block], depth: Int, document: QuoinDocument) -> NSAttributedString {
@@ -264,6 +314,10 @@ public struct AttributedRenderer {
         var title = bodyAttributes()
         title[.font] = PlatformFont.systemFont(ofSize: 12.5, weight: .semibold)
         title[.foregroundColor] = semantic
+        let titleStyle = paragraphStyle()
+        titleStyle.paragraphSpacingBefore = 8
+        titleStyle.paragraphSpacing = 4
+        title[.paragraphStyle] = titleStyle
         output.append(NSAttributedString(string: "\(symbol) \(kind.title)\n", attributes: title))
 
         for (index, child) in children.enumerated() {
@@ -272,10 +326,7 @@ public struct AttributedRenderer {
             }
             output.append(render(block: child, depth: depth + 1, document: document))
         }
-        // 4% tint background across the callout (border/radius arrive with
-        // the block decoration pass).
         let full = NSRange(location: 0, length: output.length)
-        output.addAttribute(.backgroundColor, value: semantic.withAlphaComponent(0.06), range: full)
         output.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
             let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? paragraphStyle()
             style.firstLineHeadIndent += 12
@@ -283,6 +334,22 @@ public struct AttributedRenderer {
             style.tailIndent = -12
             output.addAttribute(.paragraphStyle, value: style, range: range)
         }
+        // Bottom padding inside the box: the last paragraph carries it.
+        if output.length > 0 {
+            let text = output.string as NSString
+            let lastLine = text.lineRange(for: NSRange(location: text.length - 1, length: 0))
+            if let style = (output.attribute(.paragraphStyle, at: lastLine.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle {
+                style.paragraphSpacing = 8
+                output.addAttribute(.paragraphStyle, value: style, range: lastLine)
+            }
+        }
+        // Rounded 4% tint + 15% border in the semantic color, drawn as a
+        // block decoration by the reader view.
+        output.addAttribute(
+            QuoinAttribute.blockDecoration,
+            value: BlockDecoration(kind: .callout(color: semantic)),
+            range: full
+        )
         return output
     }
 
@@ -316,6 +383,7 @@ public struct AttributedRenderer {
             output.addAttributes([
                 .paragraphStyle: style,
                 QuoinAttribute.diagramSource: source,
+                QuoinAttribute.blockDecoration: BlockDecoration(kind: .diagramFrame(color: theme.hairline)),
             ], range: NSRange(location: 0, length: output.length))
             return output
         }
@@ -381,17 +449,54 @@ public struct AttributedRenderer {
         measure(header, font: headerFont)
         for row in rows { measure(row, font: bodyFont) }
 
+        // Numeric columns right-align with tabular numerals (element spec);
+        // explicit `---:`/`:-:` markers win, otherwise a column whose body
+        // cells are all numeric right-aligns automatically.
+        func isNumeric(_ text: String) -> Bool {
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return false }
+            return trimmed.allSatisfy { $0.isNumber || "+-.,%$€£ ".contains($0) }
+                && trimmed.contains(where: \.isNumber)
+        }
+        var columnAlignment = [NSTextAlignment](repeating: .left, count: columnCount)
+        var columnIsNumeric = [Bool](repeating: false, count: columnCount)
+        for column in 0..<columnCount {
+            let cells = rows.compactMap { column < $0.count ? $0[column].inlines.plainText : nil }
+            columnIsNumeric[column] = !cells.isEmpty && cells.allSatisfy(isNumeric)
+            switch column < alignments.count ? alignments[column] : TableAlignment.none {
+            case .left: columnAlignment[column] = .left
+            case .center: columnAlignment[column] = .center
+            case .right: columnAlignment[column] = .right
+            case .none: columnAlignment[column] = columnIsNumeric[column] ? .right : .left
+            }
+        }
+
+        // Tab stops at column starts (column 0 needs none); alignment tabs
+        // place centered/right content within each column's span.
         var tabStops: [NSTextTab] = []
-        var x: CGFloat = 0
-        for width in widths {
-            x += width + columnGap
-            tabStops.append(NSTextTab(textAlignment: .left, location: x))
+        var columnStart: CGFloat = 0
+        var totalWidth: CGFloat = 0
+        for column in 0..<columnCount {
+            if column > 0 {
+                switch columnAlignment[column] {
+                case .center:
+                    tabStops.append(NSTextTab(textAlignment: .center, location: columnStart + widths[column] / 2))
+                case .right:
+                    tabStops.append(NSTextTab(textAlignment: .right, location: columnStart + widths[column]))
+                default:
+                    tabStops.append(NSTextTab(textAlignment: .left, location: columnStart))
+                }
+            }
+            totalWidth = columnStart + widths[column]
+            columnStart += widths[column] + columnGap
         }
 
         let style = paragraphStyle()
         style.tabStops = tabStops
+        style.defaultTabInterval = columnGap
         style.lineHeightMultiple = 1.2
-        style.paragraphSpacing = 2
+        style.paragraphSpacing = 5
+        style.paragraphSpacingBefore = 3
 
         func renderRow(_ cells: [TableCell], font: PlatformFont, color: PlatformColor) -> NSAttributedString {
             let row = NSMutableAttributedString()
@@ -400,7 +505,14 @@ public struct AttributedRenderer {
             attributes[.foregroundColor] = color
             attributes[.paragraphStyle] = style
             for (i, cell) in cells.enumerated() {
-                row.append(renderInlines(cell.inlines, base: attributes))
+                var cellAttributes = attributes
+                if columnIsNumeric[min(i, columnCount - 1)] {
+                    cellAttributes[.font] = PlatformFont.monospacedDigitSystemFont(
+                        ofSize: font.pointSize,
+                        weight: font == headerFont ? .semibold : .regular
+                    )
+                }
+                row.append(renderInlines(cell.inlines, base: cellAttributes))
                 if i < cells.count - 1 {
                     row.append(NSAttributedString(string: "\t", attributes: attributes))
                 }
@@ -414,6 +526,16 @@ public struct AttributedRenderer {
             output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
             output.append(renderRow(row, font: bodyFont, color: theme.textColor))
         }
+        // Header 1.5pt rule + body hairlines, drawn by the reader view.
+        output.addAttribute(
+            QuoinAttribute.blockDecoration,
+            value: BlockDecoration(kind: .tableRules(
+                width: totalWidth,
+                header: theme.quoteRule,
+                body: theme.tableRule
+            )),
+            range: NSRange(location: 0, length: output.length)
+        )
         return output
     }
 
@@ -497,13 +619,18 @@ public struct AttributedRenderer {
             style.headIndent += 16
             output.addAttribute(.paragraphStyle, value: style, range: range)
         }
-        // Element spec: pad-left 16, italic, 55% ink. (The 3pt vertical rule
-        // needs custom drawing — arrives with the block decoration pass.)
+        // Element spec: pad-left 16, italic, 55% ink, 3pt rule at the left
+        // edge (drawn as a block decoration by the reader view).
         output.enumerateAttribute(.font, in: full) { value, range, _ in
             let font = value as? PlatformFont ?? theme.bodyFont()
             output.addAttribute(.font, value: italicVariant(of: font), range: range)
         }
         output.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: full)
+        output.addAttribute(
+            QuoinAttribute.blockDecoration,
+            value: BlockDecoration(kind: .quoteRule(color: theme.quoteRule)),
+            range: full
+        )
         return output
     }
 
