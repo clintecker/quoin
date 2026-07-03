@@ -67,7 +67,7 @@ final class MermaidParserTests: XCTestCase {
 
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gantt\n  title Timeline"))
-        XCTAssertNil(MermaidParser.parse("classDiagram\n  A <|-- B"))
+        XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
     }
 }
