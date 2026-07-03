@@ -608,7 +608,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
             let top = fragment.layoutFragmentFrame.minY + origin.y
             if let clip = textView.enclosingScrollView?.contentView {
                 let maxY = max(0, (textView.bounds.height) - clip.bounds.height)
-                let y = min(max(0, top - 8), maxY)
+                // Pin the target fragment's top exactly at the viewport top so
+                // the section sampler (which probes just below the top) reads
+                // this block, not the previous one. A heading's own spacing-
+                // before still supplies the visual breathing room; an 8pt gap
+                // here put the previous block at the very top and made the
+                // outline highlight the section above on a jump.
+                let y = min(max(0, top), maxY)
                 clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
                 textView.enclosingScrollView?.reflectScrolledClipView(clip)
             } else {
