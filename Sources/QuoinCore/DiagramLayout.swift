@@ -81,6 +81,52 @@ public struct PieLayout: Sendable {
     public let legendOrigin: CGPoint
 }
 
+public struct ClassLayout: Sendable {
+    public struct Box: Sendable {
+        public let name: String
+        public let attributes: [String]
+        public let methods: [String]
+        public let frame: CGRect
+        /// Height of the name compartment; member rows follow below.
+        public let nameHeight: CGFloat
+        public let rowHeight: CGFloat
+    }
+
+    public struct Edge: Sendable {
+        public let start: CGPoint      // at the `from` box border
+        public let end: CGPoint        // at the `to` box border, marker here
+        public let kind: ClassDiagram.RelationKind
+        public let label: String?
+    }
+
+    public let size: CGSize
+    public let boxes: [Box]
+    public let edges: [Edge]
+}
+
+public struct ERLayout: Sendable {
+    public struct Box: Sendable {
+        public let name: String
+        public let attributes: [ERDiagram.Attribute]
+        public let frame: CGRect
+        public let nameHeight: CGFloat
+        public let rowHeight: CGFloat
+    }
+
+    public struct Edge: Sendable {
+        public let start: CGPoint
+        public let end: CGPoint
+        public let fromCard: ERDiagram.Cardinality
+        public let toCard: ERDiagram.Cardinality
+        public let label: String
+        public let identifying: Bool
+    }
+
+    public let size: CGSize
+    public let boxes: [Box]
+    public let edges: [Edge]
+}
+
 // MARK: - Engine
 
 public enum DiagramLayoutEngine {
@@ -147,10 +193,16 @@ public enum DiagramLayoutEngine {
             case .circle:
                 let d = max(size.width, size.height)
                 size = CGSize(width: d, height: d)
+            case .stateStart:
+                size = CGSize(width: 14, height: 14)
+            case .stateEnd:
+                size = CGSize(width: 18, height: 18)
             default:
                 break
             }
-            size.width = max(size.width, 56)
+            if node.shape != .stateStart && node.shape != .stateEnd {
+                size.width = max(size.width, 56)
+            }
             sizes[node.id] = size
         }
 
@@ -342,5 +394,208 @@ public enum DiagramLayoutEngine {
                 y: margin + titleHeight + max(0, (radius * 2 - legendHeight) / 2)
             )
         )
+    }
+
+    // MARK: Class
+
+    static let compartmentNameHeight: CGFloat = 26
+    static let compartmentRowHeight: CGFloat = 17
+    static let compartmentPadX: CGFloat = 12
+
+    public static func layout(_ diagram: ClassDiagram, measure: DiagramTextMeasurer) -> ClassLayout {
+        // Layer by the relation graph so hierarchies read top-down: for
+        // inheritance/realization the parsed edge points child → parent;
+        // flip those so parents sit above their children.
+        let layeringEdges: [(String, String)] = diagram.relations.map { relation in
+            switch relation.kind {
+            case .inheritance, .realization: return (relation.to, relation.from)
+            default: return (relation.from, relation.to)
+            }
+        }
+
+        var boxSizes: [String: CGSize] = [:]
+        for cls in diagram.classes {
+            let members = cls.attributes + cls.methods
+            var width = measure(cls.name, nodeFontSize).width + compartmentPadX * 2 + 8
+            for member in members {
+                width = max(width, measure(member, labelFontSize).width + compartmentPadX * 2)
+            }
+            var height = compartmentNameHeight
+            if !cls.attributes.isEmpty { height += 5 + CGFloat(cls.attributes.count) * compartmentRowHeight }
+            if !cls.methods.isEmpty { height += 5 + CGFloat(cls.methods.count) * compartmentRowHeight }
+            if members.isEmpty { height += 6 } // a sliver of empty body
+            boxSizes[cls.name] = CGSize(width: max(width, 96), height: height)
+        }
+
+        let placement = layeredPlacement(
+            ids: diagram.classes.map(\.name),
+            sizes: boxSizes,
+            edges: layeringEdges,
+            layerGap: 52, nodeGap: 30, margin: 14
+        )
+
+        let boxes = diagram.classes.compactMap { cls -> ClassLayout.Box? in
+            guard let frame = placement.frames[cls.name] else { return nil }
+            return ClassLayout.Box(
+                name: cls.name, attributes: cls.attributes, methods: cls.methods,
+                frame: frame, nameHeight: compartmentNameHeight, rowHeight: compartmentRowHeight
+            )
+        }
+
+        let edges = diagram.relations.compactMap { relation -> ClassLayout.Edge? in
+            guard let from = placement.frames[relation.from],
+                  let to = placement.frames[relation.to] else { return nil }
+            return ClassLayout.Edge(
+                start: borderPoint(of: from, toward: CGPoint(x: to.midX, y: to.midY)),
+                end: borderPoint(of: to, toward: CGPoint(x: from.midX, y: from.midY)),
+                kind: relation.kind,
+                label: relation.label
+            )
+        }
+
+        return ClassLayout(size: placement.size, boxes: boxes, edges: edges)
+    }
+
+    // MARK: ER
+
+    public static func layout(_ diagram: ERDiagram, measure: DiagramTextMeasurer) -> ERLayout {
+        var boxSizes: [String: CGSize] = [:]
+        for entity in diagram.entities {
+            var width = measure(entity.name, nodeFontSize).width + compartmentPadX * 2 + 8
+            for attribute in entity.attributes {
+                let row = "\(attribute.type)  \(attribute.name)"
+                width = max(width, measure(row, labelFontSize).width + compartmentPadX * 2)
+            }
+            var height = compartmentNameHeight
+            if !entity.attributes.isEmpty {
+                height += 5 + CGFloat(entity.attributes.count) * compartmentRowHeight
+            }
+            boxSizes[entity.name] = CGSize(width: max(width, 96), height: height)
+        }
+
+        let placement = layeredPlacement(
+            ids: diagram.entities.map(\.name),
+            sizes: boxSizes,
+            edges: diagram.relations.map { ($0.from, $0.to) },
+            layerGap: 64, nodeGap: 34, margin: 14
+        )
+
+        let boxes = diagram.entities.compactMap { entity -> ERLayout.Box? in
+            guard let frame = placement.frames[entity.name] else { return nil }
+            return ERLayout.Box(
+                name: entity.name, attributes: entity.attributes,
+                frame: frame, nameHeight: compartmentNameHeight, rowHeight: compartmentRowHeight
+            )
+        }
+
+        let edges = diagram.relations.compactMap { relation -> ERLayout.Edge? in
+            guard let from = placement.frames[relation.from],
+                  let to = placement.frames[relation.to] else { return nil }
+            return ERLayout.Edge(
+                start: borderPoint(of: from, toward: CGPoint(x: to.midX, y: to.midY)),
+                end: borderPoint(of: to, toward: CGPoint(x: from.midX, y: from.midY)),
+                fromCard: relation.fromCard,
+                toCard: relation.toCard,
+                label: relation.label,
+                identifying: relation.identifying
+            )
+        }
+
+        return ERLayout(size: placement.size, boxes: boxes, edges: edges)
+    }
+
+    // MARK: Shared box placement
+
+    struct Placement {
+        let frames: [String: CGRect]
+        let size: CGSize
+    }
+
+    /// Longest-path layering + barycenter ordering for arbitrary sized
+    /// boxes, top-down. Shared by the class and ER layouts.
+    static func layeredPlacement(
+        ids: [String],
+        sizes: [String: CGSize],
+        edges: [(String, String)],
+        layerGap: CGFloat,
+        nodeGap: CGFloat,
+        margin: CGFloat
+    ) -> Placement {
+        var layerOf: [String: Int] = [:]
+        for id in ids { layerOf[id] = 0 }
+        for _ in 0..<(ids.count + 1) {
+            var changed = false
+            for (from, to) in edges {
+                guard let a = layerOf[from], let b = layerOf[to] else { continue }
+                if b < a + 1 { layerOf[to] = a + 1; changed = true }
+            }
+            if !changed { break }
+        }
+
+        var layers: [[String]] = []
+        let maxLayer = layerOf.values.max() ?? 0
+        for index in 0...maxLayer {
+            layers.append(ids.filter { layerOf[$0] == index })
+        }
+        layers.removeAll(where: \.isEmpty)
+
+        var position: [String: Int] = [:]
+        func recordPositions() {
+            for layer in layers {
+                for (i, id) in layer.enumerated() { position[id] = i }
+            }
+        }
+        recordPositions()
+        for _ in 0..<2 {
+            for index in 1..<max(layers.count, 1) {
+                layers[index].sort { a, b in
+                    let pa = edges.filter { $0.1 == a }.compactMap { position[$0.0] }
+                    let pb = edges.filter { $0.1 == b }.compactMap { position[$0.0] }
+                    let ba = pa.isEmpty ? Double(position[a] ?? 0) : Double(pa.reduce(0, +)) / Double(pa.count)
+                    let bb = pb.isEmpty ? Double(position[b] ?? 0) : Double(pb.reduce(0, +)) / Double(pb.count)
+                    return ba < bb
+                }
+                recordPositions()
+            }
+        }
+
+        var frames: [String: CGRect] = [:]
+        var y = margin
+        var crossExtent: CGFloat = 0
+        var layerWidths: [CGFloat] = []
+        for layer in layers {
+            let total = layer.reduce(CGFloat(0)) { $0 + (sizes[$1]?.width ?? 0) }
+                + CGFloat(max(layer.count - 1, 0)) * nodeGap
+            layerWidths.append(total)
+            crossExtent = max(crossExtent, total)
+        }
+        for (layerIndex, layer) in layers.enumerated() {
+            let layerHeight = layer.map { sizes[$0]?.height ?? 0 }.max() ?? 0
+            var x = margin + (crossExtent - layerWidths[layerIndex]) / 2
+            for id in layer {
+                let size = sizes[id] ?? .zero
+                frames[id] = CGRect(x: x, y: y, width: size.width, height: size.height)
+                x += size.width + nodeGap
+            }
+            y += layerHeight + layerGap
+        }
+
+        return Placement(
+            frames: frames,
+            size: CGSize(width: crossExtent + margin * 2, height: y - layerGap + margin)
+        )
+    }
+
+    /// Intersection of the rect border with the segment from its center
+    /// toward `point` — edges attach to borders, not centers.
+    static func borderPoint(of rect: CGRect, toward point: CGPoint) -> CGPoint {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        guard dx != 0 || dy != 0 else { return center }
+        let scaleX = dx != 0 ? (rect.width / 2) / abs(dx) : CGFloat.greatestFiniteMagnitude
+        let scaleY = dy != 0 ? (rect.height / 2) / abs(dy) : CGFloat.greatestFiniteMagnitude
+        let scale = min(scaleX, scaleY)
+        return CGPoint(x: center.x + dx * scale, y: center.y + dy * scale)
     }
 }

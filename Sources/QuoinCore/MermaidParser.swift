@@ -1,12 +1,16 @@
 import Foundation
 
-/// Parsed Mermaid diagrams — phase D1 of the native engine: flowcharts,
-/// sequence diagrams, and pie charts. Anything else returns nil and the
-/// renderer keeps the styled-source fallback.
+/// Parsed Mermaid diagrams: flowcharts, sequence diagrams, pie charts
+/// (D1), plus state, class, and ER diagrams (D2). State diagrams reuse the
+/// flowchart model — they are nodes and labeled transitions with two extra
+/// shapes. Anything else returns nil and the renderer keeps the
+/// styled-source fallback.
 public enum MermaidDiagram: Hashable, Sendable {
     case flowchart(Flowchart)
     case sequence(SequenceDiagram)
     case pie(PieChart)
+    case classDiagram(ClassDiagram)
+    case er(ERDiagram)
 }
 
 // MARK: - Models
@@ -25,6 +29,8 @@ public struct Flowchart: Hashable, Sendable {
         case stadium        // A([Label])
         case diamond        // A{Label}
         case circle         // A((Label))
+        case stateStart     // state diagram [*] as a source: filled dot
+        case stateEnd       // state diagram [*] as a target: ringed dot
     }
 
     public struct Node: Hashable, Sendable, Identifiable {
@@ -63,6 +69,72 @@ public struct SequenceDiagram: Hashable, Sendable {
     public var messages: [Message]
 }
 
+public struct ClassDiagram: Hashable, Sendable {
+    public struct Class: Hashable, Sendable, Identifiable {
+        public var id: String { name }
+        public let name: String
+        public var attributes: [String]
+        public var methods: [String]
+    }
+
+    /// The marker draws at the `to` end of the relation; parse-time
+    /// normalization flips reversed arrows so this always holds.
+    public enum RelationKind: Hashable, Sendable {
+        case inheritance    // hollow triangle
+        case realization    // hollow triangle, dashed line
+        case composition    // filled diamond
+        case aggregation    // hollow diamond
+        case association    // open arrowhead
+        case dependency     // open arrowhead, dashed line
+        case link           // plain line
+
+        public var dashed: Bool { self == .realization || self == .dependency }
+    }
+
+    public struct Relation: Hashable, Sendable {
+        public let from: String
+        public let to: String
+        public var kind: RelationKind
+        public var label: String?
+    }
+
+    public var classes: [Class]
+    public var relations: [Relation]
+}
+
+public struct ERDiagram: Hashable, Sendable {
+    public enum Cardinality: Hashable, Sendable {
+        case one            // ||
+        case zeroOrOne      // |o / o|
+        case oneOrMore      // |{ / }|
+        case zeroOrMore     // o{ / }o
+    }
+
+    public struct Attribute: Hashable, Sendable {
+        public let type: String
+        public let name: String
+    }
+
+    public struct Entity: Hashable, Sendable, Identifiable {
+        public var id: String { name }
+        public let name: String
+        public var attributes: [Attribute]
+    }
+
+    public struct Relation: Hashable, Sendable {
+        public let from: String
+        public let to: String
+        public var fromCard: Cardinality
+        public var toCard: Cardinality
+        public var label: String
+        /// Non-identifying relationships (`..`) draw dashed.
+        public var identifying: Bool
+    }
+
+    public var entities: [Entity]
+    public var relations: [Relation]
+}
+
 public struct PieChart: Hashable, Sendable {
     public struct Slice: Hashable, Sendable {
         public let label: String
@@ -95,6 +167,15 @@ public enum MermaidParser {
         }
         if header.hasPrefix("pie") {
             return parsePie(header: header, body: Array(lines.dropFirst())).map { .pie($0) }
+        }
+        if header.hasPrefix("stateDiagram") {
+            return parseState(body: Array(lines.dropFirst())).map { .flowchart($0) }
+        }
+        if header.hasPrefix("classDiagram") {
+            return parseClass(body: Array(lines.dropFirst())).map { .classDiagram($0) }
+        }
+        if header.hasPrefix("erDiagram") {
+            return parseER(body: Array(lines.dropFirst())).map { .er($0) }
         }
         return nil
     }
@@ -237,6 +318,263 @@ public enum MermaidParser {
             return Flowchart.Node(id: id, label: label, shape: .diamond)
         }
         return nil
+    }
+
+    // MARK: State
+
+    /// stateDiagram / stateDiagram-v2 → a Flowchart: states are rounded
+    /// nodes, `[*]` becomes a start dot (as a source) or end ring (as a
+    /// target), transitions are arrows with optional `: label`.
+    static func parseState(body: [String]) -> Flowchart? {
+        var direction = Flowchart.Direction.topDown
+        var nodes: [String: Flowchart.Node] = [:]
+        var order: [String] = []
+        var edges: [Flowchart.Edge] = []
+
+        func note(_ node: Flowchart.Node) {
+            if let existing = nodes[node.id] {
+                if node.label != node.id && existing.label == existing.id {
+                    nodes[node.id] = node
+                }
+            } else {
+                nodes[node.id] = node
+                order.append(node.id)
+            }
+        }
+
+        func stateNode(_ token: String, isSource: Bool) -> Flowchart.Node? {
+            let trimmed = token.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return nil }
+            if trimmed == "[*]" {
+                return isSource
+                    ? Flowchart.Node(id: "__start", label: "", shape: .stateStart)
+                    : Flowchart.Node(id: "__end", label: "", shape: .stateEnd)
+            }
+            guard trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
+            return Flowchart.Node(id: trimmed, label: trimmed, shape: .rounded)
+        }
+
+        for line in body {
+            if line.hasPrefix("direction") {
+                let value = line.dropFirst("direction".count).trimmingCharacters(in: .whitespaces)
+                direction = Flowchart.Direction(rawValue: value.uppercased()) ?? direction
+                continue
+            }
+            // state "Long description" as s2
+            if line.hasPrefix("state ") {
+                let declaration = String(line.dropFirst("state ".count))
+                if declaration.hasSuffix("{") { continue } // composite: flatten
+                if let asRange = declaration.range(of: " as ") {
+                    let label = String(declaration[..<asRange.lowerBound])
+                        .trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                    let id = String(declaration[asRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+                    if !id.isEmpty {
+                        note(Flowchart.Node(id: id, label: label, shape: .rounded))
+                    }
+                }
+                continue
+            }
+            if line == "}" || line.hasPrefix("note") || line.hasPrefix("Note") { continue }
+
+            if let arrowRange = line.range(of: "-->") {
+                let left = String(line[..<arrowRange.lowerBound])
+                var right = String(line[arrowRange.upperBound...])
+                var label: String?
+                if let colon = right.firstIndex(of: ":") {
+                    label = String(right[right.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                    right = String(right[..<colon])
+                }
+                guard let from = stateNode(left, isSource: true),
+                      let to = stateNode(right, isSource: false) else { continue }
+                note(from)
+                note(to)
+                edges.append(Flowchart.Edge(
+                    from: from.id, to: to.id, label: label, dashed: false, hasArrow: true
+                ))
+                continue
+            }
+
+            // Bare state declaration on its own line.
+            if let node = stateNode(line, isSource: true), node.shape == .rounded {
+                note(node)
+            }
+        }
+
+        guard !nodes.isEmpty else { return nil }
+        return Flowchart(direction: direction, nodes: order.compactMap { nodes[$0] }, edges: edges)
+    }
+
+    // MARK: Class
+
+    static func parseClass(body: [String]) -> ClassDiagram? {
+        var classes: [String: ClassDiagram.Class] = [:]
+        var order: [String] = []
+        var relations: [ClassDiagram.Relation] = []
+        var openClass: String? // inside `class X { … }`
+
+        func note(_ name: String) {
+            guard !name.isEmpty, classes[name] == nil else { return }
+            classes[name] = ClassDiagram.Class(name: name, attributes: [], methods: [])
+            order.append(name)
+        }
+
+        func addMember(_ raw: String, to name: String) {
+            let member = raw.trimmingCharacters(in: .whitespaces)
+            guard !member.isEmpty else { return }
+            note(name)
+            if member.contains("(") {
+                classes[name]?.methods.append(member)
+            } else {
+                classes[name]?.attributes.append(member)
+            }
+        }
+
+        // Relation connectors, longest first. Reversed forms flip from/to
+        // so the marker is always at the `to` end.
+        let connectors: [(token: String, kind: ClassDiagram.RelationKind, reversed: Bool)] = [
+            ("<|--", .inheritance, true), ("--|>", .inheritance, false),
+            ("<|..", .realization, true), ("..|>", .realization, false),
+            ("*--", .composition, true), ("--*", .composition, false),
+            ("o--", .aggregation, true), ("--o", .aggregation, false),
+            ("<--", .association, true), ("-->", .association, false),
+            ("<..", .dependency, true), ("..>", .dependency, false),
+            ("--", .link, false), ("..", .link, false),
+        ]
+
+        for line in body {
+            if let current = openClass {
+                if line == "}" { openClass = nil; continue }
+                addMember(line, to: current)
+                continue
+            }
+            if line.hasPrefix("class ") {
+                var declaration = String(line.dropFirst("class ".count)).trimmingCharacters(in: .whitespaces)
+                if declaration.hasSuffix("{") {
+                    declaration = String(declaration.dropLast()).trimmingCharacters(in: .whitespaces)
+                    openClass = declaration
+                }
+                note(declaration)
+                continue
+            }
+            if line.hasPrefix("<<") || line.hasPrefix("note") { continue }
+
+            // Member via colon shorthand: `Animal : +int age` — but only
+            // when no relation connector is present on the line.
+            if !connectors.contains(where: { line.contains($0.token) }),
+               let colon = line.firstIndex(of: ":") {
+                let name = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) {
+                    addMember(String(line[line.index(after: colon)...]), to: name)
+                }
+                continue
+            }
+
+            for connector in connectors {
+                guard let range = line.range(of: connector.token) else { continue }
+                let left = String(line[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+                var right = String(line[range.upperBound...])
+                var label: String?
+                if let colon = right.firstIndex(of: ":") {
+                    label = String(right[right.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                    right = String(right[..<colon])
+                }
+                let rightName = right.trimmingCharacters(in: .whitespaces)
+                guard !left.isEmpty, !rightName.isEmpty else { break }
+                let from = connector.reversed ? rightName : left
+                let to = connector.reversed ? left : rightName
+                note(left)
+                note(rightName)
+                relations.append(ClassDiagram.Relation(from: from, to: to, kind: connector.kind, label: label))
+                break
+            }
+        }
+
+        guard !classes.isEmpty else { return nil }
+        return ClassDiagram(classes: order.compactMap { classes[$0] }, relations: relations)
+    }
+
+    // MARK: ER
+
+    static func parseER(body: [String]) -> ERDiagram? {
+        var entities: [String: ERDiagram.Entity] = [:]
+        var order: [String] = []
+        var relations: [ERDiagram.Relation] = []
+        var openEntity: String?
+
+        func note(_ name: String) {
+            guard !name.isEmpty, entities[name] == nil else { return }
+            entities[name] = ERDiagram.Entity(name: name, attributes: [])
+            order.append(name)
+        }
+
+        func cardinality(_ token: String) -> ERDiagram.Cardinality? {
+            // Left-side tokens read outward (||, |o, }o, }|); right-side
+            // tokens are mirrored (||, o|, o{, |{). Normalize both.
+            switch token {
+            case "||": return .one
+            case "|o", "o|": return .zeroOrOne
+            case "}|", "|{": return .oneOrMore
+            case "}o", "o{": return .zeroOrMore
+            default: return nil
+            }
+        }
+
+        for line in body {
+            if let current = openEntity {
+                if line == "}" { openEntity = nil; continue }
+                let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+                if parts.count >= 2 {
+                    entities[current]?.attributes.append(
+                        ERDiagram.Attribute(type: String(parts[0]), name: String(parts[1]))
+                    )
+                }
+                continue
+            }
+            if line.hasSuffix("{"), !line.contains("--"), !line.contains("..") {
+                let name = String(line.dropLast()).trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty {
+                    note(name)
+                    openEntity = name
+                }
+                continue
+            }
+
+            // A ||--o{ B : label   (also `..` for non-identifying)
+            for separator in ["--", ".."] {
+                guard let range = line.range(of: separator) else { continue }
+                let left = String(line[..<range.lowerBound])
+                var right = String(line[range.upperBound...])
+                guard left.count >= 2, right.count >= 2 else { continue }
+                let leftCardToken = String(left.suffix(2))
+                let rightCardToken = String(right.prefix(2))
+                guard let fromCard = cardinality(leftCardToken),
+                      let toCard = cardinality(rightCardToken)
+                else { continue }
+                let from = String(left.dropLast(2)).trimmingCharacters(in: .whitespaces)
+                right = String(right.dropFirst(2))
+                var label = ""
+                if let colon = right.firstIndex(of: ":") {
+                    label = String(right[right.index(after: colon)...])
+                        .trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                    right = String(right[..<colon])
+                }
+                let to = right.trimmingCharacters(in: .whitespaces)
+                guard !from.isEmpty, !to.isEmpty else { continue }
+                note(from)
+                note(to)
+                relations.append(ERDiagram.Relation(
+                    from: from, to: to,
+                    fromCard: fromCard, toCard: toCard,
+                    label: label, identifying: separator == "--"
+                ))
+                break
+            }
+        }
+
+        guard !entities.isEmpty else { return nil }
+        return ERDiagram(entities: order.compactMap { entities[$0] }, relations: relations)
     }
 
     // MARK: Sequence

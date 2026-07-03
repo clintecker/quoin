@@ -49,6 +49,14 @@ final class ScreenshotTests: XCTestCase {
                 capture(name: "03-native-engines")
             }
 
+            // Structure fixture: state, class, and ER diagrams.
+            let structure = app.staticTexts["structure"]
+            if structure.waitForExistence(timeout: 3) {
+                structure.click()
+                Thread.sleep(forTimeInterval: 2)
+                capture(name: "04-structure-diagrams")
+            }
+
             // Syntax reveal: click into the document body.
             let textView = app.textViews.firstMatch
             if textView.exists {

@@ -164,6 +164,123 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(layout.size.width, labelRight)
     }
 
+    func testStateDiagramMapsToFlowchart() {
+        guard case .flowchart(let chart)? = MermaidParser.parse("""
+        stateDiagram-v2
+            direction LR
+            [*] --> Idle
+            Idle --> Loading: open
+            Loading --> Ready
+            Ready --> [*]
+            state "Long name" as Loading
+        """) else { return XCTFail("expected flowchart from state diagram") }
+        XCTAssertEqual(chart.direction, .leftRight)
+        XCTAssertEqual(chart.nodes.first?.shape, .stateStart)
+        XCTAssertEqual(chart.nodes.last?.shape, .stateEnd)
+        XCTAssertEqual(chart.nodes.first(where: { $0.id == "Idle" })?.shape, .rounded)
+        XCTAssertEqual(chart.nodes.first(where: { $0.id == "Loading" })?.label, "Long name")
+        XCTAssertEqual(chart.edges.count, 4)
+        XCTAssertEqual(chart.edges[1].label, "open")
+        XCTAssertTrue(chart.edges.allSatisfy(\.hasArrow))
+    }
+
+    func testStateTerminalsGetFixedSizes() {
+        guard case .flowchart(let chart)? = MermaidParser.parse("""
+        stateDiagram
+            [*] --> A
+            A --> [*]
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(chart, measure: measure)
+        let start = layout.nodes.first { $0.shape == .stateStart }
+        let end = layout.nodes.first { $0.shape == .stateEnd }
+        XCTAssertEqual(start?.frame.width, 14)
+        XCTAssertEqual(end?.frame.width, 18)
+    }
+
+    func testClassDiagramParsesMembersAndRelations() {
+        guard case .classDiagram(let diagram)? = MermaidParser.parse("""
+        classDiagram
+            class Animal {
+                +String name
+                +eat()
+            }
+            Animal <|-- Dog
+            Cat --|> Animal
+            Dog *-- Bone
+            Dog --> Food : eats
+            Animal : +int age
+        """) else { return XCTFail("expected class diagram") }
+
+        let animal = diagram.classes.first { $0.name == "Animal" }
+        XCTAssertEqual(animal?.attributes, ["+String name", "+int age"])
+        XCTAssertEqual(animal?.methods, ["+eat()"])
+
+        // `Animal <|-- Dog` normalizes to Dog → Animal with the triangle
+        // at Animal; `Cat --|> Animal` is already in that direction.
+        XCTAssertEqual(diagram.relations[0].from, "Dog")
+        XCTAssertEqual(diagram.relations[0].to, "Animal")
+        XCTAssertEqual(diagram.relations[0].kind, .inheritance)
+        XCTAssertEqual(diagram.relations[1].from, "Cat")
+        XCTAssertEqual(diagram.relations[1].kind, .inheritance)
+        // `Dog *-- Bone`: Dog is composed of Bone; diamond at Dog.
+        XCTAssertEqual(diagram.relations[2].from, "Bone")
+        XCTAssertEqual(diagram.relations[2].to, "Dog")
+        XCTAssertEqual(diagram.relations[2].kind, .composition)
+        XCTAssertEqual(diagram.relations[3].kind, .association)
+        XCTAssertEqual(diagram.relations[3].label, "eats")
+    }
+
+    func testClassLayoutPutsParentAboveChild() {
+        guard case .classDiagram(let diagram)? = MermaidParser.parse("""
+        classDiagram
+            Animal <|-- Dog
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(diagram, measure: measure)
+        let animal = layout.boxes.first { $0.name == "Animal" }
+        let dog = layout.boxes.first { $0.name == "Dog" }
+        XCTAssertNotNil(animal)
+        XCTAssertNotNil(dog)
+        XCTAssertLessThan(animal!.frame.maxY, dog!.frame.minY)
+        // Marker end of the edge is at the parent (Animal) border.
+        XCTAssertEqual(layout.edges.first?.end.y ?? -1, animal!.frame.maxY, accuracy: 0.5)
+    }
+
+    func testERDiagramParsesCardinalitiesAndAttributes() {
+        guard case .er(let diagram)? = MermaidParser.parse("""
+        erDiagram
+            CUSTOMER ||--o{ ORDER : places
+            ORDER ||--|{ LINE_ITEM : contains
+            CUSTOMER {
+                string name
+                string custNumber
+            }
+        """) else { return XCTFail("expected ER diagram") }
+
+        XCTAssertEqual(diagram.entities.map(\.name), ["CUSTOMER", "ORDER", "LINE_ITEM"])
+        let customer = diagram.entities[0]
+        XCTAssertEqual(customer.attributes.count, 2)
+        XCTAssertEqual(customer.attributes[0].type, "string")
+        XCTAssertEqual(customer.attributes[0].name, "name")
+
+        XCTAssertEqual(diagram.relations[0].fromCard, .one)
+        XCTAssertEqual(diagram.relations[0].toCard, .zeroOrMore)
+        XCTAssertEqual(diagram.relations[0].label, "places")
+        XCTAssertTrue(diagram.relations[0].identifying)
+        XCTAssertEqual(diagram.relations[1].toCard, .oneOrMore)
+    }
+
+    func testERLayoutProducesBoxesAndEdges() {
+        guard case .er(let diagram)? = MermaidParser.parse("""
+        erDiagram
+            A ||--o{ B : has
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(diagram, measure: measure)
+        XCTAssertEqual(layout.boxes.count, 2)
+        XCTAssertEqual(layout.edges.count, 1)
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertGreaterThan(layout.size.height, 0)
+    }
+
     func testPieAnglesSumToFullCircle() {
         guard case .pie(let pie)? = MermaidParser.parse("pie\n \"A\" : 1\n \"B\" : 3") else {
             return XCTFail("parse failed")
