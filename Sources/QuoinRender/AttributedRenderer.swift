@@ -171,11 +171,16 @@ public struct AttributedRenderer {
         }
 
         let tagged = NSMutableAttributedString(attributedString: content)
-        tagged.addAttribute(
-            QuoinAttribute.blockID,
-            value: block.id.description,
-            range: NSRange(location: 0, length: tagged.length)
-        )
+        let whole = NSRange(location: 0, length: tagged.length)
+        tagged.addAttribute(QuoinAttribute.blockID, value: block.id.description, range: whole)
+        // Embed blocks flip to source on double-click, not single click, so a
+        // click to admire a rendered diagram/table doesn't turn it into code.
+        switch block.kind {
+        case .codeBlock, .mermaid, .mathBlock, .table, .htmlBlock:
+            tagged.addAttribute(QuoinAttribute.embedBlock, value: NSNumber(value: true), range: whole)
+        default:
+            break
+        }
         return tagged
     }
 

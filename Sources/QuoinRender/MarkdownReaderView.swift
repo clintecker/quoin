@@ -145,6 +145,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         }
 
         context.coordinator.textView = textView
+        textView.onDoubleClick = { [weak coordinator = context.coordinator] index in
+            coordinator?.activateEmbedBlock(atCharIndex: index)
+        }
         return scrollView
     }
 
@@ -286,6 +289,28 @@ public struct MarkdownReaderView: NSViewRepresentable {
                     return false
                 }
 
+                // Smart pairs, wrapping variant: a delimiter typed over a
+                // non-empty selection wraps it (select a word, press `*` →
+                // `*word*`) instead of replacing it.
+                if affectedCharRange.length > 0,
+                   let replacement = replacementString,
+                   replacement.count == 1,
+                   let character = replacement.first {
+                    let selected = (sourceText as NSString).substring(
+                        with: NSRange(location: relStart, length: affectedCharRange.length)
+                    )
+                    if let wrap = SmartPairs.wrap(
+                        typing: character,
+                        selection: selected,
+                        inText: sourceText,
+                        selectionStartUTF16: relStart
+                    ) {
+                        let caretDelta = EditMapping.utf8Offset(inText: wrap.insert, utf16Offset: wrap.caretOffset)
+                        onEdit(byteRange, wrap.insert, caretDelta)
+                        return false
+                    }
+                }
+
                 // Smart pairs: a lone delimiter keystroke may complete to a
                 // pair (caret inside) or type over an existing closer.
                 if affectedCharRange.length == 0,
@@ -340,14 +365,15 @@ public struct MarkdownReaderView: NSViewRepresentable {
                     restyleActiveBlock(caretAt: relativeCaret, in: textView)
                 }
             }
-            // Zero-length caret placement activates a block. Clicking an
-            // attachment (math, diagram, image) selects the attachment
-            // character itself — a length-1 selection on an attachment run
-            // counts as a click too, so diagrams open to their source.
+            // Images: clicking the attachment (length-1 selection) opens
+            // its source. Embed blocks (code/math/mermaid/table) are handled
+            // by double-click in QuoinTextView, not here — a single click on
+            // one just places the caret so it can be admired or selected.
             if selection.length == 1,
                let storage = textView.textContentStorage?.textStorage,
                selection.location < storage.length,
-               storage.attribute(.attachment, at: selection.location, effectiveRange: nil) != nil {
+               storage.attribute(.attachment, at: selection.location, effectiveRange: nil) != nil,
+               !isEmbedBlock(atCharIndex: selection.location) {
                 if let id = blockID(atCharIndex: selection.location),
                    id != parent.rendered.activeBlockID {
                     parent.onActivateBlock?(id)
@@ -355,6 +381,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 return
             }
             guard selection.length == 0 else { return }
+            // Single click on an embed block places the caret only.
+            guard !isEmbedBlock(atCharIndex: selection.location) else { return }
             guard let id = blockID(atCharIndex: selection.location) else { return }
             if id != parent.rendered.activeBlockID {
                 parent.onActivateBlock?(id)
@@ -399,10 +427,17 @@ public struct MarkdownReaderView: NSViewRepresentable {
                   let active = parent.rendered.activeEditableRange,
                   let sourceText = parent.rendered.activeSourceText
             else { return }
-            let selection = textView.selectedRange()
+            var selection = textView.selectedRange()
             guard selection.location >= active.location,
                   selection.location + selection.length <= active.location + active.length
             else { return }
+
+            // No selection: format the word under the caret (⌘B on a word
+            // with no drag-select). Links still need an explicit selection.
+            if selection.length == 0, command != .link,
+               let word = Formatting.wordRange(in: sourceText, around: selection.location - active.location) {
+                selection = NSRange(location: active.location + word.offset, length: word.length)
+            }
 
             let relStart = selection.location - active.location
             let relRange = relStart..<(relStart + selection.length)
@@ -446,6 +481,23 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 }
             }
             return best?.id
+        }
+
+        /// True when the character sits in an embed block (code/math/mermaid
+        /// /table) that flips to source on double-click, not single click.
+        func isEmbedBlock(atCharIndex index: Int) -> Bool {
+            guard let storage = textView?.textContentStorage?.textStorage,
+                  index >= 0, index < storage.length else { return false }
+            return storage.attribute(QuoinAttribute.embedBlock, at: index, effectiveRange: nil) != nil
+        }
+
+        /// Double-click on an embed block flips it to editable source
+        /// (QuoinTextView routes the gesture here).
+        func activateEmbedBlock(atCharIndex index: Int) {
+            guard isEmbedBlock(atCharIndex: index),
+                  let id = blockID(atCharIndex: index),
+                  id != parent.rendered.activeBlockID else { return }
+            parent.onActivateBlock?(id)
         }
 
         // MARK: Scroll anchoring
@@ -536,6 +588,21 @@ final class QuoinTextView: NSTextView {
 
     private var decorationRuns: [(range: NSRange, decoration: BlockDecoration)] = []
     private var runsAreStale = true
+
+    /// Set by the coordinator: a double-click landed on the character at this
+    /// index. The coordinator decides whether it's an embed block worth
+    /// flipping to source.
+    var onDoubleClick: ((Int) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            let point = convert(event.locationInWindow, from: nil)
+            let index = characterIndexForInsertion(at: point)
+            if index >= 0 { onDoubleClick?(index) }
+            // Fall through to super so text blocks still get word-select.
+        }
+        super.mouseDown(with: event)
+    }
 
     func invalidateDecorations() {
         runsAreStale = true

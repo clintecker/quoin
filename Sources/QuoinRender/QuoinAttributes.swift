@@ -25,6 +25,10 @@ public enum QuoinAttribute {
     /// Value: `String` — text placed on the pasteboard when the run's
     /// copy link is clicked (code block header buttons).
     public static let copySource = NSAttributedString.Key("quoin.copySource")
+    /// Value: `NSNumber(true)` — an embed block (code, math, mermaid,
+    /// table) that flips to editable source on double-click, not on a
+    /// single click (handoff: whole blocks flip on double-click).
+    public static let embedBlock = NSAttributedString.Key("quoin.embedBlock")
 }
 
 /// Custom URL schemes used for in-document interaction via the text view's

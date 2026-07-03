@@ -49,6 +49,42 @@ final class SmartPairsTests: XCTestCase {
         let completion = SmartPairs.completion(typing: "$", inText: "math ", caretUTF16: 5)
         XCTAssertEqual(completion, SmartPairs.Completion(insert: "$$", caretOffset: 1))
     }
+
+    // MARK: Wrap-selection
+
+    func testWrapSelectionAsterisk() {
+        // "hello world" with "world" selected (offsets 6..<11), type *.
+        let wrap = SmartPairs.wrap(typing: "*", selection: "world", inText: "hello world", selectionStartUTF16: 6)
+        // *world* — caret parks just before the closing * (offset 6).
+        XCTAssertEqual(wrap, SmartPairs.Completion(insert: "*world*", caretOffset: 6))
+    }
+
+    func testWrapSelectionEqualsUsesHighlightPair() {
+        let wrap = SmartPairs.wrap(typing: "=", selection: "key", inText: "a key b", selectionStartUTF16: 2)
+        XCTAssertEqual(wrap, SmartPairs.Completion(insert: "==key==", caretOffset: 5))
+    }
+
+    func testWrapSelectionBacktick() {
+        let wrap = SmartPairs.wrap(typing: "`", selection: "ls -la", inText: "run ls -la now", selectionStartUTF16: 4)
+        XCTAssertEqual(wrap?.insert, "`ls -la`")
+    }
+
+    func testWrapSelectionEmptyIsNil() {
+        XCTAssertNil(SmartPairs.wrap(typing: "*", selection: "", inText: "hi", selectionStartUTF16: 0))
+    }
+
+    func testWrapSelectionAcrossNewlineIsNil() {
+        XCTAssertNil(SmartPairs.wrap(typing: "*", selection: "a\nb", inText: "a\nb", selectionStartUTF16: 0))
+    }
+
+    func testWrapSelectionNonPairCharIsNil() {
+        XCTAssertNil(SmartPairs.wrap(typing: "x", selection: "word", inText: "word", selectionStartUTF16: 0))
+    }
+
+    func testWrapSelectionSuspendedInCode() {
+        let text = "`let word "
+        XCTAssertNil(SmartPairs.wrap(typing: "*", selection: "word", inText: text, selectionStartUTF16: 5))
+    }
 }
 
 final class FormattingTests: XCTestCase {
@@ -130,6 +166,37 @@ final class FormattingTests: XCTestCase {
     func testMakeLinkEmptySelection() {
         let change = Formatting.makeLink(selection: "")
         XCTAssertEqual(change.replacement, "[link](url)")
+    }
+
+    // MARK: Word-under-caret (⌘B with no selection)
+
+    func testWordRangeMidWord() {
+        // "the quick fox", caret at offset 6 (inside "quick").
+        let range = Formatting.wordRange(in: "the quick fox", around: 6)
+        XCTAssertEqual(range?.offset, 4)
+        XCTAssertEqual(range?.length, 5)
+    }
+
+    func testWordRangeAtWordEnd() {
+        // caret right after "quick" (offset 9) selects "quick" to the left.
+        let range = Formatting.wordRange(in: "the quick fox", around: 9)
+        XCTAssertEqual(range?.offset, 4)
+        XCTAssertEqual(range?.length, 5)
+    }
+
+    func testWordRangeOnWhitespaceIsNil() {
+        // "a  b" — caret between the two spaces has no adjacent word char.
+        XCTAssertNil(Formatting.wordRange(in: "a  b", around: 2))
+    }
+
+    func testWordRangeEmptyTextIsNil() {
+        XCTAssertNil(Formatting.wordRange(in: "", around: 0))
+    }
+
+    func testWordRangeIncludesUnderscore() {
+        let range = Formatting.wordRange(in: "call snake_case now", around: 8)
+        XCTAssertEqual(range?.offset, 5)
+        XCTAssertEqual(range?.length, 10)
     }
 }
 

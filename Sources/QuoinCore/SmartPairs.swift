@@ -17,6 +17,28 @@ public enum SmartPairs {
         public let caretOffset: Int
     }
 
+    /// Wrapping: typing a pair delimiter with a non-empty selection wraps
+    /// the selection instead of replacing it (select a word, press `*` →
+    /// `*word*`). `=` wraps as the `==` highlight pair; every other pair
+    /// char wraps with itself. Suspended inside code context, like
+    /// `completion`. The returned `caretOffset` lands just before the
+    /// closing delimiter so continued typing stays inside the span.
+    public static func wrap(
+        typing character: Character,
+        selection: String,
+        inText text: String,
+        selectionStartUTF16 start: Int
+    ) -> Completion? {
+        guard pairs.contains(character), !selection.isEmpty else { return nil }
+        guard !isInsideCodeContext(text: text, caretUTF16: start) else { return nil }
+        // A selection that itself spans a newline isn't an inline span.
+        guard !selection.contains("\n") else { return nil }
+        let delimiter = character == "=" ? "==" : String(character)
+        let wrapped = delimiter + selection + delimiter
+        let caret = delimiter.utf16.count + selection.utf16.count
+        return Completion(insert: wrapped, caretOffset: caret)
+    }
+
     /// Decides how a single typed character behaves at `caretUTF16` in
     /// `text` (the active block's source). Returns nil for default handling.
     public static func completion(
@@ -105,6 +127,25 @@ public enum Formatting {
         /// New selection within `replacement` (UTF-16).
         public let selectionOffset: Int
         public let selectionLength: Int
+    }
+
+    /// UTF-16 range of the word surrounding `caret` in `text`, or nil when
+    /// the caret sits on whitespace/punctuation with no adjacent word. Lets
+    /// ⌘B/⌘I/⇧⌘H with no selection format the word under the caret.
+    public static func wordRange(in text: String, around caret: Int) -> (offset: Int, length: Int)? {
+        let units = Array(text.utf16)
+        guard !units.isEmpty else { return nil }
+        func isWord(_ unit: UInt16) -> Bool {
+            guard let scalar = Unicode.Scalar(unit) else { return false }
+            let ch = Character(scalar)
+            return ch.isLetter || ch.isNumber || ch == "_"
+        }
+        var start = min(max(caret, 0), units.count)
+        var end = start
+        while start > 0, isWord(units[start - 1]) { start -= 1 }
+        while end < units.count, isWord(units[end]) { end += 1 }
+        guard end > start else { return nil }
+        return (start, end - start)
     }
 
     /// Toggles a symmetric delimiter (e.g. `**`, `*`, `==`) around the
