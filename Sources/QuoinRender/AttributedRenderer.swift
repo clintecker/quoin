@@ -93,7 +93,21 @@ public struct AttributedRenderer {
                 output.append(render(block: block, depth: 0, document: document))
             }
             if index < document.blocks.count - 1 {
-                output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+                // Boxed blocks (callouts, code, tables, diagrams, the
+                // front-matter chip) get extra air in the separator so two
+                // adjacent cards never touch borders. The separator is not
+                // part of either block's decoration range, so this widens the
+                // external gap without padding the box interiors.
+                let separator = NSMutableAttributedString(string: "\n", attributes: bodyAttributes())
+                if isCard(block.kind) || isCard(document.blocks[index + 1].kind) {
+                    let style = paragraphStyle()
+                    style.paragraphSpacing = theme.paragraphSpacing + 18
+                    separator.addAttribute(
+                        .paragraphStyle, value: style,
+                        range: NSRange(location: 0, length: separator.length)
+                    )
+                }
+                output.append(separator)
             }
             blockRanges[block.id] = NSRange(location: start, length: output.length - start)
         }
@@ -138,6 +152,17 @@ public struct AttributedRenderer {
     }
 
     // MARK: - Blocks
+
+    /// Blocks drawn as a bordered/filled card, which need extra external air
+    /// so two adjacent ones never share a border line.
+    private func isCard(_ kind: BlockKind) -> Bool {
+        switch kind {
+        case .codeBlock, .mermaid, .table, .callout, .frontMatter, .htmlBlock:
+            return true
+        default:
+            return false
+        }
+    }
 
     private func render(block: Block, depth: Int, document: QuoinDocument) -> NSAttributedString {
         let content: NSAttributedString

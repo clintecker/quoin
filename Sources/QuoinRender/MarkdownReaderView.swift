@@ -702,8 +702,10 @@ final class QuoinTextView: NSTextView {
             context.fillPath()
 
         case .callout(let color):
-            var rect = box.insetBy(dx: 0, dy: -2)
-            rect.size.height += 4 // clear the last line's descenders
+            // Symmetric interior padding that clears the last line's
+            // descenders; external separation between adjacent cards comes
+            // from the widened block separator, not a one-sided bulge here.
+            let rect = box.insetBy(dx: 0, dy: -5)
             context.addPath(CGPath(roundedRect: rect, cornerWidth: 8, cornerHeight: 8, transform: nil))
             context.setFillColor(color.withAlphaComponent(0.05).cgColor)
             context.fillPath()
