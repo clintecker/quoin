@@ -111,6 +111,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        // Default maxSize is the initial frame (zero) — without lifting it the
+        // view can never grow taller than the viewport, so nothing scrolls.
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude)
         textView.delegate = context.coordinator
         textView.drawsBackground = true
         textView.backgroundColor = theme.canvas
