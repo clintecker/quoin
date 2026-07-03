@@ -125,7 +125,7 @@ final class ReaderModel: ObservableObject {
     }
 
     private func rerender() {
-        rendered = renderer.render(document, activeBlockID: activeBlockID)
+        rendered = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock)
         outline = document.outline
         stats = document.stats
         slugToBlock = Dictionary(

@@ -9,20 +9,25 @@ import UIKit
 #endif
 
 /// Styles the active block's raw markdown for in-place editing: content
-/// renders close to its final look while delimiters stay visible at 35%
-/// ink in mono (the handoff's syntax-reveal rule). Crucially, nothing is
-/// inserted or hidden — every character of the source is present exactly
-/// once, so caret/edit mapping stays 1:1.
+/// renders close to its final look while delimiters obey the handoff's
+/// span-level syntax-reveal rule — the span containing the caret shows its
+/// delimiters at 35% ink in mono, every other span's delimiters collapse
+/// to invisible. Crucially, nothing is inserted or removed — every
+/// character of the source is present exactly once, so caret/edit mapping
+/// stays 1:1 (hidden delimiters are clear-colored at a 1pt font).
 struct MarkdownSourceStyler {
 
     let theme: Theme
 
-    func style(_ source: String) -> NSAttributedString {
+    /// `caretOffset` is the caret position in UTF-16 units relative to
+    /// `source`. nil reveals every delimiter (whole-block flip mode for
+    /// code/math/mermaid blocks, and before the caret has landed).
+    func style(_ source: String, caretOffset: Int? = nil) -> NSAttributedString {
         let output = NSMutableAttributedString(string: source, attributes: baseAttributes())
         let text = source as NSString
 
-        styleLinePrefixes(in: output, text: text)
-        styleSpans(in: output, text: text)
+        styleLinePrefixes(in: output, text: text, caretOffset: caretOffset)
+        styleSpans(in: output, text: text, caretOffset: caretOffset)
         return output
     }
 
@@ -45,9 +50,18 @@ struct MarkdownSourceStyler {
         ]
     }
 
+    /// Delimiters of spans the caret is outside of: still present in the
+    /// text (mapping stays 1:1) but visually collapsed.
+    private var hiddenDelimiterAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: PlatformFont.systemFont(ofSize: 1),
+            .foregroundColor: PlatformColor.clear,
+        ]
+    }
+
     // MARK: - Line prefixes (#, >, bullets, checkboxes)
 
-    private func styleLinePrefixes(in output: NSMutableAttributedString, text: NSString) {
+    private func styleLinePrefixes(in output: NSMutableAttributedString, text: NSString, caretOffset: Int?) {
         var lineStart = 0
         while lineStart <= text.length {
             let lineRange = text.lineRange(for: NSRange(location: min(lineStart, max(text.length - 1, 0)), length: 0))
@@ -55,12 +69,16 @@ struct MarkdownSourceStyler {
                 lineStart = lineRange.location + max(lineRange.length, 1)
             }
             let line = text.substring(with: lineRange)
+            let caretOnLine = caretOffset.map {
+                $0 >= lineRange.location && $0 <= lineRange.location + lineRange.length
+            } ?? true
 
-            // Headings: fade the marks, style the rest with the heading ramp.
+            // Headings: marks reveal only while the caret is on the line;
+            // the body always styles with the heading ramp.
             if let hashes = prefixLength(of: line, matching: { $0 == "#" }), hashes >= 1, hashes <= 6,
                line.dropFirst(hashes).first == " " {
                 output.addAttributes(
-                    delimiterAttributes,
+                    caretOnLine ? delimiterAttributes : hiddenDelimiterAttributes,
                     range: NSRange(location: lineRange.location, length: hashes + 1)
                 )
                 let bodyStart = lineRange.location + hashes + 1
@@ -75,7 +93,9 @@ struct MarkdownSourceStyler {
                 continue
             }
 
-            // Quote / list / task markers: faded.
+            // Quote / list / task markers are structural — without them the
+            // block's shape is unreadable — so they stay faded-visible
+            // regardless of the caret.
             let markers = ["> ", "- [ ] ", "- [x] ", "- [X] ", "- ", "* ", "+ "]
             let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
             let indent = line.count - trimmed.count
@@ -101,41 +121,39 @@ struct MarkdownSourceStyler {
 
     // MARK: - Inline spans
 
-    private struct Span {
-        let delimiter: String
-        let content: [NSAttributedString.Key: Any]
-    }
-
-    private func styleSpans(in output: NSMutableAttributedString, text: NSString) {
+    private func styleSpans(in output: NSMutableAttributedString, text: NSString, caretOffset: Int?) {
         // Order matters: code spans first (their interiors are then left
         // alone), then double-char delimiters before their single-char
         // prefixes.
         styleDelimited(in: output, text: text, delimiter: "`", contentAttributes: [
             .font: theme.inlineCodeFont(),
             .backgroundColor: theme.inlineCodeFill,
-        ], excludeCode: false)
+        ], excludeCode: false, caretOffset: caretOffset)
 
         styleDelimited(in: output, text: text, delimiter: "**", contentAttributes: [
             .font: theme.boldBodyFont(),
-        ])
+        ], caretOffset: caretOffset)
         styleDelimited(in: output, text: text, delimiter: "==", contentAttributes: [
             .backgroundColor: Theme.Highlight.lime.color,
-        ])
+        ], caretOffset: caretOffset)
         styleDelimited(in: output, text: text, delimiter: "$", contentAttributes: [
             .font: theme.inlineCodeFont(),
             .foregroundColor: theme.accent,
-        ])
+        ], caretOffset: caretOffset)
     }
 
     /// Finds `delimiter…delimiter` pairs on a single line and styles the
-    /// delimiters faded + the content with `contentAttributes`. Skips spans
-    /// that fall inside already-styled code (unless styling code itself).
+    /// content with `contentAttributes`. The delimiters render faded when
+    /// the caret sits inside the span (delimiters included) and collapse
+    /// to invisible otherwise. Skips spans that fall inside already-styled
+    /// code (unless styling code itself).
     private func styleDelimited(
         in output: NSMutableAttributedString,
         text: NSString,
         delimiter: String,
         contentAttributes: [NSAttributedString.Key: Any],
-        excludeCode: Bool = true
+        excludeCode: Bool = true,
+        caretOffset: Int?
     ) {
         let delimiterLength = delimiter.utf16.count
         var search = NSRange(location: 0, length: text.length)
@@ -159,8 +177,11 @@ struct MarkdownSourceStyler {
             let insideCode = excludeCode && isCode(output, at: open.location)
 
             if contentRange.length > 0 && !spansNewline && !insideCode {
-                output.addAttributes(delimiterAttributes, range: open)
-                output.addAttributes(delimiterAttributes, range: NSRange(location: close.location, length: delimiterLength))
+                let spanEnd = close.location + delimiterLength
+                let caretInSpan = caretOffset.map { $0 >= open.location && $0 <= spanEnd } ?? true
+                let marks = caretInSpan ? delimiterAttributes : hiddenDelimiterAttributes
+                output.addAttributes(marks, range: open)
+                output.addAttributes(marks, range: NSRange(location: close.location, length: delimiterLength))
                 output.addAttributes(contentAttributes, range: contentRange)
             }
 

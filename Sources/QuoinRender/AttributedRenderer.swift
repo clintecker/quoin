@@ -68,7 +68,11 @@ public struct AttributedRenderer {
         self.onContentReady = onContentReady
     }
 
-    public func render(_ document: QuoinDocument, activeBlockID: BlockID? = nil) -> RenderedDocument {
+    public func render(
+        _ document: QuoinDocument,
+        activeBlockID: BlockID? = nil,
+        activeCaret: Int? = nil
+    ) -> RenderedDocument {
         let output = NSMutableAttributedString()
         var blockRanges: [BlockID: NSRange] = [:]
         var activeEditableRange: NSRange?
@@ -79,8 +83,9 @@ public struct AttributedRenderer {
             if block.id == activeBlockID,
                let slice = document.source.substring(in: block.range) {
                 // Syntax reveal: the active block shows its literal source,
-                // editable in place. Delimiters visible, subtle tint.
-                let editable = renderEditableSource(slice)
+                // editable in place. Only the caret's span reveals its
+                // delimiters (handoff span-level rule).
+                let editable = renderEditableSource(slice, caretOffset: activeCaret)
                 activeEditableRange = NSRange(location: start, length: editable.length)
                 activeSourceText = slice
                 output.append(editable)
@@ -128,8 +133,8 @@ public struct AttributedRenderer {
     /// The active block's raw markdown, styled for in-place editing:
     /// content approximates its rendered look, delimiters stay visible at
     /// 35% ink mono (syntax reveal), and the character mapping stays 1:1.
-    private func renderEditableSource(_ slice: String) -> NSAttributedString {
-        MarkdownSourceStyler(theme: theme).style(slice)
+    private func renderEditableSource(_ slice: String, caretOffset: Int? = nil) -> NSAttributedString {
+        MarkdownSourceStyler(theme: theme).style(slice, caretOffset: caretOffset)
     }
 
     // MARK: - Blocks

@@ -307,6 +307,20 @@ public struct MarkdownReaderView: NSViewRepresentable {
                   parent.onActivateBlock != nil,
                   let textView else { return }
             let selection = textView.selectedRange()
+
+            // Span-level syntax reveal: as the caret moves inside the
+            // active block, re-style it so only the caret's span shows its
+            // delimiters. Attribute-only pass; the text never changes.
+            if selection.length == 0,
+               let active = parent.rendered.activeEditableRange,
+               selection.location >= active.location,
+               selection.location <= active.location + active.length {
+                let relativeCaret = selection.location - active.location
+                if relativeCaret != lastStyledCaret {
+                    lastStyledCaret = relativeCaret
+                    restyleActiveBlock(caretAt: relativeCaret, in: textView)
+                }
+            }
             // Zero-length caret placement activates a block. Clicking an
             // attachment (math, diagram, image) selects the attachment
             // character itself — a length-1 selection on an attachment run
@@ -326,6 +340,34 @@ public struct MarkdownReaderView: NSViewRepresentable {
             if id != parent.rendered.activeBlockID {
                 parent.onActivateBlock?(id)
             }
+        }
+
+        private var lastStyledCaret = -1
+
+        /// Re-applies the active block's source styling for a new caret
+        /// position. Same characters, new attributes — selection, undo
+        /// state, and the 1:1 edit mapping are untouched.
+        private func restyleActiveBlock(caretAt relativeCaret: Int, in textView: NSTextView) {
+            guard let active = parent.rendered.activeEditableRange,
+                  let source = parent.rendered.activeSourceText,
+                  let storage = textView.textContentStorage?.textStorage,
+                  active.location + active.length <= storage.length
+            else { return }
+            let styled = MarkdownSourceStyler(theme: parent.theme)
+                .style(source, caretOffset: relativeCaret)
+            guard styled.length == active.length else { return }
+
+            let blockID = storage.attribute(QuoinAttribute.blockID, at: active.location, effectiveRange: nil)
+            storage.beginEditing()
+            styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length)) { attrs, range, _ in
+                var merged = attrs
+                if let blockID { merged[QuoinAttribute.blockID] = blockID }
+                storage.setAttributes(
+                    merged,
+                    range: NSRange(location: active.location + range.location, length: range.length)
+                )
+            }
+            storage.endEditing()
         }
 
         /// Applies a format command to the selection inside the active
