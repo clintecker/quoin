@@ -44,7 +44,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// to park the caret between the inserted delimiters.
     public let onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String, _ caretDelta: Int?) -> Void)?
     /// Caret entered a block (nil = deactivate, Esc).
-    public let onActivateBlock: ((BlockID?) -> Void)?
+    public let onActivateBlock: ((BlockID?, Int?) -> Void)?
     /// Caret position (UTF-16, relative to the active block's source text)
     /// to restore after a re-render; `caretGeneration` bumps to re-apply.
     public let caretInActiveBlock: Int?
@@ -66,7 +66,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         anchorResolver: @escaping (String) -> BlockID? = { _ in nil },
         onTopBlockChange: @escaping (BlockID?) -> Void = { _ in },
         onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String, _ caretDelta: Int?) -> Void)? = nil,
-        onActivateBlock: ((BlockID?) -> Void)? = nil,
+        onActivateBlock: ((BlockID?, Int?) -> Void)? = nil,
         caretInActiveBlock: Int? = nil,
         caretGeneration: Int = 0,
         formatCommand: FormatCommand? = nil,
@@ -388,9 +388,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 return false
             }
 
-            // Keystroke outside the revealed region: open that block.
+            // Keystroke outside the revealed region: open that block at the
+            // keystroke's position.
             if let id = blockID(atCharIndex: affectedCharRange.location) {
-                parent.onActivateBlock?(id)
+                let hint = blockRanges[id].map { affectedCharRange.location - $0.location }
+                parent.onActivateBlock?(id, hint)
             }
             return false
         }
@@ -428,7 +430,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
                !isEmbedBlock(atCharIndex: selection.location) {
                 if let id = blockID(atCharIndex: selection.location),
                    id != parent.rendered.activeBlockID {
-                    parent.onActivateBlock?(id)
+                    parent.onActivateBlock?(id, nil)
                 }
                 return
             }
@@ -437,7 +439,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
             guard !isEmbedBlock(atCharIndex: selection.location) else { return }
             guard let id = blockID(atCharIndex: selection.location) else { return }
             if id != parent.rendered.activeBlockID {
-                parent.onActivateBlock?(id)
+                // Land the caret where the click fell, not at the block end.
+                let hint = blockRanges[id].map { selection.location - $0.location }
+                parent.onActivateBlock?(id, hint)
             }
         }
 
@@ -516,7 +520,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.cancelOperation(_:)),
                parent.rendered.activeBlockID != nil {
-                parent.onActivateBlock?(nil)
+                parent.onActivateBlock?(nil, nil)
                 return true
             }
             return false
@@ -549,7 +553,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
             guard isEmbedBlock(atCharIndex: index),
                   let id = blockID(atCharIndex: index),
                   id != parent.rendered.activeBlockID else { return }
-            parent.onActivateBlock?(id)
+            parent.onActivateBlock?(id, nil)
         }
 
         // MARK: Scroll anchoring

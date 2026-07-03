@@ -139,13 +139,18 @@ final class ReaderModel: ObservableObject {
 
     // MARK: - Syntax reveal
 
-    func activateBlock(_ id: BlockID?) {
+    /// Activates a block for editing. `caretHint` is the caret's offset in the
+    /// block's *rendered* text (UTF-16); we land the caret near there in the
+    /// revealed source so a click doesn't teleport it to the block end and
+    /// reveal the wrong span. For plain text the mapping is exact; markup makes
+    /// it land a little early (hidden delimiters), which still feels right.
+    func activateBlock(_ id: BlockID?, caretHint: Int? = nil) {
         guard id != activeBlockID else { return }
         activeBlockID = id
-        // Place the caret at the end of the revealed source by default.
         if let id, let block = document.blocks.first(where: { $0.id == id }),
            let slice = document.source.substring(in: block.range) {
-            caretInActiveBlock = slice.utf16.count
+            let sourceLength = slice.utf16.count
+            caretInActiveBlock = min(max(0, caretHint ?? sourceLength), sourceLength)
         } else {
             caretInActiveBlock = nil
         }

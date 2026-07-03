@@ -56,7 +56,7 @@ struct ReaderScreen: View {
                 onEditIntent: { range, replacement, caretDelta in
                     model.applyEdit(relativeRange: range, replacement: replacement, caretDelta: caretDelta)
                 },
-                onActivateBlock: { id in model.activateBlock(id) },
+                onActivateBlock: { id, caretHint in model.activateBlock(id, caretHint: caretHint) },
                 caretInActiveBlock: model.caretInActiveBlock,
                 caretGeneration: model.caretGeneration,
                 formatCommand: formatCommand,
