@@ -42,8 +42,71 @@ final class ScreenshotTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 2)
                 capture(name: "03-native-engines")
             }
+
+            captureChrome(app)
         }
         app.terminate()
+    }
+
+    /// Walks the window chrome: syntax reveal, find bar, export sheet,
+    /// quick open, library search, stats popover. Each interaction is
+    /// best-effort — a missed element skips its shot rather than failing
+    /// the suite.
+    private func captureChrome(_ app: XCUIApplication) {
+        // Syntax reveal: click into the document body.
+        let textView = app.textViews.firstMatch
+        if textView.exists {
+            textView.click()
+            Thread.sleep(forTimeInterval: 1.5)
+            capture(name: "07-syntax-reveal")
+            app.typeKey(.escape, modifierFlags: [])
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        // Find bar (⌘F) with live matches.
+        app.typeKey("f", modifierFlags: [.command])
+        Thread.sleep(forTimeInterval: 0.7)
+        app.typeText("math")
+        Thread.sleep(forTimeInterval: 1)
+        capture(name: "08-find-bar")
+        app.typeKey(.escape, modifierFlags: [])
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Export sheet (⇧⌘E).
+        app.typeKey("e", modifierFlags: [.command, .shift])
+        Thread.sleep(forTimeInterval: 1.2)
+        capture(name: "09-export-sheet")
+        app.typeKey(.escape, modifierFlags: [])
+        Thread.sleep(forTimeInterval: 0.7)
+
+        // Quick open (⇧⌘O) with a query.
+        app.typeKey("o", modifierFlags: [.command, .shift])
+        Thread.sleep(forTimeInterval: 0.7)
+        app.typeText("show")
+        Thread.sleep(forTimeInterval: 1)
+        capture(name: "10-quick-open")
+        app.typeKey(.escape, modifierFlags: [])
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Library search (⇧⌘F) with full-text hits.
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        Thread.sleep(forTimeInterval: 0.7)
+        app.typeText("engine")
+        Thread.sleep(forTimeInterval: 1.2)
+        capture(name: "11-library-search")
+        app.typeKey(.escape, modifierFlags: [])
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Statistics popover from the status bar.
+        let stats = app.staticTexts.matching(
+            NSPredicate(format: "value CONTAINS 'words' OR label CONTAINS 'words'")
+        ).firstMatch
+        if stats.exists {
+            stats.click()
+            Thread.sleep(forTimeInterval: 1)
+            capture(name: "12-stats-popover")
+            app.typeKey(.escape, modifierFlags: [])
+        }
     }
 
     /// Dark-appearance pass: verifies the handoff rules (inverted ink/canvas,
