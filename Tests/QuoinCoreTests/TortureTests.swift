@@ -50,6 +50,29 @@ final class TortureTests: XCTestCase {
         XCTAssertNil(MermaidParser.parse(source)) // renderer will fall back
     }
 
+    func testBrokenStructureDiagramsFallBack() {
+        // Garbage bodies for the D2 dialects must parse to nil (renderer
+        // falls back to styled source), never crash.
+        XCTAssertNil(MermaidParser.parse("stateDiagram-v2\n  ??? !!! ***"))
+        XCTAssertNil(MermaidParser.parse("classDiagram\n  {{{{ }}}}"))
+        XCTAssertNil(MermaidParser.parse("erDiagram\n  just some words"))
+        // An unclosed member block keeps whatever parsed cleanly.
+        if case .classDiagram(let diagram)? = MermaidParser.parse("classDiagram\n  class A {\n  +x") {
+            XCTAssertEqual(diagram.classes.first?.name, "A")
+        } else {
+            XCTFail("expected a class diagram despite the unclosed block")
+        }
+        // A self-relation must not crash the layered placement.
+        if case .er(let er)? = MermaidParser.parse("erDiagram\n  A ||--|| A : self") {
+            let layout = DiagramLayoutEngine.layout(er) { text, size in
+                CGSize(width: Double(text.count) * 7, height: size + 4)
+            }
+            XCTAssertEqual(layout.boxes.count, 1)
+        } else {
+            XCTFail("expected an ER diagram")
+        }
+    }
+
     func testMixedScriptsAndEmoji() {
         let source = "# 日本語の見出し 🎌\n\nمرحبا **بالعالم** и русский текст with 🎉🎊✨ emoji.\n\n- [ ] 完了していないタスク"
         let doc = MarkdownConverter.parse(source)
