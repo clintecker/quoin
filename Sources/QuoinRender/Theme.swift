@@ -17,7 +17,23 @@ import Foundation
 /// surface, and desaturates highlights ~15%.
 public struct Theme: Sendable {
 
-    public init() {}
+    /// Captured at creation: whether the app is in dark appearance. Keys
+    /// the engine render caches so cached math/diagram images match the
+    /// surrounding canvas. (A mid-session appearance switch re-creates
+    /// themes via the SwiftUI environment on the next render.)
+    public let prefersDark: Bool
+
+    public init() {
+        #if canImport(AppKit)
+        if Thread.isMainThread, let app = NSApp {
+            prefersDark = app.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        } else {
+            prefersDark = false
+        }
+        #else
+        prefersDark = false
+        #endif
+    }
 
     // MARK: - Spacing & metrics (handoff: 4 · 8 · 12 · 16 · 24 · 32)
 

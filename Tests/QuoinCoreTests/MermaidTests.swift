@@ -137,6 +137,18 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertGreaterThan(layout.lifelineBottom, layout.arrows[1].y)
     }
 
+    func testSelfMessageBecomesLoop() {
+        guard case .sequence(let seq)? = MermaidParser.parse("""
+        sequenceDiagram
+            A->>A: think
+            A->>B: answer
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(seq, measure: measure)
+        XCTAssertTrue(layout.arrows[0].isSelfMessage)
+        XCTAssertGreaterThan(layout.arrows[0].toX, layout.arrows[0].fromX)
+        XCTAssertFalse(layout.arrows[1].isSelfMessage)
+    }
+
     func testPieAnglesSumToFullCircle() {
         guard case .pie(let pie)? = MermaidParser.parse("pie\n \"A\" : 1\n \"B\" : 3") else {
             return XCTFail("parse failed")

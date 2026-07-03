@@ -15,6 +15,21 @@ graph LR
 ```
 
 ```mermaid
+sequenceDiagram
+    participant E as Editor
+    participant S as Session
+    E->>S: apply edit
+    S->>S: re-parse
+    S-->>E: new snapshot
+```
+
+Display-style operators take their limits above and below:
+
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+
+```mermaid
 pie title Engine coverage
     "Flowchart" : 40
     "Sequence" : 35

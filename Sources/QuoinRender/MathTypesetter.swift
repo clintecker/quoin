@@ -279,6 +279,11 @@ struct MathTypesetter {
     // MARK: - Scripts
 
     private func scriptsBox(_ base: MathNode, sub: MathNode?, sup: MathNode?, size: CGFloat, display: Bool) -> MathBox {
+        // Display style: big operators take their limits above and below
+        // (∑ᵢ₌₁ⁿ style), like TeX's \limits.
+        if display, case .symbol(_, .largeOperator, _) = base {
+            return limitsBox(base, sub: sub, sup: sup, size: size)
+        }
         let baseBox = layout(base, size: size, display: display)
         let scriptSize = size * 0.68
         let supBox = sup.map { layout($0, size: scriptSize, display: false) }
@@ -302,6 +307,38 @@ struct MathTypesetter {
             }
             if let subBox {
                 subBox.draw(context, CGPoint(x: scriptX, y: pen.y - subDrop))
+            }
+        }
+    }
+
+    /// ∑/∫-style stacked limits: operator enlarged, superscript centered
+    /// above, subscript centered below.
+    private func limitsBox(_ base: MathNode, sub: MathNode?, sup: MathNode?, size: CGFloat) -> MathBox {
+        let opBox = layout(base, size: size * 1.35, display: false)
+        let scriptSize = size * 0.68
+        let supBox = sup.map { layout($0, size: scriptSize, display: false) }
+        let subBox = sub.map { layout($0, size: scriptSize, display: false) }
+        let gap = size * 0.12
+
+        let width = max(opBox.width, supBox?.width ?? 0, subBox?.width ?? 0)
+        var ascent = opBox.ascent
+        var descent = opBox.descent
+        if let supBox { ascent += gap + supBox.height }
+        if let subBox { descent += gap + subBox.height }
+
+        return MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
+            opBox.draw(context, CGPoint(x: pen.x + (width - opBox.width) / 2, y: pen.y))
+            if let supBox {
+                supBox.draw(context, CGPoint(
+                    x: pen.x + (width - supBox.width) / 2,
+                    y: pen.y + opBox.ascent + gap + supBox.descent
+                ))
+            }
+            if let subBox {
+                subBox.draw(context, CGPoint(
+                    x: pen.x + (width - subBox.width) / 2,
+                    y: pen.y - opBox.descent - gap - subBox.ascent
+                ))
             }
         }
     }

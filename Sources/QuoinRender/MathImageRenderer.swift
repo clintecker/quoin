@@ -36,7 +36,7 @@ enum MathImageRenderer {
         let node = MathParser.parse(latex)
         guard MathParser.isFullySupported(node) else { return nil }
 
-        let key = "\(display ? "D" : "I")|\(baseSize)|\(latex)" as NSString
+        let key = "\(display ? "D" : "I")|\(theme.prefersDark ? "dark" : "light")|\(baseSize)|\(latex)" as NSString
         let entry: Entry
         if let cached = cache.object(forKey: key) {
             entry = cached
@@ -52,12 +52,17 @@ enum MathImageRenderer {
             )
 
             #if canImport(AppKit)
-            // Handler-based NSImage: the draw closure runs at display time,
-            // so dynamic colors resolve for the current appearance — math
-            // adapts to dark mode with no re-render.
+            // Handler-based NSImage with the theme's appearance pinned, so
+            // dynamic colors resolve to match the canvas the image sits on.
+            let appearance = NSAppearance(named: theme.prefersDark ? .darkAqua : .aqua)
             let image = NSImage(size: size, flipped: false) { _ in
                 guard let context = NSGraphicsContext.current?.cgContext else { return false }
-                box.draw(context, CGPoint(x: padding, y: box.descent + padding))
+                let draw = { box.draw(context, CGPoint(x: padding, y: box.descent + padding)) }
+                if let appearance {
+                    appearance.performAsCurrentDrawingAppearance(draw)
+                } else {
+                    draw()
+                }
                 return true
             }
             #else

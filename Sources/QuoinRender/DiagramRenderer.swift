@@ -27,7 +27,7 @@ enum DiagramRenderer {
     static func attachmentString(source: String, theme: Theme) -> NSAttributedString? {
         guard let diagram = MermaidParser.parse(source) else { return nil }
 
-        let key = "mermaid|\(source)" as NSString
+        let key = "mermaid|\(theme.prefersDark ? "dark" : "light")|\(source)" as NSString
         let entry: Entry
         if let cached = cache.object(forKey: key) {
             entry = cached
@@ -54,9 +54,14 @@ enum DiagramRenderer {
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 
             #if canImport(AppKit)
+            let appearance = NSAppearance(named: theme.prefersDark ? .darkAqua : .aqua)
             let image = NSImage(size: size, flipped: true) { _ in
                 guard let context = NSGraphicsContext.current?.cgContext else { return false }
-                draw(context)
+                if let appearance {
+                    appearance.performAsCurrentDrawingAppearance { draw(context) }
+                } else {
+                    draw(context)
+                }
                 return true
             }
             #else
@@ -250,19 +255,42 @@ enum DiagramRenderer {
             context.setLineWidth(1)
             if arrow.dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
             context.beginPath()
-            context.move(to: CGPoint(x: arrow.fromX, y: arrow.y))
-            context.addLine(to: CGPoint(x: arrow.toX, y: arrow.y))
+            if arrow.isSelfMessage {
+                // Loop out, down, and back into the lifeline.
+                context.move(to: CGPoint(x: arrow.fromX, y: arrow.y))
+                context.addLine(to: CGPoint(x: arrow.toX, y: arrow.y))
+                context.addLine(to: CGPoint(x: arrow.toX, y: arrow.y + 12))
+                context.addLine(to: CGPoint(x: arrow.fromX, y: arrow.y + 12))
+            } else {
+                context.move(to: CGPoint(x: arrow.fromX, y: arrow.y))
+                context.addLine(to: CGPoint(x: arrow.toX, y: arrow.y))
+            }
             context.strokePath()
             context.restoreGState()
-            drawArrowhead(
-                at: CGPoint(x: arrow.toX, y: arrow.y),
-                from: CGPoint(x: arrow.fromX, y: arrow.y),
-                color: stroke, in: context
-            )
-            if !arrow.text.isEmpty {
-                drawText(arrow.text,
-                         center: CGPoint(x: (arrow.fromX + arrow.toX) / 2, y: arrow.y - 10),
-                         size: 10.5, color: theme.secondaryTextColor, in: context)
+
+            if arrow.isSelfMessage {
+                drawArrowhead(
+                    at: CGPoint(x: arrow.fromX, y: arrow.y + 12),
+                    from: CGPoint(x: arrow.toX, y: arrow.y + 12),
+                    color: stroke, in: context
+                )
+                if !arrow.text.isEmpty {
+                    let size = measure(arrow.text, size: 10.5)
+                    drawText(arrow.text,
+                             center: CGPoint(x: arrow.toX + 8 + size.width / 2, y: arrow.y + 6),
+                             size: 10.5, color: theme.secondaryTextColor, in: context)
+                }
+            } else {
+                drawArrowhead(
+                    at: CGPoint(x: arrow.toX, y: arrow.y),
+                    from: CGPoint(x: arrow.fromX, y: arrow.y),
+                    color: stroke, in: context
+                )
+                if !arrow.text.isEmpty {
+                    drawText(arrow.text,
+                             center: CGPoint(x: (arrow.fromX + arrow.toX) / 2, y: arrow.y - 10),
+                             size: 10.5, color: theme.secondaryTextColor, in: context)
+                }
             }
         }
     }

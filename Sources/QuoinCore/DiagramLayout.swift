@@ -44,6 +44,17 @@ public struct SequenceLayout: Sendable {
         public let y: CGFloat
         public let text: String
         public let dashed: Bool
+        /// Message to the same participant: drawn as a small loop.
+        public let isSelfMessage: Bool
+
+        public init(fromX: CGFloat, toX: CGFloat, y: CGFloat, text: String, dashed: Bool, isSelfMessage: Bool = false) {
+            self.fromX = fromX
+            self.toX = toX
+            self.y = y
+            self.text = text
+            self.dashed = dashed
+            self.isSelfMessage = isSelfMessage
+        }
     }
 
     public let size: CGSize
@@ -132,7 +143,7 @@ public enum DiagramLayoutEngine {
             var size = CGSize(width: text.width + paddingX * 2, height: text.height + paddingY * 2)
             switch node.shape {
             case .diamond:
-                size = CGSize(width: size.width * 1.5, height: size.height * 1.7)
+                size = CGSize(width: size.width * 1.3, height: size.height * 1.5)
             case .circle:
                 let d = max(size.width, size.height)
                 size = CGSize(width: d, height: d)
@@ -262,12 +273,14 @@ public enum DiagramLayoutEngine {
         var arrows: [SequenceLayout.Arrow] = []
         for (row, message) in diagram.messages.enumerated() {
             guard let a = indexOf[message.from], let b = indexOf[message.to] else { continue }
+            let isSelf = a == b
             arrows.append(SequenceLayout.Arrow(
                 fromX: heads[a].lifelineX,
-                toX: heads[b].lifelineX,
+                toX: isSelf ? heads[a].lifelineX + 34 : heads[b].lifelineX,
                 y: arrowsTop + CGFloat(row) * rowHeight,
                 text: message.text,
-                dashed: message.dashed
+                dashed: message.dashed,
+                isSelfMessage: isSelf
             ))
         }
 
