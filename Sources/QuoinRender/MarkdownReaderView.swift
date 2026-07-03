@@ -389,9 +389,15 @@ public struct MarkdownReaderView: NSViewRepresentable {
             }
 
             // Keystroke outside the revealed region: open that block at the
-            // keystroke's position.
+            // keystroke's position. Embed blocks (code/table/…) map through the
+            // 1:1 body tag; plain prose uses the rendered offset directly.
             if let id = blockID(atCharIndex: affectedCharRange.location) {
-                let hint = blockRanges[id].map { affectedCharRange.location - $0.location }
+                let hint: Int?
+                if isEmbedBlock(atCharIndex: affectedCharRange.location) {
+                    hint = embedCaretHint(atCharIndex: affectedCharRange.location)
+                } else {
+                    hint = blockRanges[id].map { affectedCharRange.location - $0.location }
+                }
                 parent.onActivateBlock?(id, hint)
             }
             return false
@@ -548,12 +554,34 @@ public struct MarkdownReaderView: NSViewRepresentable {
         }
 
         /// Double-click on an embed block flips it to editable source
-        /// (QuoinTextView routes the gesture here).
+        /// (QuoinTextView routes the gesture here). The caret lands at the
+        /// source position matching the click, not at the block end.
         func activateEmbedBlock(atCharIndex index: Int) {
             guard isEmbedBlock(atCharIndex: index),
                   let id = blockID(atCharIndex: index),
                   id != parent.rendered.activeBlockID else { return }
-            parent.onActivateBlock?(id, nil)
+            parent.onActivateBlock?(id, embedCaretHint(atCharIndex: index))
+        }
+
+        /// Where the caret should land when an embed block flips to source:
+        /// the start of the code content (just inside the opening fence), so a
+        /// double-click doesn't dump the caret after the closing fence. Precise
+        /// click-to-source mapping isn't attempted — TextKit 2 point hit-testing
+        /// is unreliable in the decorated canvas — but once in source mode the
+        /// text is plain, so the next click lands exactly where the user aims.
+        func embedCaretHint(atCharIndex index: Int) -> Int? {
+            guard let storage = textView?.textContentStorage?.textStorage,
+                  let id = blockID(atCharIndex: index),
+                  let blockRange = blockRanges[id] else { return nil }
+            var contentStart: Int?
+            let clamped = NSRange(
+                location: blockRange.location,
+                length: min(blockRange.length, storage.length - blockRange.location)
+            )
+            storage.enumerateAttribute(QuoinAttribute.embedSourceStart, in: clamped) { value, _, stop in
+                if let start = value as? NSNumber { contentStart = start.intValue; stop.pointee = true }
+            }
+            return contentStart
         }
 
         // MARK: Scroll anchoring
@@ -590,7 +618,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
         func topVisibleBlockID(in textView: NSTextView) -> BlockID? {
             guard let storage = textView.textContentStorage?.textStorage, storage.length > 0 else { return nil }
-            let topPoint = NSPoint(x: textView.visibleRect.minX + 1, y: textView.visibleRect.minY + 1)
+            // Sample below the jump-to-section pin gap (scrollBlockToTop parks a
+            // heading ~8pt down): a 1pt sample lands on the tail of the previous
+            // block, so the outline highlighted the section above the target.
+            let topPoint = NSPoint(x: textView.visibleRect.minX + 1, y: textView.visibleRect.minY + 12)
             let index = textView.characterIndexForInsertion(at: topPoint)
             guard index >= 0, index < storage.length else { return nil }
             guard let idString = storage.attribute(QuoinAttribute.blockID, at: index, effectiveRange: nil) as? String else { return nil }

@@ -248,6 +248,24 @@ public struct AttributedRenderer {
         default:
             break
         }
+        // Resolve the code body's caret-mapping marker to the real source
+        // offset: the rendered body is 1:1 with the source content, which sits
+        // after the opening fence line in the block's source slice.
+        if case .codeBlock = block.kind,
+           let slice = document.source.substring(in: block.range) {
+            let sliceNS = slice as NSString
+            tagged.enumerateAttribute(QuoinAttribute.embedSourceStart, in: whole) { value, range, _ in
+                guard (value as? NSNumber)?.intValue == -1 else { return }
+                let bodyText = tagged.attributedSubstring(from: range).string
+                let found = sliceNS.range(of: bodyText)
+                if found.location != NSNotFound {
+                    tagged.addAttribute(QuoinAttribute.embedSourceStart,
+                                        value: NSNumber(value: found.location), range: range)
+                } else {
+                    tagged.removeAttribute(QuoinAttribute.embedSourceStart, range: range)
+                }
+            }
+        }
         return tagged
     }
 
@@ -337,6 +355,11 @@ public struct AttributedRenderer {
             padded.paragraphSpacing = 8
             body.addAttribute(.paragraphStyle, value: padded, range: lastLine)
         }
+        // Marker: this run is the code body, 1:1 with the block's source
+        // content. render(block:) resolves it to the real source offset so a
+        // click can land the caret precisely when the block flips to source.
+        body.addAttribute(QuoinAttribute.embedSourceStart, value: NSNumber(value: -1),
+                          range: NSRange(location: 0, length: body.length))
         output.append(body)
 
         output.addAttribute(
@@ -724,6 +747,9 @@ public struct AttributedRenderer {
         // edge (drawn as a block decoration by the reader view).
         output.enumerateAttribute(.font, in: full) { value, range, _ in
             guard !intersectsCard(range) else { return }
+            // Inline code carries its own monospace font + fill; italicising it
+            // shifts the baseline off the surrounding quote text. Leave it be.
+            if output.attribute(.backgroundColor, at: range.location, effectiveRange: nil) != nil { return }
             let font = value as? PlatformFont ?? theme.bodyFont()
             output.addAttribute(.font, value: italicVariant(of: font), range: range)
         }

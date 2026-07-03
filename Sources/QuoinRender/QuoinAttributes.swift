@@ -29,6 +29,11 @@ public enum QuoinAttribute {
     /// table) that flips to editable source on double-click, not on a
     /// single click (handoff: whole blocks flip on double-click).
     public static let embedBlock = NSAttributedString.Key("quoin.embedBlock")
+    /// Value: `NSNumber` (Int) — on an embed block's rendered body run, the
+    /// UTF-16 offset (relative to the block's source start) that the run's
+    /// first character maps to. Lets a click land the caret at the matching
+    /// source position when the block flips to editable source.
+    public static let embedSourceStart = NSAttributedString.Key("quoin.embedSourceStart")
 }
 
 /// Custom URL schemes used for in-document interaction via the text view's
