@@ -12,8 +12,10 @@ public indirect enum Inline: Hashable, Sendable {
     case image(source: String?, alt: String)
     /// Inline math extracted from `$…$` spans.
     case math(latex: String)
-    /// `==highlighted==` text, rendered as a pill in the current highlight color.
-    case highlight([Inline])
+    /// `==highlighted==` text, rendered as a pill. The color comes from an
+    /// optional `{color}` tag just inside the opener (`=={pink}text==`);
+    /// plain `==text==` is lime, and ⇧⌘H cycles through the palette.
+    case highlight([Inline], HighlightColor)
     /// A `[^id]` footnote reference; `index` is its 1-based document ordinal.
     case footnoteReference(id: String, index: Int)
     case softBreak
@@ -25,7 +27,7 @@ public indirect enum Inline: Hashable, Sendable {
         switch self {
         case .text(let s): return s
         case .code(let s): return s
-        case .emphasis(let c), .strong(let c), .strikethrough(let c), .highlight(let c):
+        case .emphasis(let c), .strong(let c), .strikethrough(let c), .highlight(let c, _):
             return c.map(\.plainText).joined()
         case .link(_, let c): return c.map(\.plainText).joined()
         case .image(_, let alt): return alt
@@ -40,6 +42,12 @@ public indirect enum Inline: Hashable, Sendable {
 
 extension Array where Element == Inline {
     public var plainText: String { map(\.plainText).joined() }
+}
+
+/// The 5-color highlight palette from the handoff (§ inline styling).
+/// Raw values are the source-encoding names used by the `{color}` tag.
+public enum HighlightColor: String, CaseIterable, Hashable, Sendable {
+    case lime, pink, yellow, blue, orange
 }
 
 // MARK: - Blocks

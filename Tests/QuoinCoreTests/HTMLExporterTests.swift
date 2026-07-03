@@ -43,7 +43,7 @@ final class HTMLExporterTests: XCTestCase {
         """)
         let html = HTMLExporter.export(doc)
         XCTAssertTrue(html.contains("<strong>bold</strong>"))
-        XCTAssertTrue(html.contains("<mark>marked</mark>"))
+        XCTAssertTrue(html.contains("<mark class=\"hl-lime\">marked</mark>"))
         XCTAssertTrue(html.contains("<code>code</code>"))
         XCTAssertTrue(html.contains("callout-tip"))
         XCTAssertTrue(html.contains("<th style=\"text-align:left\">a</th>"))

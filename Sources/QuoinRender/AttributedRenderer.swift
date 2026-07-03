@@ -593,11 +593,10 @@ public struct AttributedRenderer {
             attrs[QuoinAttribute.mathSource] = latex
             return NSAttributedString(string: latex, attributes: attrs)
 
-        case .highlight(let children):
-            // Pill highlight, lime by default (radius arrives with the
-            // block decoration pass; background carries the color now).
+        case .highlight(let children, let color):
+            // Pill highlight in the span's palette color (⇧⌘H cycles it).
             var attrs = attributes
-            attrs[.backgroundColor] = Theme.Highlight.lime.color
+            attrs[.backgroundColor] = (Theme.Highlight(rawValue: color.rawValue) ?? .lime).color
             attrs[.foregroundColor] = theme.textColor
             return renderInlines(children, base: attrs)
 

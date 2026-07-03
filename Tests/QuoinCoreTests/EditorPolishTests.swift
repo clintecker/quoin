@@ -78,6 +78,46 @@ final class FormattingTests: XCTestCase {
         XCTAssertEqual(change.replacement, "==key point==")
     }
 
+    func testHighlightCycleWalksThePalette() {
+        // plain → lime → pink → yellow → blue → orange → plain
+        var selection = "note"
+        var seen: [String] = []
+        for _ in 0..<6 {
+            let change = Formatting.cycleHighlight(selection: selection)
+            seen.append(change.replacement)
+            // The whole span stays selected so the next ⇧⌘H keeps cycling.
+            XCTAssertEqual(change.selectionOffset, 0)
+            XCTAssertEqual(change.selectionLength, change.replacement.utf16.count)
+            selection = change.replacement
+        }
+        XCTAssertEqual(seen, [
+            "==note==",
+            "=={pink}note==",
+            "=={yellow}note==",
+            "=={blue}note==",
+            "=={orange}note==",
+            "note",
+        ])
+    }
+
+    func testColorTagParsesToPaletteColor() {
+        let doc = MarkdownConverter.parse("a =={pink}rosy== b and ==plain== c")
+        guard case .paragraph(let inlines) = doc.blocks[0].kind else {
+            return XCTFail("expected paragraph")
+        }
+        XCTAssertTrue(inlines.contains(.highlight([.text("rosy")], .pink)))
+        XCTAssertTrue(inlines.contains(.highlight([.text("plain")], .lime)))
+        XCTAssertEqual(doc.stats.highlightCount, 2)
+    }
+
+    func testUnknownColorTagStaysLiteral() {
+        let doc = MarkdownConverter.parse("=={chartreuse}text==")
+        guard case .paragraph(let inlines) = doc.blocks[0].kind else {
+            return XCTFail("expected paragraph")
+        }
+        XCTAssertTrue(inlines.contains(.highlight([.text("{chartreuse}text")], .lime)))
+    }
+
     func testMakeLinkSelectsURLPlaceholder() {
         let change = Formatting.makeLink(selection: "Apple")
         XCTAssertEqual(change.replacement, "[Apple](url)")

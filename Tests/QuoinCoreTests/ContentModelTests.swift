@@ -57,7 +57,7 @@ final class HighlightTests: XCTestCase {
         guard case .paragraph(let inlines) = doc.blocks[0].kind else {
             return XCTFail("expected paragraph")
         }
-        XCTAssertTrue(inlines.contains(.highlight([.text("important")])))
+        XCTAssertTrue(inlines.contains(.highlight([.text("important")], .lime)))
         XCTAssertEqual(doc.stats.highlightCount, 1)
     }
 
@@ -67,7 +67,7 @@ final class HighlightTests: XCTestCase {
             return XCTFail("expected paragraph")
         }
         let highlighted = inlines.compactMap { inline -> [Inline]? in
-            if case .highlight(let children) = inline { return children }
+            if case .highlight(let children, _) = inline { return children }
             return nil
         }
         XCTAssertEqual(highlighted.count, 1)

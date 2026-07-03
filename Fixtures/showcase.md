@@ -14,7 +14,8 @@ in Quoin and edit it in another editor to watch live reloading.
 ## Extended syntax
 
 Text can be ==highlighted like this== and claims can carry footnotes.[^one]
-Even ==highlights with **bold** inside== work.
+Even ==highlights with **bold** inside== work, and ⇧⌘H cycles the palette:
+=={pink}pink==, =={yellow}yellow==, =={blue}blue==, =={orange}orange==.
 
 > [!NOTE]
 > Callouts render with a semantic tint and title.

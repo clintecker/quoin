@@ -52,7 +52,8 @@ enum InlinePostPasses {
                         if !before.isEmpty { pending.append(.text(before)) }
                         isOpen = false
                         stats.highlightCount += 1
-                        result.append(.highlight(pending))
+                        let color = extractColorTag(&pending)
+                        result.append(.highlight(pending, color))
                         pending = []
                     } else {
                         pending.append(.text(before + "=="))
@@ -64,6 +65,23 @@ enum InlinePostPasses {
         }
         flushUnclosed()
         return result
+    }
+
+    /// Strips a leading `{color}` tag from the span content and returns the
+    /// palette color it names; unknown names stay literal text, no tag = lime.
+    private static func extractColorTag(_ pending: inout [Inline]) -> HighlightColor {
+        guard case .text(let text)? = pending.first,
+              text.hasPrefix("{"),
+              let close = text.firstIndex(of: "}"),
+              let color = HighlightColor(rawValue: String(text[text.index(after: text.startIndex)..<close]))
+        else { return .lime }
+        let rest = String(text[text.index(after: close)...])
+        if rest.isEmpty {
+            pending.removeFirst()
+        } else {
+            pending[0] = .text(rest)
+        }
+        return color
     }
 
     // MARK: - [^id] footnote references

@@ -141,8 +141,8 @@ public enum HTMLExporter {
                 out += "<strong>\(render(children))</strong>"
             case .strikethrough(let children):
                 out += "<del>\(render(children))</del>"
-            case .highlight(let children):
-                out += "<mark>\(render(children))</mark>"
+            case .highlight(let children, let color):
+                out += "<mark class=\"hl-\(color.rawValue)\">\(render(children))</mark>"
             case .link(let destination, let children):
                 let href = destination.map { escapeAttribute($0) } ?? "#"
                 out += "<a href=\"\(href)\">\(render(children))</a>"
@@ -189,6 +189,10 @@ public enum HTMLExporter {
     strong{color:#1d1d1f}
     del{color:rgba(29,29,31,.45)}
     mark{background:#d9f59b;border-radius:3px;padding:0 2px}
+    mark.hl-pink{background:#f7d9f0}
+    mark.hl-yellow{background:#fdeeaa}
+    mark.hl-blue{background:#cfe6fb}
+    mark.hl-orange{background:#fedbc6}
     a{color:#2a6fdb;text-decoration:underline;text-decoration-color:rgba(42,111,219,.35)}
     code{font:12.5px ui-monospace,'SF Mono',monospace;background:#f2f2f4;border-radius:4px;padding:1px 5px}
     pre{background:#1e2430;border-radius:8px;padding:12px 16px;overflow-x:auto}

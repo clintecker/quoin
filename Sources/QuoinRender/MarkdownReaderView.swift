@@ -337,7 +337,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
             switch command {
             case .bold: change = Formatting.toggleWrap(selection: selected, delimiter: "**")
             case .italic: change = Formatting.toggleWrap(selection: selected, delimiter: "*")
-            case .highlight: change = Formatting.toggleWrap(selection: selected, delimiter: "==")
+            case .highlight: change = Formatting.cycleHighlight(selection: selected)
             case .link: change = Formatting.makeLink(selection: selected)
             }
             let caretDelta = EditMapping.utf8Offset(

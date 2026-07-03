@@ -124,6 +124,39 @@ public enum Formatting {
         )
     }
 
+    /// ⇧⌘H: cycles the selection through the highlight palette.
+    /// Unhighlighted → `==sel==` (lime) → `=={pink}sel==` → … →
+    /// `=={orange}sel==` → back to plain text.
+    public static func cycleHighlight(selection: String) -> Change {
+        guard selection.hasPrefix("=="), selection.hasSuffix("=="), selection.count >= 4 else {
+            // Wrap, keeping the delimiters inside the selection so a
+            // repeated ⇧⌘H advances the cycle rather than re-wrapping.
+            let wrapped = "==" + selection + "=="
+            return Change(replacement: wrapped, selectionOffset: 0, selectionLength: wrapped.utf16.count)
+        }
+        var inner = String(selection.dropFirst(2).dropLast(2))
+        var current = HighlightColor.lime
+        if inner.hasPrefix("{"),
+           let close = inner.firstIndex(of: "}"),
+           let color = HighlightColor(rawValue: String(inner[inner.index(after: inner.startIndex)..<close])) {
+            current = color
+            inner = String(inner[inner.index(after: close)...])
+        }
+
+        let palette = HighlightColor.allCases
+        guard let index = palette.firstIndex(of: current), index + 1 < palette.count else {
+            // Last color: unwrap back to plain text.
+            return Change(replacement: inner, selectionOffset: 0, selectionLength: inner.utf16.count)
+        }
+        let next = palette[index + 1]
+        let prefix = "=={\(next.rawValue)}"
+        return Change(
+            replacement: prefix + inner + "==",
+            selectionOffset: 0,
+            selectionLength: (prefix + inner).utf16.count + 2
+        )
+    }
+
     /// Wraps the selection as a link: `[selection](url)`, selecting the URL
     /// placeholder for immediate typing.
     public static func makeLink(selection: String, url: String = "url") -> Change {
