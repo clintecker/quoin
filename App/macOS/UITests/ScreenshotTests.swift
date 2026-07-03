@@ -117,7 +117,7 @@ final class ScreenshotTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "-QuoinLibraryPath", fixturesPath,
-            "-AppleInterfaceStyle", "Dark",
+            "-QuoinForceDarkMode", "YES",
         ]
         app.launch()
 

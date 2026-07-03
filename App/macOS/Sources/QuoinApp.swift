@@ -24,6 +24,15 @@ struct QuoinApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let openDocumentNotification = Notification.Name("quoin.openDocument")
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Screenshot automation: -QuoinForceDarkMode YES pins the app to
+        // dark appearance (the AppleInterfaceStyle default doesn't reach
+        // SwiftUI apps launched by the UI-test runner).
+        if UserDefaults.standard.bool(forKey: "QuoinForceDarkMode") {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             NotificationCenter.default.post(
