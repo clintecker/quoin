@@ -235,6 +235,41 @@ enum DiagramRenderer {
         }
     }
 
+    /// Strokes an orthogonal polyline with lightly rounded corners so elbows
+    /// read as intentional turns, not kinks. Assumes the caller has set the
+    /// stroke colour / width / dash.
+    private static func strokePolyline(_ points: [CGPoint], in context: CGContext) {
+        guard points.count >= 2 else { return }
+        context.beginPath()
+        context.move(to: points[0])
+        if points.count > 2 {
+            for index in 1..<(points.count - 1) {
+                context.addArc(tangent1End: points[index],
+                               tangent2End: points[index + 1], radius: 5)
+            }
+        }
+        context.addLine(to: points.last!)
+        context.strokePath()
+    }
+
+    /// Midpoint by arc length along the polyline — where an edge label sits.
+    private static func polylineMidpoint(_ points: [CGPoint]) -> CGPoint {
+        guard points.count > 1 else { return points.first ?? .zero }
+        var total: CGFloat = 0
+        for i in 1..<points.count { total += hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y) }
+        var remaining = total / 2
+        for i in 1..<points.count {
+            let seg = hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y)
+            if remaining <= seg {
+                let t = seg == 0 ? 0 : remaining / seg
+                return CGPoint(x: points[i-1].x + (points[i].x - points[i-1].x) * t,
+                               y: points[i-1].y + (points[i].y - points[i-1].y) * t)
+            }
+            remaining -= seg
+        }
+        return points.last!
+    }
+
     private static func drawArrowhead(at tip: CGPoint, from origin: CGPoint, color: PlatformColor, in context: CGContext) {
         let angle = atan2(tip.y - origin.y, tip.x - origin.x)
         let length: CGFloat = 7
@@ -406,18 +441,15 @@ enum DiagramRenderer {
             context.setStrokeColor(resolvedCGColor(stroke))
             context.setLineWidth(1)
             if edge.kind.dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            context.beginPath()
-            context.move(to: edge.start)
-            context.addLine(to: edge.end)
-            context.strokePath()
+            strokePolyline(edge.points, in: context)
             context.restoreGState()
 
-            drawRelationMarker(edge.kind, at: edge.end, from: edge.start,
+            let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
+            drawRelationMarker(edge.kind, at: edge.end, from: approach,
                                stroke: stroke, canvas: theme.canvas, in: context)
 
             if let label = edge.label, !label.isEmpty {
-                let mid = CGPoint(x: (edge.start.x + edge.end.x) / 2,
-                                  y: (edge.start.y + edge.end.y) / 2)
+                let mid = polylineMidpoint(edge.points)
                 let size = measure(label, size: 10.5)
                 let pad: CGFloat = 3
                 context.setFillColor(resolvedCGColor(theme.canvas))
@@ -534,18 +566,16 @@ enum DiagramRenderer {
             context.setStrokeColor(resolvedCGColor(stroke))
             context.setLineWidth(1)
             if !edge.identifying { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            context.beginPath()
-            context.move(to: edge.start)
-            context.addLine(to: edge.end)
-            context.strokePath()
+            strokePolyline(edge.points, in: context)
             context.restoreGState()
 
-            drawCardinality(edge.fromCard, at: edge.start, from: edge.end, color: stroke, in: context)
-            drawCardinality(edge.toCard, at: edge.end, from: edge.start, color: stroke, in: context)
+            let fromApproach = edge.points.count > 1 ? edge.points[1] : edge.end
+            let toApproach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
+            drawCardinality(edge.fromCard, at: edge.start, from: fromApproach, color: stroke, in: context)
+            drawCardinality(edge.toCard, at: edge.end, from: toApproach, color: stroke, in: context)
 
             if !edge.label.isEmpty {
-                let mid = CGPoint(x: (edge.start.x + edge.end.x) / 2,
-                                  y: (edge.start.y + edge.end.y) / 2)
+                let mid = polylineMidpoint(edge.points)
                 let size = measure(edge.label, size: 10.5)
                 let pad: CGFloat = 3
                 context.setFillColor(resolvedCGColor(theme.canvas))

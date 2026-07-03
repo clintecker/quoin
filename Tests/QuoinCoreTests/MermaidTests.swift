@@ -265,6 +265,24 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertEqual(diagram.relations[3].label, "eats")
     }
 
+    func testClassRelationStripsMultiplicityLabels() {
+        guard case .classDiagram(let diagram)? = MermaidParser.parse("""
+        classDiagram
+            class Whole
+            class Part
+            Whole "1" *-- "many" Part : contains
+        """) else { return XCTFail("expected class diagram") }
+        // Endpoints resolve to the declared classes, not phantom names that
+        // still carry the quoted multiplicities.
+        XCTAssertEqual(diagram.classes.map(\.name).sorted(), ["Part", "Whole"])
+        XCTAssertEqual(diagram.relations.count, 1)
+        // `*--` normalizes so the diamond (marker end) is at the whole.
+        XCTAssertEqual(diagram.relations[0].to, "Whole")
+        XCTAssertEqual(diagram.relations[0].from, "Part")
+        XCTAssertEqual(diagram.relations[0].kind, .composition)
+        XCTAssertEqual(diagram.relations[0].label, "contains")
+    }
+
     func testClassLayoutPutsParentAboveChild() {
         guard case .classDiagram(let diagram)? = MermaidParser.parse("""
         classDiagram
@@ -278,6 +296,34 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertLessThan(animal!.frame.maxY, dog!.frame.minY)
         // Marker end of the edge is at the parent (Animal) border.
         XCTAssertEqual(layout.edges.first?.end.y ?? -1, animal!.frame.maxY, accuracy: 0.5)
+    }
+
+    func testClassEdgesRouteOrthogonallyWithFanOut() {
+        guard case .classDiagram(let diagram)? = MermaidParser.parse("""
+        classDiagram
+            Animal <|-- Dog
+            Animal <|-- Cat
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(diagram, measure: measure)
+        XCTAssertEqual(layout.edges.count, 2)
+
+        // Every segment is axis-aligned — orthogonal elbows, no diagonals.
+        for edge in layout.edges {
+            XCTAssertGreaterThanOrEqual(edge.points.count, 2)
+            XCTAssertEqual(edge.points.first!.x, edge.start.x, accuracy: 0.01)
+            XCTAssertEqual(edge.points.last!.x, edge.end.x, accuracy: 0.01)
+            for i in 1..<edge.points.count {
+                let a = edge.points[i - 1], b = edge.points[i]
+                XCTAssertTrue(abs(a.x - b.x) < 0.5 || abs(a.y - b.y) < 0.5,
+                              "segment \(a)->\(b) is diagonal")
+            }
+        }
+
+        // Both inheritance edges land on Animal's bottom face, fanned out to
+        // distinct attach points so the two lines never overlap.
+        let ends = layout.edges.map(\.end)
+        XCTAssertEqual(ends[0].y, ends[1].y, accuracy: 0.5)
+        XCTAssertNotEqual(ends[0].x, ends[1].x)
     }
 
     func testERDiagramParsesCardinalitiesAndAttributes() {

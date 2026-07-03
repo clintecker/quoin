@@ -108,6 +108,9 @@ public struct ClassLayout: Sendable {
     public struct Edge: Sendable {
         public let start: CGPoint      // at the `from` box border
         public let end: CGPoint        // at the `to` box border, marker here
+        /// Orthogonal route from `start` to `end`; first is `start`, last is
+        /// `end`. The marker orients along the final segment.
+        public let points: [CGPoint]
         public let kind: ClassDiagram.RelationKind
         public let label: String?
     }
@@ -129,6 +132,9 @@ public struct ERLayout: Sendable {
     public struct Edge: Sendable {
         public let start: CGPoint
         public let end: CGPoint
+        /// Orthogonal route from `start` to `end`; crow's-foot markers orient
+        /// along the first and last segments.
+        public let points: [CGPoint]
         public let fromCard: ERDiagram.Cardinality
         public let toCard: ERDiagram.Cardinality
         public let label: String
@@ -582,12 +588,25 @@ public enum DiagramLayoutEngine {
             )
         }
 
-        let edges = diagram.relations.compactMap { relation -> ClassLayout.Edge? in
-            guard let from = placement.frames[relation.from],
-                  let to = placement.frames[relation.to] else { return nil }
-            return ClassLayout.Edge(
-                start: borderPoint(of: from, toward: CGPoint(x: to.midX, y: to.midY)),
-                end: borderPoint(of: to, toward: CGPoint(x: from.midX, y: from.midY)),
+        // Route relations as orthogonal elbows with per-face fan-out, sharing
+        // the layered-box router with the ER diagram.
+        let valid = diagram.relations.filter {
+            placement.frames[$0.from] != nil && placement.frames[$0.to] != nil
+        }
+        var frameList: [CGRect] = []
+        var frameIndex: [String: Int] = [:]
+        for cls in diagram.classes {
+            guard let frame = placement.frames[cls.name] else { continue }
+            frameIndex[cls.name] = frameList.count
+            frameList.append(frame)
+        }
+        let pairs = valid.map { (from: frameIndex[$0.from]!, to: frameIndex[$0.to]!) }
+        let routes = routeBoxEdges(frames: frameList, pairs: pairs)
+        let edges = zip(valid, routes).map { relation, route in
+            ClassLayout.Edge(
+                start: route.points.first!,
+                end: route.points.last!,
+                points: route.points,
                 kind: relation.kind,
                 label: relation.label
             )
@@ -628,12 +647,23 @@ public enum DiagramLayoutEngine {
             )
         }
 
-        let edges = diagram.relations.compactMap { relation -> ERLayout.Edge? in
-            guard let from = placement.frames[relation.from],
-                  let to = placement.frames[relation.to] else { return nil }
-            return ERLayout.Edge(
-                start: borderPoint(of: from, toward: CGPoint(x: to.midX, y: to.midY)),
-                end: borderPoint(of: to, toward: CGPoint(x: from.midX, y: from.midY)),
+        let valid = diagram.relations.filter {
+            placement.frames[$0.from] != nil && placement.frames[$0.to] != nil
+        }
+        var frameList: [CGRect] = []
+        var frameIndex: [String: Int] = [:]
+        for entity in diagram.entities {
+            guard let frame = placement.frames[entity.name] else { continue }
+            frameIndex[entity.name] = frameList.count
+            frameList.append(frame)
+        }
+        let pairs = valid.map { (from: frameIndex[$0.from]!, to: frameIndex[$0.to]!) }
+        let routes = routeBoxEdges(frames: frameList, pairs: pairs)
+        let edges = zip(valid, routes).map { relation, route in
+            ERLayout.Edge(
+                start: route.points.first!,
+                end: route.points.last!,
+                points: route.points,
                 fromCard: relation.fromCard,
                 toCard: relation.toCard,
                 label: relation.label,
@@ -724,6 +754,109 @@ public enum DiagramLayoutEngine {
             frames: frames,
             size: CGSize(width: crossExtent + margin * 2, height: y - layerGap + margin)
         )
+    }
+
+    // MARK: Orthogonal routing for layered box diagrams (class, ER)
+
+    enum BoxFace { case top, bottom, left, right }
+
+    /// One routed edge: the orthogonal polyline plus the faces it attaches to.
+    struct RoutedBoxEdge {
+        let points: [CGPoint]
+    }
+
+    /// Routes edges between layered boxes as clean right-angled elbows with
+    /// per-face fan-out: every edge leaving (or entering) the same face gets
+    /// its own attachment slot, ordered by the opposite endpoint's cross
+    /// coordinate so sibling lines fan out instead of crossing. Vertical
+    /// neighbours attach top↔bottom; side-by-side boxes attach left↔right.
+    /// Shared by the class and ER layouts so both read the same way.
+    static func routeBoxEdges(
+        frames: [CGRect],
+        pairs: [(from: Int, to: Int)]
+    ) -> [RoutedBoxEdge] {
+        // Choose a face pair for each edge from the boxes' relative position.
+        struct Plan { var fromFace: BoxFace; var toFace: BoxFace }
+        var plans: [Plan] = []
+        // Attachment requests bucketed per (box, face); each carries a sort key.
+        struct Req { let edge: Int; let isStart: Bool; let sortKey: CGFloat }
+        var buckets: [String: [Req]] = [:]
+        func key(_ box: Int, _ face: BoxFace) -> String { "\(box)#\(face)" }
+
+        for (i, pair) in pairs.enumerated() {
+            let a = frames[pair.from], b = frames[pair.to]
+            let fromFace: BoxFace, toFace: BoxFace
+            if b.minY >= a.maxY {            // b clearly below a
+                fromFace = .bottom; toFace = .top
+            } else if b.maxY <= a.minY {     // b clearly above a
+                fromFace = .top; toFace = .bottom
+            } else if b.midX >= a.midX {     // side-by-side, b to the right
+                fromFace = .right; toFace = .left
+            } else {
+                fromFace = .left; toFace = .right
+            }
+            plans.append(Plan(fromFace: fromFace, toFace: toFace))
+            // Sort key = opposite box's coordinate on this face's cross axis.
+            let fromKey = (fromFace == .top || fromFace == .bottom) ? b.midX : b.midY
+            let toKey = (toFace == .top || toFace == .bottom) ? a.midX : a.midY
+            buckets[key(pair.from, fromFace), default: []].append(Req(edge: i, isStart: true, sortKey: fromKey))
+            buckets[key(pair.to, toFace), default: []].append(Req(edge: i, isStart: false, sortKey: toKey))
+        }
+
+        // Assign each edge its attach point on both faces.
+        var starts = [CGPoint](repeating: .zero, count: pairs.count)
+        var ends = [CGPoint](repeating: .zero, count: pairs.count)
+        for (bucketKey, reqs) in buckets {
+            let sorted = reqs.sorted { $0.sortKey < $1.sortKey }
+            let n = sorted.count
+            // Box + face back out of the key.
+            let parts = bucketKey.split(separator: "#")
+            let box = frames[Int(parts[0])!]
+            let face: BoxFace
+            switch parts[1] {
+            case "top": face = .top
+            case "bottom": face = .bottom
+            case "left": face = .left
+            default: face = .right
+            }
+            for (slot, req) in sorted.enumerated() {
+                // Spread across the middle 70% of the face; one edge centres.
+                let t = n == 1 ? 0.5 : 0.15 + 0.7 * CGFloat(slot) / CGFloat(n - 1)
+                let point: CGPoint
+                switch face {
+                case .top:    point = CGPoint(x: box.minX + box.width * t, y: box.minY)
+                case .bottom: point = CGPoint(x: box.minX + box.width * t, y: box.maxY)
+                case .left:   point = CGPoint(x: box.minX, y: box.minY + box.height * t)
+                case .right:  point = CGPoint(x: box.maxX, y: box.minY + box.height * t)
+                }
+                if req.isStart { starts[req.edge] = point } else { ends[req.edge] = point }
+            }
+        }
+
+        // Build the elbow polyline for each edge from its two attach points.
+        var routes: [RoutedBoxEdge] = []
+        for (i, plan) in plans.enumerated() {
+            let s = starts[i], e = ends[i]
+            let vertical = (plan.fromFace == .top || plan.fromFace == .bottom)
+            var points: [CGPoint]
+            if vertical {
+                if abs(s.x - e.x) < 0.5 {
+                    points = [s, e]
+                } else {
+                    let midY = (s.y + e.y) / 2
+                    points = [s, CGPoint(x: s.x, y: midY), CGPoint(x: e.x, y: midY), e]
+                }
+            } else {
+                if abs(s.y - e.y) < 0.5 {
+                    points = [s, e]
+                } else {
+                    let midX = (s.x + e.x) / 2
+                    points = [s, CGPoint(x: midX, y: s.y), CGPoint(x: midX, y: e.y), e]
+                }
+            }
+            routes.append(RoutedBoxEdge(points: points))
+        }
+        return routes
     }
 
     /// Intersection of the rect border with the segment from its center

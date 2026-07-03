@@ -430,6 +430,16 @@ public enum MermaidParser {
             }
         }
 
+        // Mermaid multiplicity labels sit as a quoted token next to the
+        // connector: `ClassA "1" *-- "many" ClassB`. Strip them so the
+        // endpoint names still match the declared classes.
+        func stripMultiplicity(_ text: String, trailing: Bool) -> String {
+            let pattern = trailing ? #"\s*"[^"]*"$"# : #"^"[^"]*"\s*"#
+            guard let range = text.range(of: pattern, options: .regularExpression) else { return text }
+            let stripped = trailing ? text[..<range.lowerBound] : text[range.upperBound...]
+            return stripped.trimmingCharacters(in: .whitespaces)
+        }
+
         // Relation connectors, longest first. Reversed forms flip from/to
         // so the marker is always at the `to` end.
         let connectors: [(token: String, kind: ClassDiagram.RelationKind, reversed: Bool)] = [
@@ -472,14 +482,17 @@ public enum MermaidParser {
 
             for connector in connectors {
                 guard let range = line.range(of: connector.token) else { continue }
-                let left = String(line[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+                let left = stripMultiplicity(
+                    String(line[..<range.lowerBound]).trimmingCharacters(in: .whitespaces),
+                    trailing: true
+                )
                 var right = String(line[range.upperBound...])
                 var label: String?
                 if let colon = right.firstIndex(of: ":") {
                     label = String(right[right.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
                     right = String(right[..<colon])
                 }
-                let rightName = right.trimmingCharacters(in: .whitespaces)
+                let rightName = stripMultiplicity(right.trimmingCharacters(in: .whitespaces), trailing: false)
                 guard !left.isEmpty, !rightName.isEmpty else { break }
                 let from = connector.reversed ? rightName : left
                 let to = connector.reversed ? left : rightName
