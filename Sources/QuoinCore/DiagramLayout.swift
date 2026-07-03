@@ -146,6 +146,38 @@ public struct ERLayout: Sendable {
     public let edges: [Edge]
 }
 
+public struct StateLayout: Sendable {
+    public enum NodeKind: Sendable { case simple, start, end, choice, fork, join }
+
+    public struct Node: Sendable {
+        public let id: String
+        public let label: String
+        public let kind: NodeKind
+        public let frame: CGRect
+    }
+
+    /// A composite state's container box. `titleHeight` is the label strip at
+    /// the top; children live below it. `depth` (0 = outermost) tints nesting.
+    public struct Container: Sendable {
+        public let label: String
+        public let frame: CGRect
+        public let titleHeight: CGFloat
+        public let depth: Int
+    }
+
+    public struct Edge: Sendable {
+        public let start: CGPoint
+        public let end: CGPoint
+        public let points: [CGPoint]
+        public let label: String?
+    }
+
+    public let size: CGSize
+    public let nodes: [Node]
+    public let containers: [Container]
+    public let edges: [Edge]
+}
+
 // MARK: - Engine
 
 public enum DiagramLayoutEngine {
@@ -674,6 +706,142 @@ public enum DiagramLayoutEngine {
         return ERLayout(size: placement.size, boxes: boxes, edges: edges)
     }
 
+    // MARK: State
+
+    static let stateTitleHeight: CGFloat = 22
+    static let stateInset: CGFloat = 14
+
+    public static func layout(_ diagram: StateDiagram, measure: DiagramTextMeasurer) -> StateLayout {
+        let result = layoutStateScope(diagram, depth: 0, measure: measure)
+        return StateLayout(
+            size: result.size, nodes: result.nodes,
+            containers: result.containers, edges: result.edges
+        )
+    }
+
+    private struct StateScopeResult {
+        var nodes: [StateLayout.Node]
+        var containers: [StateLayout.Container]
+        var edges: [StateLayout.Edge]
+        var size: CGSize
+    }
+
+    /// Lays out one state scope, recursing into composites first so each one
+    /// becomes a fixed-size box in its parent's layout. Interior placements
+    /// are offset into the composite's frame, so the whole thing is flattened
+    /// into absolute coordinates for the renderer.
+    private static func layoutStateScope(
+        _ diagram: StateDiagram, depth: Int, measure: DiagramTextMeasurer
+    ) -> StateScopeResult {
+        var sizes: [String: CGSize] = [:]
+        var childResults: [String: StateScopeResult] = [:]
+
+        for node in diagram.nodes {
+            switch node.kind {
+            case .composite(let sub):
+                let child = layoutStateScope(sub, depth: depth + 1, measure: measure)
+                childResults[node.id] = child
+                let titleWidth = measure(node.label, nodeFontSize).width + 28
+                let width = max(child.size.width + stateInset * 2, titleWidth, 96)
+                let height = child.size.height + stateInset * 2 + stateTitleHeight
+                sizes[node.id] = CGSize(width: width, height: height)
+            case .start:
+                sizes[node.id] = CGSize(width: 14, height: 14)
+            case .end:
+                sizes[node.id] = CGSize(width: 18, height: 18)
+            case .choice:
+                sizes[node.id] = CGSize(width: 26, height: 26)
+            case .fork, .join:
+                sizes[node.id] = CGSize(width: 64, height: 10)
+            case .simple:
+                let text = measure(node.label, nodeFontSize)
+                sizes[node.id] = CGSize(width: max(text.width + 28, 56), height: text.height + 18)
+            }
+        }
+
+        let placement = layeredPlacement(
+            ids: diagram.nodes.map(\.id),
+            sizes: sizes,
+            edges: diagram.edges.map { ($0.from, $0.to) },
+            layerGap: 40, nodeGap: 26, margin: 6
+        )
+
+        var outNodes: [StateLayout.Node] = []
+        var outContainers: [StateLayout.Container] = []
+        var outEdges: [StateLayout.Edge] = []
+
+        func mapKind(_ kind: StateDiagram.Kind) -> StateLayout.NodeKind {
+            switch kind {
+            case .simple, .composite: return .simple
+            case .start: return .start
+            case .end: return .end
+            case .choice: return .choice
+            case .fork: return .fork
+            case .join: return .join
+            }
+        }
+
+        for node in diagram.nodes {
+            guard let frame = placement.frames[node.id] else { continue }
+            if case .composite = node.kind, let child = childResults[node.id] {
+                outContainers.append(StateLayout.Container(
+                    label: node.label, frame: frame,
+                    titleHeight: stateTitleHeight, depth: depth
+                ))
+                let dx = frame.minX + stateInset
+                let dy = frame.minY + stateTitleHeight + stateInset
+                for n in child.nodes {
+                    outNodes.append(StateLayout.Node(
+                        id: n.id, label: n.label, kind: n.kind,
+                        frame: n.frame.offsetBy(dx: dx, dy: dy)
+                    ))
+                }
+                for c in child.containers {
+                    outContainers.append(StateLayout.Container(
+                        label: c.label, frame: c.frame.offsetBy(dx: dx, dy: dy),
+                        titleHeight: c.titleHeight, depth: c.depth
+                    ))
+                }
+                for e in child.edges {
+                    outEdges.append(StateLayout.Edge(
+                        start: CGPoint(x: e.start.x + dx, y: e.start.y + dy),
+                        end: CGPoint(x: e.end.x + dx, y: e.end.y + dy),
+                        points: e.points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) },
+                        label: e.label
+                    ))
+                }
+            } else {
+                outNodes.append(StateLayout.Node(
+                    id: node.id, label: node.label,
+                    kind: mapKind(node.kind), frame: frame
+                ))
+            }
+        }
+
+        // Route this scope's own transitions with the shared fan-out router.
+        var frameList: [CGRect] = []
+        var frameIndex: [String: Int] = [:]
+        for node in diagram.nodes {
+            guard let frame = placement.frames[node.id] else { continue }
+            frameIndex[node.id] = frameList.count
+            frameList.append(frame)
+        }
+        let valid = diagram.edges.filter { frameIndex[$0.from] != nil && frameIndex[$0.to] != nil }
+        let pairs = valid.map { (from: frameIndex[$0.from]!, to: frameIndex[$0.to]!) }
+        let routes = routeBoxEdges(frames: frameList, pairs: pairs)
+        for (edge, route) in zip(valid, routes) {
+            outEdges.append(StateLayout.Edge(
+                start: route.points.first!, end: route.points.last!,
+                points: route.points, label: edge.label
+            ))
+        }
+
+        return StateScopeResult(
+            nodes: outNodes, containers: outContainers,
+            edges: outEdges, size: placement.size
+        )
+    }
+
     // MARK: Shared box placement
 
     struct Placement {
@@ -681,16 +849,43 @@ public enum DiagramLayoutEngine {
         let size: CGSize
     }
 
+    /// Back edges (cycle-closing) found by DFS, as indices into `edges`.
+    /// Layering must ignore them or a cycle drifts nodes down without bound.
+    static func backEdgeIndices(ids: [String], edges: [(String, String)]) -> Set<Int> {
+        var adjacency: [String: [Int]] = [:]
+        for (index, edge) in edges.enumerated() { adjacency[edge.0, default: []].append(index) }
+        var color: [String: Int] = [:]   // 0 = white, 1 = grey (on stack), 2 = black
+        var back = Set<Int>()
+        func visit(_ id: String) {
+            color[id] = 1
+            for index in adjacency[id] ?? [] {
+                let target = edges[index].1
+                switch color[target] ?? 0 {
+                case 1: back.insert(index)          // edge into an ancestor → back edge
+                case 0: visit(target)
+                default: break
+                }
+            }
+            color[id] = 2
+        }
+        for id in ids where (color[id] ?? 0) == 0 { visit(id) }
+        return back
+    }
+
     /// Longest-path layering + barycenter ordering for arbitrary sized
-    /// boxes, top-down. Shared by the class and ER layouts.
+    /// boxes, top-down. Shared by the class, ER, and state layouts. Cycles
+    /// are made acyclic for layering by ignoring DFS back edges.
     static func layeredPlacement(
         ids: [String],
         sizes: [String: CGSize],
-        edges: [(String, String)],
+        edges allEdges: [(String, String)],
         layerGap: CGFloat,
         nodeGap: CGFloat,
         margin: CGFloat
     ) -> Placement {
+        let backEdges = backEdgeIndices(ids: ids, edges: allEdges)
+        let edges = allEdges.enumerated().filter { !backEdges.contains($0.offset) }.map(\.element)
+
         var layerOf: [String: Int] = [:]
         for id in ids { layerOf[id] = 0 }
         for _ in 0..<(ids.count + 1) {

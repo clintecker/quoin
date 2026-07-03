@@ -184,13 +184,13 @@ final class DiagramLayoutTests: XCTestCase {
     }
 
     func testCycleBackEdgeDoesNotPushStateDeeper() {
-        guard case .flowchart(let chart)? = MermaidParser.parse("""
+        guard case .state(let diagram)? = MermaidParser.parse("""
         stateDiagram-v2
             [*] --> Idle
             Idle --> Loading: open
             Loading --> Idle: retry
         """) else { return XCTFail("parse failed") }
-        let layout = DiagramLayoutEngine.layout(chart, measure: measure)
+        let layout = DiagramLayoutEngine.layout(diagram, measure: measure)
         let idle = layout.nodes.first { $0.id == "Idle" }
         let loading = layout.nodes.first { $0.id == "Loading" }
         // The retry back-edge must not push Idle below Loading.
@@ -199,8 +199,8 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertLessThan(idle!.frame.minY, loading!.frame.minY)
     }
 
-    func testStateDiagramMapsToFlowchart() {
-        guard case .flowchart(let chart)? = MermaidParser.parse("""
+    func testStateDiagramParsesTerminalsLabelsAndEdges() {
+        guard case .state(let diagram)? = MermaidParser.parse("""
         stateDiagram-v2
             direction LR
             [*] --> Idle
@@ -208,28 +208,59 @@ final class DiagramLayoutTests: XCTestCase {
             Loading --> Ready
             Ready --> [*]
             state "Long name" as Loading
-        """) else { return XCTFail("expected flowchart from state diagram") }
-        XCTAssertEqual(chart.direction, .leftRight)
-        XCTAssertEqual(chart.nodes.first?.shape, .stateStart)
-        XCTAssertEqual(chart.nodes.last?.shape, .stateEnd)
-        XCTAssertEqual(chart.nodes.first(where: { $0.id == "Idle" })?.shape, .rounded)
-        XCTAssertEqual(chart.nodes.first(where: { $0.id == "Loading" })?.label, "Long name")
-        XCTAssertEqual(chart.edges.count, 4)
-        XCTAssertEqual(chart.edges[1].label, "open")
-        XCTAssertTrue(chart.edges.allSatisfy(\.hasArrow))
+        """) else { return XCTFail("expected state diagram") }
+        XCTAssertEqual(diagram.direction, .leftRight)
+        XCTAssertEqual(diagram.nodes.first?.kind, .start)
+        XCTAssertTrue(diagram.nodes.contains { $0.kind == .end })
+        XCTAssertTrue(diagram.nodes.contains { $0.id == "Loading" && $0.label == "Long name" })
+        XCTAssertEqual(diagram.edges.count, 4)
+        XCTAssertEqual(diagram.edges[1].label, "open")
     }
 
     func testStateTerminalsGetFixedSizes() {
-        guard case .flowchart(let chart)? = MermaidParser.parse("""
+        guard case .state(let diagram)? = MermaidParser.parse("""
         stateDiagram
             [*] --> A
             A --> [*]
         """) else { return XCTFail("parse failed") }
-        let layout = DiagramLayoutEngine.layout(chart, measure: measure)
-        let start = layout.nodes.first { $0.shape == .stateStart }
-        let end = layout.nodes.first { $0.shape == .stateEnd }
+        let layout = DiagramLayoutEngine.layout(diagram, measure: measure)
+        let start = layout.nodes.first { $0.kind == .start }
+        let end = layout.nodes.first { $0.kind == .end }
         XCTAssertEqual(start?.frame.width, 14)
         XCTAssertEqual(end?.frame.width, 18)
+    }
+
+    func testCompositeStateNestsChildrenAndSpecialShapes() {
+        guard case .state(let diagram)? = MermaidParser.parse("""
+        stateDiagram-v2
+            [*] --> Work
+            state Work {
+                [*] --> Fork
+                state Fork <<fork>>
+                Fork --> A
+                Fork --> B
+                state Join <<join>>
+                A --> Join
+                B --> Join
+                Join --> [*]
+            }
+            Work --> [*]
+        """) else { return XCTFail("parse failed") }
+
+        // Work carries its own sub-diagram with fork/join shapes and its own
+        // scoped terminals (distinct from the outer [*]).
+        let work = diagram.nodes.first { $0.id == "Work" }
+        guard case .composite(let inner)? = work?.kind else { return XCTFail("Work should be composite") }
+        XCTAssertTrue(inner.nodes.contains { $0.id == "Fork" && $0.kind == .fork })
+        XCTAssertTrue(inner.nodes.contains { $0.id == "Join" && $0.kind == .join })
+
+        let layout = DiagramLayoutEngine.layout(diagram, measure: measure)
+        XCTAssertEqual(layout.containers.count, 1)
+        let container = layout.containers[0]
+        XCTAssertEqual(container.label, "Work")
+        // The fork bar is laid out inside the Work container.
+        guard let fork = layout.nodes.first(where: { $0.kind == .fork }) else { return XCTFail("no fork") }
+        XCTAssertTrue(container.frame.contains(CGPoint(x: fork.frame.midX, y: fork.frame.midY)))
     }
 
     func testClassDiagramParsesMembersAndRelations() {

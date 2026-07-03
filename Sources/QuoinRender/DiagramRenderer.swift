@@ -58,6 +58,10 @@ enum DiagramRenderer {
                 let layout = DiagramLayoutEngine.layout(er, measure: measure)
                 size = layout.size
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .state(let state):
+                let layout = DiagramLayoutEngine.layout(state, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 
@@ -624,6 +628,96 @@ enum DiagramRenderer {
                     rowY += box.rowHeight
                 }
             }
+        }
+    }
+
+    // MARK: - State
+
+    private static func draw(_ layout: StateLayout, theme: Theme, in context: CGContext) {
+        let stroke = theme.ink.withAlphaComponent(0.35)
+        let nodeFill = theme.accent.withAlphaComponent(0.06)
+        let solid = theme.ink.withAlphaComponent(0.75)
+
+        // Composite containers first, outermost → innermost so nested tints
+        // stack; the title strip carries the composite's name.
+        for container in layout.containers.sorted(by: { $0.depth < $1.depth }) {
+            context.saveGState()
+            context.addPath(CGPath(roundedRect: container.frame, cornerWidth: 8, cornerHeight: 8, transform: nil))
+            context.setFillColor(resolvedCGColor(theme.ink.withAlphaComponent(0.03)))
+            context.setStrokeColor(resolvedCGColor(stroke))
+            context.setLineWidth(1)
+            context.drawPath(using: .fillStroke)
+            drawText(container.label,
+                     center: CGPoint(x: container.frame.midX, y: container.frame.minY + container.titleHeight / 2),
+                     size: 11.5, weight: .semibold, color: theme.ink, in: context)
+            let sepY = container.frame.minY + container.titleHeight
+            context.setStrokeColor(resolvedCGColor(theme.ink.withAlphaComponent(0.15)))
+            context.beginPath()
+            context.move(to: CGPoint(x: container.frame.minX, y: sepY))
+            context.addLine(to: CGPoint(x: container.frame.maxX, y: sepY))
+            context.strokePath()
+            context.restoreGState()
+        }
+
+        // Transitions (including those flattened out of composites).
+        for edge in layout.edges {
+            context.saveGState()
+            context.setStrokeColor(resolvedCGColor(stroke))
+            context.setLineWidth(1)
+            strokePolyline(edge.points, in: context)
+            context.restoreGState()
+
+            let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
+            drawArrowhead(at: edge.end, from: approach, color: stroke, in: context)
+
+            if let label = edge.label, !label.isEmpty {
+                let mid = polylineMidpoint(edge.points)
+                let size = measure(label, size: 10.5)
+                let pad: CGFloat = 3
+                context.setFillColor(resolvedCGColor(theme.canvas))
+                context.fill(CGRect(x: mid.x - size.width / 2 - pad, y: mid.y - size.height / 2 - pad,
+                                    width: size.width + pad * 2, height: size.height + pad * 2))
+                drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
+            }
+        }
+
+        // Nodes on top so borders sit above the edge ends.
+        for node in layout.nodes {
+            context.saveGState()
+            context.setStrokeColor(resolvedCGColor(stroke))
+            context.setLineWidth(1)
+            switch node.kind {
+            case .start:
+                context.setFillColor(resolvedCGColor(solid))
+                context.fillEllipse(in: node.frame)
+            case .end:
+                context.setStrokeColor(resolvedCGColor(solid))
+                context.strokeEllipse(in: node.frame.insetBy(dx: 1, dy: 1))
+                context.setFillColor(resolvedCGColor(solid))
+                context.fillEllipse(in: node.frame.insetBy(dx: 4.5, dy: 4.5))
+            case .choice:
+                let f = node.frame
+                let p = CGMutablePath()
+                p.move(to: CGPoint(x: f.midX, y: f.minY))
+                p.addLine(to: CGPoint(x: f.maxX, y: f.midY))
+                p.addLine(to: CGPoint(x: f.midX, y: f.maxY))
+                p.addLine(to: CGPoint(x: f.minX, y: f.midY))
+                p.closeSubpath()
+                context.addPath(p)
+                context.setFillColor(resolvedCGColor(nodeFill))
+                context.drawPath(using: .fillStroke)
+            case .fork, .join:
+                context.addPath(CGPath(roundedRect: node.frame, cornerWidth: 2, cornerHeight: 2, transform: nil))
+                context.setFillColor(resolvedCGColor(theme.ink.withAlphaComponent(0.7)))
+                context.fillPath()
+            case .simple:
+                context.addPath(CGPath(roundedRect: node.frame, cornerWidth: 8, cornerHeight: 8, transform: nil))
+                context.setFillColor(resolvedCGColor(nodeFill))
+                context.drawPath(using: .fillStroke)
+                drawText(node.label, center: CGPoint(x: node.frame.midX, y: node.frame.midY),
+                         size: 12, weight: .medium, color: theme.ink, in: context)
+            }
+            context.restoreGState()
         }
     }
 

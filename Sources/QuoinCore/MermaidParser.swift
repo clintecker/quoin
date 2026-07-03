@@ -11,6 +11,7 @@ public enum MermaidDiagram: Hashable, Sendable {
     case pie(PieChart)
     case classDiagram(ClassDiagram)
     case er(ERDiagram)
+    case state(StateDiagram)
 }
 
 // MARK: - Models
@@ -48,6 +49,37 @@ public struct Flowchart: Hashable, Sendable {
     }
 
     public var direction: Direction
+    public var nodes: [Node]
+    public var edges: [Edge]
+}
+
+/// A state machine with nested composite states. Distinct from Flowchart so
+/// composites can carry their own sub-diagram (with their own `[*]` entry /
+/// exit), and so choice / fork / join get first-class shapes.
+public struct StateDiagram: Hashable, Sendable {
+    public indirect enum Kind: Hashable, Sendable {
+        case simple                 // rounded state box
+        case start                  // `[*]` used as a transition source
+        case end                    // `[*]` used as a transition target
+        case choice                 // <<choice>>: small diamond
+        case fork                   // <<fork>>: bar
+        case join                   // <<join>>: bar
+        case composite(StateDiagram) // `state X { … }`
+    }
+
+    public struct Node: Hashable, Sendable, Identifiable {
+        public let id: String
+        public var label: String
+        public var kind: Kind
+    }
+
+    public struct Edge: Hashable, Sendable {
+        public let from: String
+        public let to: String
+        public var label: String?
+    }
+
+    public var direction: Flowchart.Direction
     public var nodes: [Node]
     public var edges: [Edge]
 }
@@ -169,7 +201,7 @@ public enum MermaidParser {
             return parsePie(header: header, body: Array(lines.dropFirst())).map { .pie($0) }
         }
         if header.hasPrefix("stateDiagram") {
-            return parseState(body: Array(lines.dropFirst())).map { .flowchart($0) }
+            return parseState(body: Array(lines.dropFirst())).map { .state($0) }
         }
         if header.hasPrefix("classDiagram") {
             return parseClass(body: Array(lines.dropFirst())).map { .classDiagram($0) }
@@ -322,87 +354,168 @@ public enum MermaidParser {
 
     // MARK: State
 
-    /// stateDiagram / stateDiagram-v2 → a Flowchart: states are rounded
-    /// nodes, `[*]` becomes a start dot (as a source) or end ring (as a
-    /// target), transitions are arrows with optional `: label`.
-    static func parseState(body: [String]) -> Flowchart? {
-        var direction = Flowchart.Direction.topDown
-        var nodes: [String: Flowchart.Node] = [:]
-        var order: [String] = []
-        var edges: [Flowchart.Edge] = []
+    /// stateDiagram / stateDiagram-v2 → a nested StateDiagram. `state X { … }`
+    /// blocks recurse into composites (each with its own `[*]` entry/exit);
+    /// `<<choice>>` / `<<fork>>` / `<<join>>` annotations mark special shapes;
+    /// transitions are arrows with an optional `: label`.
+    static func parseState(body: [String]) -> StateDiagram? {
+        var index = 0
+        var scopeCounter = 0
+        let direction = detectStateDirection(body)
 
-        func note(_ node: Flowchart.Node) {
-            if let existing = nodes[node.id] {
-                if node.label != node.id && existing.label == existing.id {
-                    nodes[node.id] = node
-                }
-            } else {
-                nodes[node.id] = node
-                order.append(node.id)
-            }
-        }
+        // Recursively parses one brace scope, consuming lines until its
+        // closing `}` (or end of input for the root). `scopeID` disambiguates
+        // this scope's synthetic `[*]` terminals from every other scope's.
+        func parseScope(scopeID: String) -> StateDiagram {
+            var nodes: [String: StateDiagram.Node] = [:]
+            var order: [String] = []
+            var edges: [StateDiagram.Edge] = []
+            var annotations: [String: StateDiagram.Kind] = [:]  // id → choice/fork/join
 
-        func stateNode(_ token: String, isSource: Bool) -> Flowchart.Node? {
-            let trimmed = token.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { return nil }
-            if trimmed == "[*]" {
-                return isSource
-                    ? Flowchart.Node(id: "__start", label: "", shape: .stateStart)
-                    : Flowchart.Node(id: "__end", label: "", shape: .stateEnd)
-            }
-            guard trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
-            return Flowchart.Node(id: trimmed, label: trimmed, shape: .rounded)
-        }
-
-        for line in body {
-            if line.hasPrefix("direction") {
-                let value = line.dropFirst("direction".count).trimmingCharacters(in: .whitespaces)
-                direction = Flowchart.Direction(rawValue: value.uppercased()) ?? direction
-                continue
-            }
-            // state "Long description" as s2
-            if line.hasPrefix("state ") {
-                let declaration = String(line.dropFirst("state ".count))
-                if declaration.hasSuffix("{") { continue } // composite: flatten
-                if let asRange = declaration.range(of: " as ") {
-                    let label = String(declaration[..<asRange.lowerBound])
-                        .trimmingCharacters(in: .whitespaces)
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                    let id = String(declaration[asRange.upperBound...]).trimmingCharacters(in: .whitespaces)
-                    if !id.isEmpty {
-                        note(Flowchart.Node(id: id, label: label, shape: .rounded))
+            func note(id: String, label: String, kind: StateDiagram.Kind) {
+                if let existing = nodes[id] {
+                    // Upgrade a bare reference to a labelled / composite node.
+                    if existing.label == existing.id && (label != id || !isSimple(kind)) {
+                        nodes[id] = StateDiagram.Node(id: id, label: label, kind: kind)
+                    } else if isComposite(kind) {
+                        nodes[id] = StateDiagram.Node(id: id, label: label, kind: kind)
                     }
+                } else {
+                    nodes[id] = StateDiagram.Node(id: id, label: label, kind: kind)
+                    order.append(id)
                 }
-                continue
-            }
-            if line == "}" || line.hasPrefix("note") || line.hasPrefix("Note") { continue }
-
-            if let arrowRange = line.range(of: "-->") {
-                let left = String(line[..<arrowRange.lowerBound])
-                var right = String(line[arrowRange.upperBound...])
-                var label: String?
-                if let colon = right.firstIndex(of: ":") {
-                    label = String(right[right.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-                    right = String(right[..<colon])
-                }
-                guard let from = stateNode(left, isSource: true),
-                      let to = stateNode(right, isSource: false) else { continue }
-                note(from)
-                note(to)
-                edges.append(Flowchart.Edge(
-                    from: from.id, to: to.id, label: label, dashed: false, hasArrow: true
-                ))
-                continue
             }
 
-            // Bare state declaration on its own line.
-            if let node = stateNode(line, isSource: true), node.shape == .rounded {
-                note(node)
+            // Resolves a transition endpoint token to a node id, minting a
+            // scope-local terminal for `[*]`.
+            func endpoint(_ token: String, isSource: Bool) -> String? {
+                let trimmed = token.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return nil }
+                if trimmed == "[*]" {
+                    let id = isSource ? "\(scopeID)__start" : "\(scopeID)__end"
+                    note(id: id, label: "", kind: isSource ? .start : .end)
+                    return id
+                }
+                guard trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
+                note(id: trimmed, label: trimmed, kind: .simple)
+                return trimmed
             }
+
+            while index < body.count {
+                let line = body[index]
+                index += 1
+
+                if line == "}" { break }                       // close this scope
+                if line.hasPrefix("direction") { continue }    // handled globally
+                if line.hasPrefix("note") || line.hasPrefix("Note") { continue }
+
+                // `state X { ` opens a composite — recurse.
+                if line.hasPrefix("state "), line.hasSuffix("{") {
+                    let inner = String(line.dropFirst("state ".count).dropLast())
+                        .trimmingCharacters(in: .whitespaces)
+                    let (id, label) = stateNameAndLabel(inner)
+                    scopeCounter += 1
+                    let child = parseScope(scopeID: "s\(scopeCounter)_")
+                    nodes[id] = StateDiagram.Node(id: id, label: label, kind: .composite(child))
+                    if !order.contains(id) { order.append(id) }
+                    continue
+                }
+
+                // `state X <<choice>>` / `<<fork>>` / `<<join>>` annotations.
+                if line.hasPrefix("state "), let annotationRange = line.range(of: "<<") {
+                    let id = String(line[line.index(line.startIndex, offsetBy: "state ".count)..<annotationRange.lowerBound])
+                        .trimmingCharacters(in: .whitespaces)
+                    let annotation = line[annotationRange.lowerBound...]
+                    let kind: StateDiagram.Kind? = annotation.contains("choice") ? .choice
+                        : annotation.contains("fork") ? .fork
+                        : annotation.contains("join") ? .join : nil
+                    if let kind, !id.isEmpty {
+                        annotations[id] = kind
+                        note(id: id, label: id, kind: kind)
+                    }
+                    continue
+                }
+
+                // `state "Long description" as s2`
+                if line.hasPrefix("state ") {
+                    let declaration = String(line.dropFirst("state ".count))
+                    if let asRange = declaration.range(of: " as ") {
+                        let label = String(declaration[..<asRange.lowerBound])
+                            .trimmingCharacters(in: .whitespaces)
+                            .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                        let id = String(declaration[asRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+                        if !id.isEmpty { note(id: id, label: label, kind: .simple) }
+                    } else {
+                        let (id, label) = stateNameAndLabel(declaration.trimmingCharacters(in: .whitespaces))
+                        if !id.isEmpty { note(id: id, label: label, kind: .simple) }
+                    }
+                    continue
+                }
+
+                if let arrowRange = line.range(of: "-->") {
+                    let left = String(line[..<arrowRange.lowerBound])
+                    var right = String(line[arrowRange.upperBound...])
+                    var label: String?
+                    if let colon = right.firstIndex(of: ":") {
+                        label = String(right[right.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                        right = String(right[..<colon])
+                    }
+                    guard let from = endpoint(left, isSource: true),
+                          let to = endpoint(right, isSource: false) else { continue }
+                    edges.append(StateDiagram.Edge(from: from, to: to, label: label))
+                    continue
+                }
+
+                // Bare state id on its own line.
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty, trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) {
+                    note(id: trimmed, label: trimmed, kind: .simple)
+                }
+            }
+
+            // Apply any annotations that arrived after a node was first seen.
+            for (id, kind) in annotations where nodes[id] != nil {
+                nodes[id] = StateDiagram.Node(id: id, label: nodes[id]!.label == id ? id : nodes[id]!.label, kind: kind)
+            }
+
+            return StateDiagram(
+                direction: direction,
+                nodes: order.compactMap { nodes[$0] },
+                edges: edges
+            )
         }
 
-        guard !nodes.isEmpty else { return nil }
-        return Flowchart(direction: direction, nodes: order.compactMap { nodes[$0] }, edges: edges)
+        let root = parseScope(scopeID: "root_")
+        guard !root.nodes.isEmpty else { return nil }
+        return root
+    }
+
+    private static func detectStateDirection(_ body: [String]) -> Flowchart.Direction {
+        for line in body where line.hasPrefix("direction") {
+            let value = line.dropFirst("direction".count).trimmingCharacters(in: .whitespaces)
+            return Flowchart.Direction(rawValue: value.uppercased()) ?? .topDown
+        }
+        return .topDown
+    }
+
+    /// `Foo` → (Foo, Foo); `Foo : Nice Label` → (Foo, "Nice Label").
+    private static func stateNameAndLabel(_ text: String) -> (String, String) {
+        if let colon = text.firstIndex(of: ":") {
+            let id = String(text[..<colon]).trimmingCharacters(in: .whitespaces)
+            let label = String(text[text.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            return (id, label.isEmpty ? id : label)
+        }
+        let id = text.trimmingCharacters(in: .whitespaces)
+        return (id, id)
+    }
+
+    private static func isSimple(_ kind: StateDiagram.Kind) -> Bool {
+        if case .simple = kind { return true }
+        return false
+    }
+    private static func isComposite(_ kind: StateDiagram.Kind) -> Bool {
+        if case .composite = kind { return true }
+        return false
     }
 
     // MARK: Class
