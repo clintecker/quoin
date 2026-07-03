@@ -21,9 +21,22 @@ public struct FlowchartLayout: Sendable {
     public struct PlacedEdge: Sendable {
         public let start: CGPoint
         public let end: CGPoint
+        /// Full polyline route (orthogonal between offset nodes); always
+        /// begins at `start` and ends at `end`.
+        public let points: [CGPoint]
         public let label: String?
         public let dashed: Bool
         public let hasArrow: Bool
+
+        public init(start: CGPoint, end: CGPoint, points: [CGPoint]? = nil,
+                    label: String?, dashed: Bool, hasArrow: Bool) {
+            self.start = start
+            self.end = end
+            self.points = points ?? [start, end]
+            self.label = label
+            self.dashed = dashed
+            self.hasArrow = hasArrow
+        }
     }
 
     public let size: CGSize
@@ -262,15 +275,26 @@ public enum DiagramLayoutEngine {
             guard let from = frames[edge.from], let to = frames[edge.to] else { continue }
             let start: CGPoint
             let end: CGPoint
+            var points: [CGPoint]?
             if horizontal {
                 start = CGPoint(x: from.maxX, y: from.midY)
                 end = CGPoint(x: to.minX, y: to.midY)
+                // Orthogonal route between vertically offset nodes: out,
+                // jog at the midpoint of the gap, in.
+                if abs(start.y - end.y) > 0.5 {
+                    let midX = (start.x + end.x) / 2
+                    points = [start, CGPoint(x: midX, y: start.y), CGPoint(x: midX, y: end.y), end]
+                }
             } else {
                 start = CGPoint(x: from.midX, y: from.maxY)
                 end = CGPoint(x: to.midX, y: to.minY)
+                if abs(start.x - end.x) > 0.5 {
+                    let midY = (start.y + end.y) / 2
+                    points = [start, CGPoint(x: start.x, y: midY), CGPoint(x: end.x, y: midY), end]
+                }
             }
             placedEdges.append(FlowchartLayout.PlacedEdge(
-                start: start, end: end, label: edge.label,
+                start: start, end: end, points: points, label: edge.label,
                 dashed: edge.dashed, hasArrow: edge.hasArrow
             ))
         }

@@ -147,13 +147,21 @@ enum DiagramRenderer {
             context.setLineWidth(1)
             if edge.dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
             context.beginPath()
-            context.move(to: edge.start)
-            context.addLine(to: edge.end)
+            // Orthogonal polyline with softly rounded corners.
+            context.move(to: edge.points[0])
+            if edge.points.count > 2 {
+                for index in 1..<(edge.points.count - 1) {
+                    context.addArc(tangent1End: edge.points[index],
+                                   tangent2End: edge.points[index + 1], radius: 5)
+                }
+            }
+            context.addLine(to: edge.points.last!)
             context.strokePath()
             context.restoreGState()
 
             if edge.hasArrow {
-                drawArrowhead(at: edge.end, from: edge.start, color: stroke, in: context)
+                let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
+                drawArrowhead(at: edge.end, from: approach, color: stroke, in: context)
             }
             if let label = edge.label, !label.isEmpty {
                 let mid = CGPoint(x: (edge.start.x + edge.end.x) / 2, y: (edge.start.y + edge.end.y) / 2)

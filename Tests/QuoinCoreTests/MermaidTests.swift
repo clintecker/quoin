@@ -164,6 +164,25 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(layout.size.width, labelRight)
     }
 
+    func testOffsetFlowchartEdgesRouteOrthogonally() {
+        guard case .flowchart(let chart)? = MermaidParser.parse("""
+        graph TD
+            A --> B
+            A --> C
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(chart, measure: measure)
+        // Both fan-out edges are horizontally offset, so each must route as
+        // an axis-aligned polyline, not a diagonal.
+        for edge in layout.edges where abs(edge.start.x - edge.end.x) > 0.5 {
+            XCTAssertEqual(edge.points.count, 4)
+            for (a, b) in zip(edge.points, edge.points.dropFirst()) {
+                XCTAssertTrue(abs(a.x - b.x) < 0.001 || abs(a.y - b.y) < 0.001,
+                              "segment \(a)→\(b) is not axis-aligned")
+            }
+        }
+        XCTAssertTrue(layout.edges.contains { $0.points.count == 4 })
+    }
+
     func testStateDiagramMapsToFlowchart() {
         guard case .flowchart(let chart)? = MermaidParser.parse("""
         stateDiagram-v2
