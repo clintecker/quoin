@@ -307,6 +307,20 @@ public struct MarkdownReaderView: NSViewRepresentable {
                   parent.onActivateBlock != nil,
                   let textView else { return }
             let selection = textView.selectedRange()
+            // Zero-length caret placement activates a block. Clicking an
+            // attachment (math, diagram, image) selects the attachment
+            // character itself — a length-1 selection on an attachment run
+            // counts as a click too, so diagrams open to their source.
+            if selection.length == 1,
+               let storage = textView.textContentStorage?.textStorage,
+               selection.location < storage.length,
+               storage.attribute(.attachment, at: selection.location, effectiveRange: nil) != nil {
+                if let id = blockID(atCharIndex: selection.location),
+                   id != parent.rendered.activeBlockID {
+                    parent.onActivateBlock?(id)
+                }
+                return
+            }
             guard selection.length == 0 else { return }
             guard let id = blockID(atCharIndex: selection.location) else { return }
             if id != parent.rendered.activeBlockID {
