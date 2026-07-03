@@ -99,13 +99,24 @@ public struct AttributedRenderer {
                 // part of either block's decoration range, so this widens the
                 // external gap without padding the box interiors.
                 let separator = NSMutableAttributedString(string: "\n", attributes: bodyAttributes())
-                if isCard(block.kind) || isCard(document.blocks[index + 1].kind) {
-                    let style = paragraphStyle()
-                    style.paragraphSpacing = theme.paragraphSpacing + 18
-                    separator.addAttribute(
-                        .paragraphStyle, value: style,
-                        range: NSRange(location: 0, length: separator.length)
-                    )
+                let nextKind = document.blocks[index + 1].kind
+                // A heading must hug the card it introduces, so only add the
+                // extra card air after a card, or before a card that isn't
+                // being introduced by a heading.
+                let currentIsHeading: Bool = { if case .heading = block.kind { return true } else { return false } }()
+                if isCard(block.kind) || (isCard(nextKind) && !currentIsHeading) {
+                    // A genuine short empty paragraph guarantees an external
+                    // gap between card boxes. Paragraph-spacing on the plain
+                    // separator alone is unreliable — that newline terminates
+                    // the previous paragraph and inherits its style — so we
+                    // append a dedicated low spacer line instead.
+                    var spacer = bodyAttributes()
+                    spacer[.font] = PlatformFont.systemFont(ofSize: 10)
+                    let spacerStyle = NSMutableParagraphStyle()
+                    spacerStyle.lineHeightMultiple = 1
+                    spacerStyle.paragraphSpacing = 0
+                    spacer[.paragraphStyle] = spacerStyle
+                    separator.append(NSAttributedString(string: "\n", attributes: spacer))
                 }
                 output.append(separator)
             }
@@ -336,8 +347,9 @@ public struct AttributedRenderer {
         switch kind {
         case .note: semantic = .systemBlue; symbol = "ℹ︎"
         case .tip: semantic = .systemGreen; symbol = "✓"
+        case .important: semantic = .systemPurple; symbol = "❯"
         case .warning: semantic = .systemOrange; symbol = "⚠︎"
-        case .danger: semantic = .systemRed; symbol = "✕"
+        case .caution, .danger: semantic = .systemRed; symbol = "✕"
         }
 
         let output = NSMutableAttributedString()

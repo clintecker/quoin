@@ -81,16 +81,20 @@ public struct TableCell: Hashable, Sendable {
     public init(inlines: [Inline]) { self.inlines = inlines }
 }
 
-/// Callout kinds per the design handoff: `> [!NOTE|TIP|WARNING|DANGER]`.
-/// GitHub's IMPORTANT/CAUTION map onto note/danger.
+/// Callout kinds. The handoff specced NOTE/TIP/WARNING/DANGER; we also
+/// carry GitHub's full alert set (IMPORTANT, CAUTION) as distinct kinds so
+/// they keep their own label and colour rather than collapsing into a
+/// neighbour. `danger` is the handoff's name for GitHub's CAUTION severity.
 public enum CalloutKind: String, Hashable, Sendable, CaseIterable {
-    case note, tip, warning, danger
+    case note, tip, important, warning, caution, danger
 
     public init?(marker: String) {
         switch marker.uppercased() {
-        case "NOTE", "INFO", "IMPORTANT": self = .note
+        case "NOTE", "INFO": self = .note
         case "TIP", "HINT": self = .tip
-        case "WARNING", "CAUTION": self = .warning
+        case "IMPORTANT": self = .important
+        case "WARNING": self = .warning
+        case "CAUTION": self = .caution
         case "DANGER", "ERROR": self = .danger
         default: return nil
         }

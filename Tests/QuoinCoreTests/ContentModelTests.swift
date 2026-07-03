@@ -105,7 +105,17 @@ final class CalloutTests: XCTestCase {
     }
 
     func testAllCalloutKinds() {
-        for (marker, expected) in [("TIP", CalloutKind.tip), ("WARNING", .warning), ("DANGER", .danger), ("IMPORTANT", .note)] {
+        // GitHub's five alert types keep distinct kinds; INFO/HINT/ERROR are
+        // accepted aliases.
+        let cases: [(String, CalloutKind)] = [
+            ("NOTE", .note), ("INFO", .note),
+            ("TIP", .tip), ("HINT", .tip),
+            ("IMPORTANT", .important),
+            ("WARNING", .warning),
+            ("CAUTION", .caution),
+            ("DANGER", .danger), ("ERROR", .danger),
+        ]
+        for (marker, expected) in cases {
             let doc = MarkdownConverter.parse("> [!\(marker)]\n> body")
             guard case .callout(let kind, _) = doc.blocks[0].kind else {
                 return XCTFail("expected callout for \(marker)")
