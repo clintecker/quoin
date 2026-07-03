@@ -71,6 +71,15 @@ jobs:
       # Also publish to a branch: artifact downloads go through Azure blob
       # storage, which restricted environments can't always reach; a git
       # branch is fetchable anywhere the repo is.
+      - name: Build iOS app
+        working-directory: App/iOS
+        run: |
+          set -o pipefail
+          xcodegen
+          xcodebuild -project QuoinIOS.xcodeproj -scheme QuoinIOS \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tail -60
+
       - name: Publish screenshots branch
         if: always()
         env:
