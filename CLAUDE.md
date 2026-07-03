@@ -32,11 +32,19 @@ justification in the TRD first; the default answer is no.
 ## Layout
 
 - `Sources/QuoinCore` — platform-agnostic engine (parses, sessions, search,
-  stats, exporters). Must build and test on Linux.
-- `Sources/QuoinRender` — attributed-string projection + TextKit 2 views
-  (Apple platforms, `#if canImport` guarded).
-- `App/macOS` — app shell; project generated with XcodeGen (`project.yml`).
-- `Tests/QuoinCoreTests` — every core feature gets tests here.
+  stats, exporters, math/mermaid parsers + diagram layout geometry). Must
+  build and test on Linux.
+- `Sources/QuoinRender` — attributed-string projection + TextKit 2 views,
+  native math typesetting and diagram drawing (Apple platforms,
+  `#if canImport` guarded; AppKit and UIKit paths both compile in CI).
+- `App/macOS`, `App/iOS` — app shells; projects generated with XcodeGen
+  (`project.yml` in each).
+- `Tests/QuoinCoreTests` — every core feature gets tests here, including
+  performance budgets (PerformanceTests) and pathological inputs
+  (TortureTests).
+- Screenshot automation: `-QuoinLibraryPath`, `-QuoinShotOpen`,
+  `-QuoinShotState`, `-QuoinForceDarkMode` launch arguments preset app
+  state; CI publishes PNGs to the `ci-screenshots` branch.
 
 ## Workflow
 

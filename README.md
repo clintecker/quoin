@@ -13,11 +13,17 @@ chase — the small, precise tool that makes the whole page hold.
 
 - `Sources/QuoinCore` — platform-agnostic engine: document model with a
   UTF-8 source map, swift-markdown (cmark-gfm) parse pipeline with math and
-  mermaid post-passes, `DocumentSession` actor, file watching, block diffing,
-  search, statistics, TXT/MD exporters.
-- `Sources/QuoinRender` — AST → attributed strings, TextKit 2 layout,
-  themes (Apple platforms only).
-- `App/macOS` — the macOS app shell (document-based, native window tabs).
+  mermaid post-passes, `DocumentSession` actor (edits, undo, autosave,
+  conflicts), file watching, block diffing, search, statistics, library
+  tree + quick open, the QuoinMath LaTeX parser, the Mermaid parser and
+  layout engines, TXT/MD/HTML exporters.
+- `Sources/QuoinRender` — AST → attributed strings, TextKit 2 reader/editor
+  views for macOS and iOS, the native math typesetter and diagram drawing,
+  PDF/RTF export, themes (Apple platforms, `#if canImport` guarded).
+- `App/macOS` — the macOS app: library window, tabs, WYSIWYG editing,
+  export sheet, print.
+- `App/iOS` — the iOS/iPadOS app: Files-integrated document reader with
+  outline/stats sheets and share-sheet exports.
 
 ## Building
 
@@ -28,11 +34,17 @@ swift build            # builds QuoinCore + QuoinRender
 swift test             # runs the QuoinCore test suite
 ```
 
-The macOS app target lives in `App/macOS` — see `App/macOS/README.md`.
+App targets are generated with XcodeGen:
 
-> **Status:** early development (M1, reading core). This tree was authored in
-> a Linux cloud session without access to a Swift toolchain, so it has not
-> yet been compiled — expect a shakedown pass in Xcode on first build.
+```sh
+brew install xcodegen
+cd App/macOS && xcodegen && open Quoin.xcodeproj      # macOS
+cd App/iOS   && xcodegen && open QuoinIOS.xcodeproj   # iOS/iPadOS
+```
+
+CI (`.github/workflows/ci.yml`) runs the full test suite, builds both
+apps, enforces the PRD performance budgets, and captures UI screenshots
+to the `ci-screenshots` branch on every push.
 
 ## Dependency policy
 
