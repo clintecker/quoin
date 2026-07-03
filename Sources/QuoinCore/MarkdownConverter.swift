@@ -187,11 +187,12 @@ public enum MarkdownConverter {
             }
 
             let inlines: [Inline]
-            // Any `$` (even escaped) routes through the raw-slice scanner:
-            // cmark unescapes `\$` to `$` in text nodes, so only the raw
-            // slice can tell escaped dollars from math delimiters.
+            // Any `$` (even escaped) or a `\[` / `\(` LaTeX delimiter routes
+            // through the raw-slice scanner: cmark unescapes `\$`→`$` and
+            // `\[`→`[` in text nodes, so only the raw slice can tell a math
+            // delimiter from an escaped literal.
             if let slice,
-               slice.contains("$"),
+               slice.contains("$") || slice.contains("\\[") || slice.contains("\\("),
                isSafeForSliceReparse(slice) {
                 // The robust path: scan the raw source slice so that cmark's
                 // emphasis parsing can't mangle `$a_b + c_d$`.

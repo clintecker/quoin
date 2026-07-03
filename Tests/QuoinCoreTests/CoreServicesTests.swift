@@ -41,6 +41,25 @@ final class MathScannerTests: XCTestCase {
         XCTAssertEqual(MathScanner.scan("\\$5 plus \\$6"), [.text("\\$5 plus \\$6")])
     }
 
+    func testBackslashBracketDisplayMath() {
+        XCTAssertEqual(
+            MathScanner.scan("\\[\n\\begin{matrix} a & b \\end{matrix}\n\\]"),
+            [.displayMath("\\begin{matrix} a & b \\end{matrix}")]
+        )
+    }
+
+    func testBackslashParenInlineMath() {
+        XCTAssertEqual(
+            MathScanner.scan("energy \\(E = mc^2\\) done"),
+            [.text("energy "), .inlineMath("E = mc^2"), .text(" done")]
+        )
+    }
+
+    func testBackslashBracketDelimiterDetected() {
+        XCTAssertTrue(MathScanner.containsMathDelimiter("see \\(x\\)"))
+        XCTAssertTrue(MathScanner.containsMathDelimiter("\\[ y \\]"))
+    }
+
     func testUnderscoresInsideMath() {
         XCTAssertEqual(
             MathScanner.scan("see $a_b + c_d$ ok"),

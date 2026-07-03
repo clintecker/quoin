@@ -89,4 +89,50 @@ final class MathParserTests: XCTestCase {
         XCTAssertTrue(MathParser.isFullySupported(MathParser.parse("\\int_0^1 x^2 \\, dx = \\frac{1}{3}")))
         XCTAssertTrue(MathParser.isFullySupported(MathParser.parse("\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}")))
     }
+
+    func testPmatrixParsesRowsColumnsAndFences() {
+        let node = MathParser.parse("\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}")
+        guard case .matrix(let rows, let left, let right, let style) = node else {
+            return XCTFail("expected matrix, got \(node)")
+        }
+        XCTAssertEqual(left, "(")
+        XCTAssertEqual(right, ")")
+        XCTAssertEqual(style, .centered)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].count, 2)
+        XCTAssertEqual(rows[1].count, 2)
+        XCTAssertTrue(MathParser.isFullySupported(node))
+    }
+
+    func testCasesEnvironmentIsLeftAlignedBraced() {
+        let node = MathParser.parse("f(x) = \\begin{cases} 0, & x < 0 \\\\ 1, & x \\geq 0 \\end{cases}")
+        guard case .row(let children) = node,
+              let matrix = children.first(where: { if case .matrix = $0 { return true }; return false }),
+              case .matrix(let rows, let left, _, let style) = matrix else {
+            return XCTFail("expected a cases matrix in the row")
+        }
+        XCTAssertEqual(left, "{")
+        XCTAssertEqual(style, .cases)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertTrue(MathParser.isFullySupported(node))
+    }
+
+    func testAlignedEnvironmentParses() {
+        let node = MathParser.parse("\\begin{aligned} x &= a + b \\\\ y &= c \\end{aligned}")
+        guard case .matrix(let rows, _, _, let style) = node else {
+            return XCTFail("expected aligned matrix")
+        }
+        XCTAssertEqual(style, .aligned)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].count, 2)
+        XCTAssertTrue(MathParser.isFullySupported(node))
+    }
+
+    func testAlignedatSkipsColumnCountArgument() {
+        // The `{3}` after alignedat must not leak into the first cell.
+        let node = MathParser.parse("\\begin{alignedat}{3} a &= b \\end{alignedat}")
+        guard case .matrix(let rows, _, _, _) = node else { return XCTFail("expected matrix") }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertTrue(MathParser.isFullySupported(node))
+    }
 }

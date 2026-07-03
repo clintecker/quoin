@@ -13,6 +13,10 @@ public indirect enum MathNode: Hashable, Sendable {
     case scripts(base: MathNode, subscript: MathNode?, superscript: MathNode?)
     /// Auto-sized fences around a body: ( ) [ ] { } | ‖.
     case delimited(left: String, body: MathNode, right: String)
+    /// A grid of cells from a `\begin{…}…\end{…}` environment — matrices,
+    /// `cases`, `aligned`. `left`/`right` are the enclosing fences (empty for
+    /// none); `style` selects column alignment.
+    case matrix(rows: [[MathNode]], left: String, right: String, style: MathMatrixStyle)
     /// Upright function name (sin, log …).
     case functionName(String)
     /// Explicit spacing (multiples of an em quad).
@@ -36,6 +40,13 @@ public enum MathAtomClass: Hashable, Sendable {
 public enum MathSymbolStyle: Hashable, Sendable {
     case italic   // variables
     case roman    // digits, function names, operators
+}
+
+/// Column alignment for a `.matrix` grid.
+public enum MathMatrixStyle: Hashable, Sendable {
+    case centered   // matrix / pmatrix / bmatrix …
+    case cases      // left-aligned columns (a `cases` list)
+    case aligned    // alternating right/left, meeting at the `&` (aligned/align)
 }
 
 public enum MathParser {
@@ -226,6 +237,9 @@ public enum MathParser {
             let inner = parseAtom(&tokens) ?? .row([])
             return styledLetters(inner, command: name)
 
+        case "begin":
+            return parseEnvironment(&tokens)
+
         // Spacing.
         case ",": return .space(3.0 / 18.0)
         case ":": return .space(4.0 / 18.0)
@@ -259,6 +273,75 @@ public enum MathParser {
             node = .scripts(base: node, subscript: sub, superscript: sup)
         }
         return node
+    }
+
+    /// Reads a brace-delimited literal name like `{pmatrix}` or `{3}`.
+    private static func readBraceName(_ tokens: inout ArraySlice<Token>) -> String {
+        guard tokens.first == .groupOpen else { return "" }
+        tokens.removeFirst()
+        var name = ""
+        while let t = tokens.first, t != .groupClose {
+            tokens.removeFirst()
+            if case .character(let ch) = t { name.append(ch) }
+        }
+        if tokens.first == .groupClose { tokens.removeFirst() }
+        return name
+    }
+
+    /// Parses the body of `\begin{env} … \end{env}` into a `.matrix`. Cells
+    /// are split on `&`, rows on `\\`; unknown environments still lay out as a
+    /// bare centered grid so the content survives.
+    private static func parseEnvironment(_ tokens: inout ArraySlice<Token>) -> MathNode {
+        let env = readBraceName(&tokens)
+        let base = env.hasSuffix("*") ? String(env.dropLast()) : env
+
+        // `array` and `alignedat` carry a column-spec / count argument.
+        if base == "array" || base == "alignedat" { _ = readBraceName(&tokens) }
+
+        let (left, right, style): (String, String, MathMatrixStyle)
+        switch base {
+        case "pmatrix": (left, right, style) = ("(", ")", .centered)
+        case "bmatrix": (left, right, style) = ("[", "]", .centered)
+        case "Bmatrix": (left, right, style) = ("{", "}", .centered)
+        case "vmatrix": (left, right, style) = ("|", "|", .centered)
+        case "Vmatrix": (left, right, style) = ("‖", "‖", .centered)
+        case "cases":   (left, right, style) = ("{", "", .cases)
+        case "aligned", "align", "alignedat", "alignat", "split", "gather":
+            (left, right, style) = ("", "", .aligned)
+        default:        (left, right, style) = ("", "", .centered)   // matrix, array, …
+        }
+
+        var rows: [[MathNode]] = []
+        var row: [MathNode] = []
+        var cell: [MathNode] = []
+        func endCell() {
+            row.append(cell.count == 1 ? cell[0] : .row(cell))
+            cell = []
+        }
+        func endRow() {
+            endCell()
+            rows.append(row)
+            row = []
+        }
+
+        while let token = tokens.first {
+            if case .command("end") = token {
+                tokens.removeFirst()
+                _ = readBraceName(&tokens)          // consume {env}
+                break
+            }
+            if case .command("\\") = token { tokens.removeFirst(); endRow(); continue }
+            if case .character("&") = token { tokens.removeFirst(); endCell(); continue }
+            if let atom = parseAtomWithScripts(&tokens) {
+                cell.append(atom)
+            } else if tokens.first != nil {
+                tokens.removeFirst()                // never spin on an unconsumable token
+            }
+        }
+        // Flush a trailing partial row (no closing `\\`).
+        if !cell.isEmpty || !row.isEmpty { endRow() }
+
+        return .matrix(rows: rows, left: left, right: right, style: style)
     }
 
     private static func takeDelimiter(_ tokens: inout ArraySlice<Token>) -> String? {
@@ -391,6 +474,8 @@ public enum MathParser {
                 && (sup.map(isFullySupported) ?? true)
         case .delimited(_, let body, _):
             return isFullySupported(body)
+        case .matrix(let rows, _, _, _):
+            return rows.allSatisfy { $0.allSatisfy(isFullySupported) }
         }
     }
 }

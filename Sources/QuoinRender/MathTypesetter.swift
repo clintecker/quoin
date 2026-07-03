@@ -72,6 +72,9 @@ struct MathTypesetter {
         case .delimited(let left, let body, let right):
             return delimitedBox(left, body, right, size: s, display: display)
 
+        case .matrix(let rows, let left, let right, let style):
+            return matrixBox(rows, left: left, right: right, style: style, size: s)
+
         case .unsupported(let source):
             // Never reached when callers gate on isFullySupported, but draw
             // something sane regardless.
@@ -160,7 +163,7 @@ struct MathTypesetter {
         switch node {
         case .symbol(_, let cls, _): return cls
         case .functionName: return .largeOperator
-        case .fraction, .radical, .delimited, .row: return .ordinary
+        case .fraction, .radical, .delimited, .row, .matrix: return .ordinary
         case .scripts(let base, _, _): return atomClass(of: base)
         case .space, .unsupported: return nil
         }
@@ -375,6 +378,111 @@ struct MathTypesetter {
             leftBox.draw(context, pen)
             bodyBox.draw(context, CGPoint(x: pen.x + leftBox.width, y: pen.y))
             rightBox.draw(context, CGPoint(x: pen.x + leftBox.width + bodyBox.width, y: pen.y))
+        }
+    }
+
+    // MARK: - Matrices, cases, aligned
+
+    private func matrixBox(_ rows: [[MathNode]], left: String, right: String,
+                           style: MathMatrixStyle, size: CGFloat) -> MathBox {
+        guard !rows.isEmpty else { return .empty }
+
+        // Lay out every cell; track per-column width and per-row ascent/descent.
+        let columns = rows.map(\.count).max() ?? 0
+        var cellBoxes: [[MathBox]] = []
+        var colWidth = [CGFloat](repeating: 0, count: columns)
+        var rowAscent = [CGFloat](repeating: 0, count: rows.count)
+        var rowDescent = [CGFloat](repeating: 0, count: rows.count)
+        for (r, row) in rows.enumerated() {
+            var boxes: [MathBox] = []
+            for (c, cell) in row.enumerated() {
+                let box = layout(cell, size: size, display: false)
+                boxes.append(box)
+                colWidth[c] = max(colWidth[c], box.width)
+                rowAscent[r] = max(rowAscent[r], box.ascent)
+                rowDescent[r] = max(rowDescent[r], box.descent)
+            }
+            // Empty rows still take a line.
+            if row.isEmpty { rowAscent[r] = size * 0.5; rowDescent[r] = size * 0.2 }
+            cellBoxes.append(boxes)
+        }
+
+        let rowGap = size * 0.35
+        // `aligned` columns meet at the & with almost no gutter; grids space out.
+        let colGap = style == .aligned ? size * 0.16 : size * 0.7
+
+        var totalHeight: CGFloat = 0
+        for r in 0..<rows.count {
+            totalHeight += rowAscent[r] + rowDescent[r]
+            if r > 0 { totalHeight += rowGap }
+        }
+        let gridWidth = colWidth.reduce(0, +) + CGFloat(max(columns - 1, 0)) * colGap
+
+        // Center the grid on the math axis.
+        let axis = size * 0.26
+        let ascent = totalHeight / 2 + axis
+        let descent = totalHeight / 2 - axis
+
+        // Column x-origins.
+        var colX = [CGFloat](repeating: 0, count: columns)
+        var running: CGFloat = 0
+        for c in 0..<columns {
+            colX[c] = running
+            running += colWidth[c] + colGap
+        }
+
+        func cellOriginX(col: Int, box: MathBox) -> CGFloat {
+            switch style {
+            case .cases:
+                return colX[col]                                   // left-aligned
+            case .aligned:
+                // Even columns right-aligned, odd left-aligned (meet at &).
+                return col % 2 == 0 ? colX[col] + (colWidth[col] - box.width) : colX[col]
+            case .centered:
+                return colX[col] + (colWidth[col] - box.width) / 2
+            }
+        }
+
+        let grid = MathBox(width: gridWidth, ascent: ascent, descent: descent) { context, pen in
+            // First row's baseline sits below the top by its ascent.
+            var yTop = pen.y + ascent
+            for (r, boxes) in cellBoxes.enumerated() {
+                let baseline = yTop - rowAscent[r]
+                for (c, box) in boxes.enumerated() {
+                    box.draw(context, CGPoint(x: pen.x + cellOriginX(col: c, box: box), y: baseline))
+                }
+                yTop -= rowAscent[r] + rowDescent[r] + rowGap
+            }
+        }
+
+        guard !left.isEmpty || !right.isEmpty else { return grid }
+
+        // Wrap in stretched fences by delegating to the delimiter layout,
+        // which sizes the glyphs to the grid's height.
+        return delimitedBoxAround(grid, left: left, right: right, size: size)
+    }
+
+    /// Fences an already-laid-out box (the grid) with stretched delimiters.
+    private func delimitedBoxAround(_ bodyBox: MathBox, left: String, right: String, size: CGFloat) -> MathBox {
+        func fence(_ glyph: String) -> MathBox {
+            guard !glyph.isEmpty else { return .empty }
+            let probe = textBox(glyph, size: size, italic: false)
+            let scale = max(1, bodyBox.height / max(probe.height, 1))
+            let scaled = textBox(glyph, size: size * scale, italic: false)
+            let offset = (bodyBox.ascent - bodyBox.descent) / 2 - (scaled.ascent - scaled.descent) / 2
+            return MathBox(width: scaled.width, ascent: scaled.ascent + offset, descent: scaled.descent - offset) { context, pen in
+                scaled.draw(context, CGPoint(x: pen.x, y: pen.y + offset))
+            }
+        }
+        let leftBox = fence(left)
+        let rightBox = fence(right)
+        let width = leftBox.width + bodyBox.width + rightBox.width + size * 0.1
+        return MathBox(width: width,
+                       ascent: max(bodyBox.ascent, leftBox.ascent, rightBox.ascent),
+                       descent: max(bodyBox.descent, leftBox.descent, rightBox.descent)) { context, pen in
+            leftBox.draw(context, pen)
+            bodyBox.draw(context, CGPoint(x: pen.x + leftBox.width + size * 0.05, y: pen.y))
+            rightBox.draw(context, CGPoint(x: pen.x + leftBox.width + bodyBox.width + size * 0.05, y: pen.y))
         }
     }
 }

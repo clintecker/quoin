@@ -27,7 +27,7 @@ enum MathScanner {
             if ch == "$" && previous != "\\" { return true }
             previous = ch
         }
-        return false
+        return text.contains("\\[") || text.contains("\\(")
     }
 
     static func scan(_ text: String) -> [MathSegment] {
@@ -45,10 +45,30 @@ enum MathScanner {
 
         while i < chars.count {
             let ch = chars[i]
-            if ch == "\\", i + 1 < chars.count, chars[i + 1] == "$" {
-                plain.append("\\$")
-                i += 2
-                continue
+            if ch == "\\", i + 1 < chars.count {
+                let next = chars[i + 1]
+                if next == "$" {                      // escaped dollar, never a delimiter
+                    plain.append("\\$")
+                    i += 2
+                    continue
+                }
+                // LaTeX display `\[ … \]` and inline `\( … \)` delimiters.
+                if next == "[", let close = findClosingBracket(in: chars, from: i + 2, closer: "]") {
+                    let latex = String(chars[(i + 2)..<close]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !latex.isEmpty {
+                        flushPlain()
+                        segments.append(.displayMath(latex))
+                        i = close + 2
+                        continue
+                    }
+                }
+                if next == "(", let close = findClosingBracket(in: chars, from: i + 2, closer: ")") {
+                    let latex = String(chars[(i + 2)..<close])
+                    flushPlain()
+                    segments.append(.inlineMath(latex))
+                    i = close + 2
+                    continue
+                }
             }
             guard ch == "$" else {
                 plain.append(ch)
@@ -86,6 +106,21 @@ enum MathScanner {
         }
         flushPlain()
         return segments
+    }
+
+    /// Finds the index of the `\` in a `\]` or `\)` closer, or nil. May span
+    /// newlines (display math) and ignores an escaped closer inside the body.
+    private static func findClosingBracket(in chars: [Character], from start: Int, closer: Character) -> Int? {
+        var i = start
+        while i + 1 < chars.count {
+            if chars[i] == "\\" {
+                if chars[i + 1] == closer { return i }
+                i += 2      // some other escape (\\, \{, …) — skip both
+                continue
+            }
+            i += 1
+        }
+        return nil
     }
 
     /// Finds the index of the `$$` closer, or nil.
