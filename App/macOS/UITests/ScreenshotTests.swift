@@ -15,6 +15,12 @@ final class ScreenshotTests: XCTestCase {
         ProcessInfo.processInfo.environment["QUOIN_FIXTURES"] ?? "/tmp/quoin-fixtures"
     }
 
+    override func setUp() {
+        // A single failed event synthesis must skip one shot, not kill the
+        // whole gallery.
+        continueAfterFailure = true
+    }
+
     func testCaptureMainWindow() throws {
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
@@ -63,10 +69,15 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
         }
 
-        // Find bar (⌘F) with live matches.
+        // Find bar (⌘F) with live matches. Click the field before typing —
+        // typeText into unfocused UI is the classic synthesis failure.
         app.typeKey("f", modifierFlags: [.command])
         Thread.sleep(forTimeInterval: 0.7)
-        app.typeText("math")
+        let findField = app.textFields.firstMatch
+        if findField.waitForExistence(timeout: 2) {
+            findField.click()
+            findField.typeText("math")
+        }
         Thread.sleep(forTimeInterval: 1)
         capture(name: "08-find-bar")
         app.typeKey(.escape, modifierFlags: [])
@@ -82,7 +93,11 @@ final class ScreenshotTests: XCTestCase {
         // Quick open (⇧⌘O) with a query.
         app.typeKey("o", modifierFlags: [.command, .shift])
         Thread.sleep(forTimeInterval: 0.7)
-        app.typeText("show")
+        let quickOpenField = app.textFields.firstMatch
+        if quickOpenField.waitForExistence(timeout: 2) {
+            quickOpenField.click()
+            quickOpenField.typeText("show")
+        }
         Thread.sleep(forTimeInterval: 1)
         capture(name: "10-quick-open")
         app.typeKey(.escape, modifierFlags: [])
@@ -91,7 +106,11 @@ final class ScreenshotTests: XCTestCase {
         // Library search (⇧⌘F) with full-text hits.
         app.typeKey("f", modifierFlags: [.command, .shift])
         Thread.sleep(forTimeInterval: 0.7)
-        app.typeText("engine")
+        let libraryField = app.textFields.firstMatch
+        if libraryField.waitForExistence(timeout: 2) {
+            libraryField.click()
+            libraryField.typeText("engine")
+        }
         Thread.sleep(forTimeInterval: 1.2)
         capture(name: "11-library-search")
         app.typeKey(.escape, modifierFlags: [])
