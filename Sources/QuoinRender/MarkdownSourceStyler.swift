@@ -63,10 +63,14 @@ struct MarkdownSourceStyler {
 
     private func styleLinePrefixes(in output: NSMutableAttributedString, text: NSString, caretOffset: Int?) {
         var lineStart = 0
-        while lineStart <= text.length {
-            let lineRange = text.lineRange(for: NSRange(location: min(lineStart, max(text.length - 1, 0)), length: 0))
+        while lineStart < text.length {
+            // lineRange(for:) at a valid location always spans ≥ 1 char, so
+            // advancing to NSMaxRange guarantees progress (the old
+            // clamped-location variant re-derived the same final line
+            // forever once lineStart reached text.length — a pinwheel).
+            let lineRange = text.lineRange(for: NSRange(location: lineStart, length: 0))
             defer {
-                lineStart = lineRange.location + max(lineRange.length, 1)
+                lineStart = NSMaxRange(lineRange)
             }
             let line = text.substring(with: lineRange)
             let caretOnLine = caretOffset.map {
@@ -89,7 +93,6 @@ struct MarkdownSourceStyler {
                         .foregroundColor: hashes <= 3 ? theme.ink : theme.secondaryTextColor,
                     ], range: NSRange(location: bodyStart, length: bodyLength))
                 }
-                if lineRange.length == 0 { break }
                 continue
             }
 
@@ -106,8 +109,6 @@ struct MarkdownSourceStyler {
                 )
                 break
             }
-
-            if lineRange.length == 0 { break }
         }
     }
 
