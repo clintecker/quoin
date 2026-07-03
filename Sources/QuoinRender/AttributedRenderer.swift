@@ -686,7 +686,34 @@ public struct AttributedRenderer {
             output.append(render(block: child, depth: depth + 1, document: document))
         }
         let full = NSRange(location: 0, length: output.length)
+
+        // A nested card (code block, diagram, table, callout) already carries
+        // its own blockDecoration and styling. The quote's italic / recolor /
+        // indent passes and its full-range quote-rule overwrite must skip those
+        // ranges, or the child loses its canvas and renders as bare, italicised,
+        // muted monospace. Collect the card ranges, then style only the gaps.
+        var cardRanges: [NSRange] = []
+        output.enumerateAttribute(QuoinAttribute.blockDecoration, in: full) { value, range, _ in
+            if value != nil { cardRanges.append(range) }
+        }
+        func intersectsCard(_ range: NSRange) -> Bool {
+            cardRanges.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+        // Text runs are the parts of `full` not covered by any card.
+        var textRuns: [NSRange] = []
+        var cursor = 0
+        for card in cardRanges.sorted(by: { $0.location < $1.location }) {
+            if card.location > cursor {
+                textRuns.append(NSRange(location: cursor, length: card.location - cursor))
+            }
+            cursor = max(cursor, NSMaxRange(card))
+        }
+        if cursor < full.length {
+            textRuns.append(NSRange(location: cursor, length: full.length - cursor))
+        }
+
         output.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
+            guard !intersectsCard(range) else { return }
             let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? paragraphStyle()
             style.firstLineHeadIndent += 16
             style.headIndent += 16
@@ -695,15 +722,18 @@ public struct AttributedRenderer {
         // Element spec: pad-left 16, italic, 55% ink, 3pt rule at the left
         // edge (drawn as a block decoration by the reader view).
         output.enumerateAttribute(.font, in: full) { value, range, _ in
+            guard !intersectsCard(range) else { return }
             let font = value as? PlatformFont ?? theme.bodyFont()
             output.addAttribute(.font, value: italicVariant(of: font), range: range)
         }
-        output.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: full)
-        output.addAttribute(
-            QuoinAttribute.blockDecoration,
-            value: BlockDecoration(kind: .quoteRule(color: theme.quoteRule)),
-            range: full
-        )
+        for run in textRuns {
+            output.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: run)
+            output.addAttribute(
+                QuoinAttribute.blockDecoration,
+                value: BlockDecoration(kind: .quoteRule(color: theme.quoteRule)),
+                range: run
+            )
+        }
         return output
     }
 
