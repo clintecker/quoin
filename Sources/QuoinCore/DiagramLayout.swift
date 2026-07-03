@@ -289,34 +289,118 @@ public enum DiagramLayoutEngine {
             mainOffset += mainSize + layerGap
         }
 
-        let contentMain = mainOffset - layerGap + margin
-        let contentCross = crossExtent + margin * 2
-        let size = horizontal
-            ? CGSize(width: contentMain, height: contentCross)
-            : CGSize(width: contentCross, height: contentMain)
+        // 5. Edges. Forward edges attach at points distributed across each
+        // node's face — fanned out by the other endpoint's cross position so
+        // sibling edges never share a stub — and projected onto the node's
+        // actual outline (diamonds/circles) so they don't float off a
+        // bounding-box corner. Back edges (cycles) route around the node band
+        // in a private lane so they never overwrite the forward flow.
+        let shapeOf = Dictionary(uniqueKeysWithValues: chart.nodes.map { ($0.id, $0.shape) })
 
-        // 5. Edges: border-to-border straight segments.
+        func crossCenter(_ id: String) -> CGFloat {
+            horizontal ? frames[id]!.midY : frames[id]!.midX
+        }
+        var forwardOut: [String: [Int]] = [:]
+        var forwardIn: [String: [Int]] = [:]
+        for (index, edge) in chart.edges.enumerated() where !backEdges.contains(index) {
+            guard frames[edge.from] != nil, frames[edge.to] != nil else { continue }
+            forwardOut[edge.from, default: []].append(index)
+            forwardIn[edge.to, default: []].append(index)
+        }
+        for (node, indices) in forwardOut {
+            forwardOut[node] = indices.sorted { crossCenter(chart.edges[$0].to) < crossCenter(chart.edges[$1].to) }
+        }
+        for (node, indices) in forwardIn {
+            forwardIn[node] = indices.sorted { crossCenter(chart.edges[$0].from) < crossCenter(chart.edges[$1].from) }
+        }
+        // Cross-axis coordinate where edge `index` sits on `nodeID`'s face:
+        // one edge → centered; N edges → spread across the middle 64%.
+        func faceCross(_ nodeID: String, group: [Int]?, index: Int) -> CGFloat {
+            let frame = frames[nodeID]!
+            let lo = horizontal ? frame.minY : frame.minX
+            let span = horizontal ? frame.height : frame.width
+            guard let group, group.count > 1, let pos = group.firstIndex(of: index) else {
+                return horizontal ? frame.midY : frame.midX
+            }
+            let inset = span * 0.18
+            return lo + inset + (span - inset * 2) * CGFloat(pos) / CGFloat(group.count - 1)
+        }
+        // Projects a face-cross coordinate onto the node's outline.
+        func attachPoint(_ id: String, cross: CGFloat, rightOrBottom: Bool) -> CGPoint {
+            let f = frames[id]!
+            let shape = shapeOf[id] ?? .rectangle
+            if horizontal {
+                let y = min(max(cross, f.minY), f.maxY)
+                let hw = f.width / 2, hh = max(f.height / 2, 0.001)
+                var x = rightOrBottom ? f.maxX : f.minX
+                switch shape {
+                case .diamond:
+                    let dx = hw * (1 - min(abs(y - f.midY) / hh, 1))
+                    x = rightOrBottom ? f.midX + dx : f.midX - dx
+                case .circle, .stateStart, .stateEnd:
+                    let dx = (f.width / 2) * sqrt(max(0, 1 - pow((y - f.midY) / hh, 2)))
+                    x = rightOrBottom ? f.midX + dx : f.midX - dx
+                default: break
+                }
+                return CGPoint(x: x, y: y)
+            } else {
+                let x = min(max(cross, f.minX), f.maxX)
+                let hw = max(f.width / 2, 0.001), hh = f.height / 2
+                var y = rightOrBottom ? f.maxY : f.minY
+                switch shape {
+                case .diamond:
+                    let dy = hh * (1 - min(abs(x - f.midX) / hw, 1))
+                    y = rightOrBottom ? f.midY + dy : f.midY - dy
+                case .circle, .stateStart, .stateEnd:
+                    let dy = (f.height / 2) * sqrt(max(0, 1 - pow((x - f.midX) / hw, 2)))
+                    y = rightOrBottom ? f.midY + dy : f.midY - dy
+                default: break
+                }
+                return CGPoint(x: x, y: y)
+            }
+        }
+
         var placedEdges: [FlowchartLayout.PlacedEdge] = []
-        for edge in chart.edges {
+        let bandMaxCross = frames.values.map { horizontal ? $0.maxY : $0.maxX }.max() ?? 0
+        var crossLimit = margin + crossExtent
+        var backLane = 0
+
+        for (index, edge) in chart.edges.enumerated() {
             guard let from = frames[edge.from], let to = frames[edge.to] else { continue }
             let start: CGPoint
             let end: CGPoint
-            var points: [CGPoint]?
-            if horizontal {
-                start = CGPoint(x: from.maxX, y: from.midY)
-                end = CGPoint(x: to.minX, y: to.midY)
-                // Orthogonal route between vertically offset nodes: out,
-                // jog at the midpoint of the gap, in.
-                if abs(start.y - end.y) > 0.5 {
-                    let midX = (start.x + end.x) / 2
-                    points = [start, CGPoint(x: midX, y: start.y), CGPoint(x: midX, y: end.y), end]
+            let points: [CGPoint]
+
+            if backEdges.contains(index) {
+                // Loop out past the band's far cross edge in a private lane.
+                let lane = bandMaxCross + 16 + CGFloat(backLane) * 12
+                backLane += 1
+                crossLimit = max(crossLimit, lane)
+                if horizontal {
+                    start = CGPoint(x: from.midX, y: from.maxY)
+                    end = CGPoint(x: to.midX, y: to.maxY)
+                    points = [start, CGPoint(x: from.midX, y: lane), CGPoint(x: to.midX, y: lane), end]
+                } else {
+                    start = CGPoint(x: from.maxX, y: from.midY)
+                    end = CGPoint(x: to.maxX, y: to.midY)
+                    points = [start, CGPoint(x: lane, y: from.midY), CGPoint(x: lane, y: to.midY), end]
                 }
             } else {
-                start = CGPoint(x: from.midX, y: from.maxY)
-                end = CGPoint(x: to.midX, y: to.minY)
-                if abs(start.x - end.x) > 0.5 {
-                    let midY = (start.y + end.y) / 2
-                    points = [start, CGPoint(x: start.x, y: midY), CGPoint(x: end.x, y: midY), end]
+                let outCross = faceCross(edge.from, group: forwardOut[edge.from], index: index)
+                let inCross = faceCross(edge.to, group: forwardIn[edge.to], index: index)
+                start = attachPoint(edge.from, cross: outCross, rightOrBottom: true)
+                end = attachPoint(edge.to, cross: inCross, rightOrBottom: false)
+                let jog = horizontal ? abs(start.y - end.y) : abs(start.x - end.x)
+                if jog > 0.5 {
+                    if horizontal {
+                        let midX = (start.x + end.x) / 2
+                        points = [start, CGPoint(x: midX, y: start.y), CGPoint(x: midX, y: end.y), end]
+                    } else {
+                        let midY = (start.y + end.y) / 2
+                        points = [start, CGPoint(x: start.x, y: midY), CGPoint(x: end.x, y: midY), end]
+                    }
+                } else {
+                    points = [start, end]
                 }
             }
             placedEdges.append(FlowchartLayout.PlacedEdge(
@@ -324,6 +408,12 @@ public enum DiagramLayoutEngine {
                 dashed: edge.dashed, hasArrow: edge.hasArrow
             ))
         }
+
+        let contentMain = mainOffset - layerGap + margin
+        let contentCross = crossLimit + margin
+        let size = horizontal
+            ? CGSize(width: contentMain, height: contentCross)
+            : CGSize(width: contentCross, height: contentMain)
 
         let placedNodes = chart.nodes.compactMap { node -> FlowchartLayout.PlacedNode? in
             guard let frame = frames[node.id] else { return nil }

@@ -164,7 +164,13 @@ enum DiagramRenderer {
                 drawArrowhead(at: edge.end, from: approach, color: stroke, in: context)
             }
             if let label = edge.label, !label.isEmpty {
-                let mid = CGPoint(x: (edge.start.x + edge.end.x) / 2, y: (edge.start.y + edge.end.y) / 2)
+                // Sit the label on the middle of the routed polyline, not a
+                // naive start/end midpoint (which lands inside the node band
+                // for a looped back-edge).
+                let pts = edge.points
+                let a = pts[(pts.count - 1) / 2]
+                let b = pts[pts.count / 2]
+                let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
                 let size = measure(label, size: 10.5)
                 let pad: CGFloat = 3
                 let rect = CGRect(
