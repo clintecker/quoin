@@ -203,7 +203,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {
             coordinator.appliedScrollGeneration = scrollGeneration
             if let range = rendered.blockRanges[scrollTarget] {
-                textView.scrollRangeToVisible(range)
+                coordinator.scrollBlockToTop(range, in: textView)
             }
         }
     }
@@ -308,7 +308,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
             }
             if let slug = QuoinLink.anchorSlug(from: url) {
                 if let blockID = parent.anchorResolver(slug), let range = blockRanges[blockID] {
-                    textView.scrollRangeToVisible(range)
+                    scrollBlockToTop(range, in: textView)
                 }
                 return true
             }
@@ -556,6 +556,34 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
         /// The block ID at the top of the current viewport, used to keep the
         /// reading position stable across live reloads.
+        /// Jump-to-section scroll that works with TextKit 2's lazy layout:
+        /// force layout up to the target range first (otherwise its rect is an
+        /// estimate and the scroll lands in the wrong place, or nowhere), then
+        /// align the block near the top of the viewport.
+        func scrollBlockToTop(_ range: NSRange, in textView: NSTextView) {
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let textRange = textRange(range, in: contentStorage) else {
+                textView.scrollRangeToVisible(range)
+                return
+            }
+            layoutManager.ensureLayout(for: textRange)
+            guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else {
+                textView.scrollRangeToVisible(range)
+                return
+            }
+            let origin = textView.textContainerOrigin
+            let top = fragment.layoutFragmentFrame.minY + origin.y
+            if let clip = textView.enclosingScrollView?.contentView {
+                let maxY = max(0, (textView.bounds.height) - clip.bounds.height)
+                let y = min(max(0, top - 8), maxY)
+                clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+                textView.enclosingScrollView?.reflectScrolledClipView(clip)
+            } else {
+                textView.scrollRangeToVisible(range)
+            }
+        }
+
         func topVisibleBlockID(in textView: NSTextView) -> BlockID? {
             guard let storage = textView.textContentStorage?.textStorage, storage.length > 0 else { return nil }
             let topPoint = NSPoint(x: textView.visibleRect.minX + 1, y: textView.visibleRect.minY + 1)
