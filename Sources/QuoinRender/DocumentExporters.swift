@@ -35,22 +35,20 @@ public enum DocumentExporters {
 
     // MARK: - PDF
 
-    /// US Letter with 54pt margins; CoreText paginates the same attributed
-    /// output that the reading surface shows. (Attachment images are not
-    /// drawn by CoreText yet — the image-aware pagination pass comes with
-    /// print support.)
+    /// US Letter with 54pt margins. On macOS, pagination runs through
+    /// TextKit so image attachments (math, diagrams, pictures) draw exactly
+    /// as they do on screen; the CoreText path remains for other platforms.
     public static func pdf(
         from document: QuoinDocument,
         theme: Theme = Theme(),
         title: String = "Document"
     ) throws -> Data {
         let renderer = AttributedRenderer(theme: theme)
-        let rendered = renderer.render(document)
-        let attributed = rendered.attributed
+        let attributed = renderer.render(document).attributed
 
         var pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
         let margin: CGFloat = 54
-        let contentRect = pageRect.insetBy(dx: margin, dy: margin)
+        let contentSize = pageRect.insetBy(dx: margin, dy: margin).size
 
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data as CFMutableData),
@@ -62,30 +60,92 @@ public enum DocumentExporters {
             throw ExportError.conversionFailed
         }
 
+        #if canImport(AppKit)
+        // TextKit pagination: one text container per page.
+        let storage = NSTextStorage(attributedString: attributed)
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+
+        var containers: [NSTextContainer] = []
+        repeat {
+            let container = NSTextContainer(containerSize: contentSize)
+            container.lineFragmentPadding = 0
+            layoutManager.addTextContainer(container)
+            containers.append(container)
+            _ = layoutManager.glyphRange(for: container) // force layout
+            guard containers.count < 2000 else { break }  // runaway backstop
+        } while layoutManager.glyphRange(for: containers[containers.count - 1]).upperBound
+            < layoutManager.numberOfGlyphs
+
+        for container in containers {
+            context.beginPDFPage(nil)
+            context.saveGState()
+            // TextKit draws in flipped coordinates; PDF is bottom-left.
+            context.translateBy(x: margin, y: pageRect.height - margin)
+            context.scaleBy(x: 1, y: -1)
+            let graphicsContext = NSGraphicsContext(cgContext: context, flipped: true)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = graphicsContext
+            let glyphRange = layoutManager.glyphRange(for: container)
+            layoutManager.drawBackground(forGlyphRange: glyphRange, at: .zero)
+            layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: .zero)
+            NSGraphicsContext.restoreGraphicsState()
+            context.restoreGState()
+            context.endPDFPage()
+        }
+        #else
+        // CoreText pagination (attachments render as gaps; the TextKit-based
+        // path arrives with the iOS app).
+        let contentRect = pageRect.insetBy(dx: margin, dy: margin)
         let framesetter = CTFramesetterCreateWithAttributedString(attributed)
         var location = 0
         let total = attributed.length
-
         repeat {
             context.beginPDFPage(nil)
             let path = CGPath(rect: contentRect, transform: nil)
-            let frame = CTFramesetterCreateFrame(
-                framesetter,
-                CFRange(location: location, length: 0),
-                path,
-                nil
-            )
+            let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: location, length: 0), path, nil)
             CTFrameDraw(frame, context)
             context.endPDFPage()
-
             let visible = CTFrameGetVisibleStringRange(frame)
-            // Always advance; a zero-progress frame (e.g. an oversized
-            // attachment) must not loop forever.
             location += max(visible.length, 1)
         } while location < total
+        #endif
 
         context.closePDF()
         return data as Data
     }
+
+    // MARK: - Print (⌘P — the system meaning, implemented not overridden)
+
+    #if canImport(AppKit)
+    /// Runs the print panel with the document paginated by an offscreen
+    /// text view — the element spec doubles as the print stylesheet.
+    @MainActor
+    public static func runPrintOperation(for document: QuoinDocument, theme: Theme = Theme(), jobTitle: String) {
+        let rendered = AttributedRenderer(theme: theme).render(document).attributed
+
+        let printInfo = NSPrintInfo()
+        printInfo.topMargin = 54
+        printInfo.bottomMargin = 54
+        printInfo.leftMargin = 54
+        printInfo.rightMargin = 54
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .automatic
+        printInfo.isHorizontallyCentered = false
+        printInfo.isVerticallyCentered = false
+
+        let contentWidth = printInfo.paperSize.width - printInfo.leftMargin - printInfo.rightMargin
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 1))
+        textView.textStorage?.setAttributedString(rendered)
+        textView.isVerticallyResizable = true
+        textView.sizeToFit()
+
+        let operation = NSPrintOperation(view: textView, printInfo: printInfo)
+        operation.jobTitle = jobTitle
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        operation.run()
+    }
+    #endif
 }
 #endif

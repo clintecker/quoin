@@ -159,6 +159,14 @@ struct ReaderScreen: View {
                 .keyboardShortcut("h", modifiers: [.command, .shift])
             Button("") { fireFormat(.link) }
                 .keyboardShortcut("k", modifiers: .command)
+            // ⌘P keeps its system meaning: print.
+            Button("") {
+                DocumentExporters.runPrintOperation(
+                    for: model.document,
+                    jobTitle: fileURL?.deletingPathExtension().lastPathComponent ?? "Quoin Document"
+                )
+            }
+            .keyboardShortcut("p", modifiers: .command)
         }
         .opacity(0)
         .accessibilityHidden(true)

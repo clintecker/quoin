@@ -46,6 +46,36 @@ final class ScreenshotTests: XCTestCase {
         app.terminate()
     }
 
+    /// Dark-appearance pass: verifies the handoff rules (inverted ink/canvas,
+    /// code surface constant) on a real render.
+    func testCaptureDarkMode() throws {
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-QuoinLibraryPath", fixturesPath,
+            "-AppleInterfaceStyle", "Dark",
+        ]
+        app.launch()
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+
+        let row = app.staticTexts["showcase"]
+        if row.waitForExistence(timeout: 5) {
+            row.click()
+            Thread.sleep(forTimeInterval: 2)
+            capture(name: "05-dark-document")
+        }
+        let engines = app.staticTexts["engines"]
+        if engines.waitForExistence(timeout: 3) {
+            engines.click()
+            Thread.sleep(forTimeInterval: 2)
+            capture(name: "06-dark-engines")
+        }
+        app.terminate()
+    }
+
     private func capture(name: String) {
         let screenshot = XCUIScreen.main.screenshot()
         let url = outputDirectory.appendingPathComponent("\(name).png")
