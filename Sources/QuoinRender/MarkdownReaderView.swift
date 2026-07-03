@@ -718,7 +718,9 @@ final class QuoinTextView: NSTextView {
             context.strokePath()
 
         case .quoteRule(let color):
-            let bar = CGRect(x: box.minX + 2, y: box.minY + 3, width: 3, height: box.height - 6)
+            // box.minX is the indented text's left edge; the rule sits in the
+            // gutter to its left so glyphs never overlap the bar.
+            let bar = CGRect(x: box.minX - 14, y: box.minY + 3, width: 3, height: box.height - 6)
             context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil))
             context.setFillColor(color.cgColor)
             context.fillPath()

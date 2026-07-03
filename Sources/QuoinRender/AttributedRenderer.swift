@@ -111,7 +111,7 @@ public struct AttributedRenderer {
                     // the previous paragraph and inherits its style — so we
                     // append a dedicated low spacer line instead.
                     var spacer = bodyAttributes()
-                    spacer[.font] = PlatformFont.systemFont(ofSize: 10)
+                    spacer[.font] = PlatformFont.systemFont(ofSize: 14)
                     let spacerStyle = NSMutableParagraphStyle()
                     spacerStyle.lineHeightMultiple = 1
                     spacerStyle.paragraphSpacing = 0
