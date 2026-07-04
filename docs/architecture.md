@@ -202,6 +202,18 @@ fail to compile. Supporting it means changing those guards to
   (`Snapshots/renderer-metrics.json`), and asserts every native diagram lays
   out non-degenerately. Regenerate after intentional changes with
   `QUOIN_UPDATE_SNAPSHOTS=1 swift test`.
+- **Render golden** (`Tests/QuoinRenderTests`, macOS/iOS only): renders every
+  fixture module through `AttributedRenderer` and snapshots a *deterministic*
+  digest of the attributed string — per-run QuoinAttribute keys, font
+  size/weight/traits, paragraph-style scalars, block-decoration kinds, and
+  semantic color tokens (`Snapshots/render-digests.json`, same
+  `QUOIN_UPDATE_SNAPSHOTS=1` idiom). It never snapshots font glyph widths,
+  rasterised math/diagram bytes, or the user-configurable accent RGB (mapped
+  to an `"accent"` token), so the golden is portable across machines. Math and
+  diagrams are checked by attachment existence + non-degeneracy and
+  font-independent structural invariants, not pixels. Also covers the extracted
+  render helpers (code-token colors, non-BMP offset mapping, card spacing,
+  source-styler 1:1 mapping).
 - **Screenshots** (`App/macOS/UITests`): CI drives the real app over the
   fixture library and publishes window captures to the `ci-screenshots`
   branch — how a cloud session gets eyes on the app.

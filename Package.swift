@@ -35,5 +35,15 @@ let package = Package(
             // The conformance snapshot is read via #filePath, not the bundle.
             exclude: ["Snapshots/renderer-metrics.json"]
         ),
+        // The render layer only compiles with AppKit/UIKit present, so this
+        // target's sources are all guarded `#if canImport(AppKit) || UIKit`
+        // and it runs on the macOS CI runner (empty elsewhere, e.g. Linux).
+        .testTarget(
+            name: "QuoinRenderTests",
+            dependencies: ["QuoinRender", "QuoinCore"],
+            path: "Tests/QuoinRenderTests",
+            // The golden digest is read via #filePath, not the test bundle.
+            exclude: ["Snapshots/render-digests.json"]
+        ),
     ]
 )
