@@ -45,16 +45,87 @@ extension DiagramLayoutEngine {
             crossExtent: placement.crossExtent
         )
 
+        // 5. Place edge labels clear of node boxes and each other.
+        let labeledEdges = placeEdgeLabels(
+            placedEdges, nodeFrames: Array(placement.frames.values), measure: measure
+        )
+
         let contentCross = crossLimit + flowchartMargin
-        let size = horizontal
+        var size = horizontal
             ? CGSize(width: placement.mainContentEnd, height: contentCross)
             : CGSize(width: contentCross, height: placement.mainContentEnd)
+        // Grow the canvas for any label nudged past the content box.
+        for edge in labeledEdges {
+            guard let lp = edge.labelPoint, let label = edge.label, !label.isEmpty else { continue }
+            let sz = measure(label, labelFontSize)
+            size.width = max(size.width, lp.x + sz.width / 2 + flowchartMargin)
+            size.height = max(size.height, lp.y + sz.height / 2 + flowchartMargin)
+        }
 
         let placedNodes = chart.nodes.compactMap { node -> FlowchartLayout.PlacedNode? in
             guard let frame = placement.frames[node.id] else { return nil }
             return FlowchartLayout.PlacedNode(id: node.id, label: node.label, shape: node.shape, frame: frame)
         }
-        return FlowchartLayout(size: size, nodes: placedNodes, edges: placedEdges)
+        return FlowchartLayout(size: size, nodes: placedNodes, edges: labeledEdges)
+    }
+
+    /// Chooses each labeled edge's anchor so labels don't overprint node boxes
+    /// or one another. Scores candidate points (segment midpoints, plus small
+    /// sideways nudges) by how much they overlap node frames and already-placed
+    /// labels, and keeps the cheapest — so a label slides into a clear gap or
+    /// off to the side instead of landing on a box's text.
+    private static func placeEdgeLabels(
+        _ edges: [FlowchartLayout.PlacedEdge],
+        nodeFrames: [CGRect],
+        measure: DiagramTextMeasurer
+    ) -> [FlowchartLayout.PlacedEdge] {
+        let obstacles = nodeFrames.map { $0.insetBy(dx: -3, dy: -3) }
+        var labelRects: [CGRect] = []
+        var result: [FlowchartLayout.PlacedEdge] = []
+
+        for edge in edges {
+            guard let label = edge.label, !label.isEmpty, edge.points.count >= 2 else {
+                result.append(edge); continue
+            }
+            let sz = measure(label, labelFontSize)
+            let w = sz.width + 6, h = sz.height + 2
+
+            var candidates: [CGPoint] = []
+            for i in 0..<(edge.points.count - 1) {
+                let a = edge.points[i], b = edge.points[i + 1]
+                candidates.append(CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2))
+            }
+            let nudges: [CGFloat] = [0, w / 2 + 5, -(w / 2 + 5), w + 9, -(w + 9)]
+
+            var best = candidates[0]
+            var bestScore = CGFloat.greatestFiniteMagnitude
+            for (index, c) in candidates.enumerated() {
+                for dx in nudges {
+                    let rect = CGRect(x: c.x + dx - w / 2, y: c.y - h / 2, width: w, height: h)
+                    var score: CGFloat = 0
+                    for o in obstacles { score += overlapArea(rect, o) * 4 }   // node overlap: costly
+                    for l in labelRects { score += overlapArea(rect, l) * 2 }  // label overlap
+                    score += abs(dx) * 0.15                                    // prefer on the line
+                    if rect.minX < flowchartMargin || rect.minY < flowchartMargin { score += 1_000 }
+                    // Prefer a middle segment (more likely to sit in a clear gap).
+                    score += abs(CGFloat(index) - CGFloat(candidates.count - 1) / 2) * 0.5
+                    if score < bestScore { bestScore = score; best = CGPoint(x: c.x + dx, y: c.y) }
+                }
+            }
+            labelRects.append(CGRect(x: best.x - w / 2, y: best.y - h / 2, width: w, height: h))
+            result.append(FlowchartLayout.PlacedEdge(
+                start: edge.start, end: edge.end, points: edge.points,
+                label: edge.label, dashed: edge.dashed, hasArrow: edge.hasArrow, labelPoint: best
+            ))
+        }
+        return result
+    }
+
+    /// Area of the intersection of two rects (0 when disjoint).
+    private static func overlapArea(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        let ix = max(0, min(a.maxX, b.maxX) - max(a.minX, b.minX))
+        let iy = max(0, min(a.maxY, b.maxY) - max(a.minY, b.minY))
+        return ix * iy
     }
 
     /// Node box sizes from their labels, with per-shape adjustments

@@ -27,15 +27,20 @@ public struct FlowchartLayout: Sendable {
         public let label: String?
         public let dashed: Bool
         public let hasArrow: Bool
+        /// Where to center the label — chosen by the layout to avoid boxes and
+        /// other labels. nil for an unlabeled edge; the renderer falls back to
+        /// the route midpoint if it is somehow absent.
+        public let labelPoint: CGPoint?
 
         public init(start: CGPoint, end: CGPoint, points: [CGPoint]? = nil,
-                    label: String?, dashed: Bool, hasArrow: Bool) {
+                    label: String?, dashed: Bool, hasArrow: Bool, labelPoint: CGPoint? = nil) {
             self.start = start
             self.end = end
             self.points = points ?? [start, end]
             self.label = label
             self.dashed = dashed
             self.hasArrow = hasArrow
+            self.labelPoint = labelPoint
         }
     }
 

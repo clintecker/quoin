@@ -149,10 +149,15 @@ enum DiagramRenderer {
         let stroke = theme.ink.withAlphaComponent(0.35)
         let fill = theme.accent.withAlphaComponent(0.06)
 
+        // Batch edge shafts by dash style and stroke each group in a single
+        // pass, so crossing edges composite as one region instead of stacking
+        // their translucent strokes into darker seams. Arrowheads and labels
+        // draw on top afterward.
+        var solidShafts: [[CGPoint]] = []
+        var dashedShafts: [[CGPoint]] = []
+        var arrows: [(tip: CGPoint, from: CGPoint)] = []
         for edge in layout.edges {
-            // Leave a small gap between an arrowhead and the box it points at,
-            // so the head doesn't crowd the border. Pull both the shaft's end
-            // and the arrowhead tip back along the final segment.
+            // Leave a small gap between an arrowhead and the box it points at.
             var points = edge.points
             let approach = points.count > 1 ? points[points.count - 2] : edge.start
             if edge.hasArrow, points.count >= 2 {
@@ -161,28 +166,32 @@ enum DiagramRenderer {
                 let len = max(hypot(dx, dy), 0.001)
                 let gap: CGFloat = 3
                 points[points.count - 1] = CGPoint(x: end.x - dx / len * gap, y: end.y - dy / len * gap)
+                arrows.append((points[points.count - 1], approach))
             }
+            if edge.dashed { dashedShafts.append(points) } else { solidShafts.append(points) }
+        }
 
+        func strokeGroup(_ shafts: [[CGPoint]], dashed: Bool) {
+            guard !shafts.isEmpty else { return }
             context.saveGState()
             context.setStrokeColor(resolvedCGColor(stroke))
             context.setLineWidth(1)
-            if edge.dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            strokePolyline(points, in: context)
+            if dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
+            context.beginPath()
+            for shaft in shafts { appendRoundedPolyline(shaft, to: context) }
+            context.strokePath()
             context.restoreGState()
+        }
+        strokeGroup(solidShafts, dashed: false)
+        strokeGroup(dashedShafts, dashed: true)
 
-            if edge.hasArrow {
-                drawArrowhead(at: points[points.count - 1], from: approach, color: stroke, canvas: theme.canvas, in: context)
-            }
-            if let label = edge.label, !label.isEmpty {
-                // Sit the label on the middle of the routed polyline, not a
-                // naive start/end midpoint (which lands inside the node band
-                // for a looped back-edge).
-                let pts = edge.points
-                let a = pts[(pts.count - 1) / 2]
-                let b = pts[pts.count / 2]
-                let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
-                drawEdgeLabel(label, at: mid, theme: theme, in: context)
-            }
+        for arrow in arrows {
+            drawArrowhead(at: arrow.tip, from: arrow.from, color: stroke, canvas: theme.canvas, in: context)
+        }
+        for edge in layout.edges {
+            guard let label = edge.label, !label.isEmpty else { continue }
+            let point = edge.labelPoint ?? polylineMidpoint(edge.points)
+            drawEdgeLabel(label, at: point, theme: theme, in: context)
         }
 
         for node in layout.nodes {
@@ -242,6 +251,16 @@ enum DiagramRenderer {
     private static func strokePolyline(_ points: [CGPoint], in context: CGContext) {
         guard points.count >= 2 else { return }
         context.beginPath()
+        appendRoundedPolyline(points, to: context)
+        context.strokePath()
+    }
+
+    /// Appends a rounded polyline as a new subpath *without* stroking, so many
+    /// edges can be accumulated into one path and stroked in a single pass.
+    /// A single stroke composites overlapping segments as one region, so
+    /// crossing edges don't stack their alpha into darker seams.
+    private static func appendRoundedPolyline(_ points: [CGPoint], to context: CGContext) {
+        guard points.count >= 2 else { return }
         context.move(to: points[0])
         if points.count > 2 {
             for index in 1..<(points.count - 1) {
@@ -250,7 +269,6 @@ enum DiagramRenderer {
             }
         }
         context.addLine(to: points.last!)
-        context.strokePath()
     }
 
     /// Midpoint by arc length along the polyline — where an edge label sits.
