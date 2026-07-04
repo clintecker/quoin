@@ -157,6 +157,39 @@ measurer, so it unit-tests without fonts:
 polylines, arrowheads, UML markers, crow's feet — and caches rendered images
 keyed by source + appearance.
 
+## Platform layering
+
+The engine is built to be reused anywhere Swift compiles; only the view shell
+is platform-specific.
+
+- **`QuoinCore`** imports no UI framework at all (no AppKit/UIKit/SwiftUI) —
+  `CGRect`/`CGPoint`/`CGFloat` come from Foundation on Linux and CoreGraphics
+  on Apple platforms, guarded by `#if canImport(CoreGraphics)`. It builds on
+  macOS, iOS, iPadOS, visionOS, and Linux.
+- **`QuoinRender`** splits into shared engine and platform views. The shared
+  files — `AttributedRenderer`, `MathTypesetter`, `DiagramRenderer`,
+  `MathImageRenderer`, `MarkdownSourceStyler`, `Theme`, `BlockDecoration`,
+  `QuoinAttributes`, `AsyncImageStore`, `DocumentExporters` — are guarded
+  `canImport(AppKit) || canImport(UIKit)` and branch on `PlatformFont` /
+  `PlatformColor` / `PlatformImage` typealiases, so one body compiles on both
+  AppKit and UIKit. The platform view layers live in their own subfolders:
+  `AppKit/` holds the macOS `NSTextView` editor (`QuoinTextView`,
+  `ReaderCoordinator`, `MarkdownReaderView`); `UIKit/` holds the
+  iOS/iPadOS/visionOS reader (`MarkdownReaderViewIOS`). Each is gated so it
+  simply compiles out on the other platform.
+
+The macOS editor is *not* a separate SwiftPM target on purpose: it depends on
+module-internal render helpers (`QuoinTextView.invalidateDecorations`,
+`MarkdownSourceStyler`, the decoration-drawing internals), and hoisting it
+across a target boundary would force that surface public — weakening
+encapsulation instead of strengthening it. The `#if` gate already gives clean
+per-platform compilation with everything kept internal.
+
+Mac Catalyst is not currently supported: on Catalyst `canImport(AppKit)` is
+true, so the AppKit guards select the AppKit branch inside a UIKit runtime and
+fail to compile. Supporting it means changing those guards to
+`canImport(AppKit) && !targetEnvironment(macCatalyst)` throughout.
+
 ## Testing strategy
 
 - **Unit** (`Tests/QuoinCoreTests`): parsers, layout geometry, sessions,

@@ -37,9 +37,16 @@ justification in the TRD first; the default answer is no.
 - `Sources/QuoinCore` — platform-agnostic engine (parses, sessions, search,
   stats, exporters, math/mermaid parsers + diagram layout geometry). Must
   build and test on Linux.
-- `Sources/QuoinRender` — attributed-string projection + TextKit 2 views,
-  native math typesetting and diagram drawing (Apple platforms,
-  `#if canImport` guarded; AppKit and UIKit paths both compile in CI).
+- `Sources/QuoinRender` — attributed-string projection + TextKit 2
+  typesetting and diagram drawing. Shared engine files (guarded
+  `canImport(AppKit) || canImport(UIKit)`) sit at the target root; the
+  platform view layers are isolated in subfolders — `AppKit/` (the macOS
+  `NSTextView` editor: `QuoinTextView`, `ReaderCoordinator`,
+  `MarkdownReaderView`) and `UIKit/` (`MarkdownReaderViewIOS`, the
+  iOS/iPadOS/visionOS reader). Both paths compile in CI. NOT Mac
+  Catalyst-safe: on Catalyst `canImport(AppKit)` is true, so the AppKit
+  guards would need `&& !targetEnvironment(macCatalyst)` to route Catalyst to
+  the UIKit branch.
 - `App/macOS`, `App/iOS` — app shells; projects generated with XcodeGen
   (`project.yml` in each).
 - `Tests/QuoinCoreTests` — every core feature gets tests here, including
