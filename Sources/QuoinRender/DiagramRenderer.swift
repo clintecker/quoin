@@ -349,6 +349,43 @@ enum DiagramRenderer {
     /// Draws an edge label centered on `mid` over a canvas-colored pad so the
     /// routed line doesn't show through. Callers pick `mid` themselves — the
     /// flowchart uses an index midpoint, box diagrams use `polylineMidpoint`.
+    /// Picks an anchor for an edge label that avoids the node boxes and any
+    /// labels already placed — the draw-time counterpart of the flowchart
+    /// layout's placement pass, for the box diagrams (class/ER/state) whose
+    /// layouts don't compute a labelPoint. Scores segment midpoints plus small
+    /// sideways nudges by overlap and keeps the cheapest; records the choice in
+    /// `placed` so sibling labels spread apart.
+    private static func labelAnchor(
+        for points: [CGPoint], label: String, obstacles: [CGRect], placed: inout [CGRect]
+    ) -> CGPoint {
+        let size = measure(label, size: 10.5)
+        let w = size.width + 6, h = size.height + 2
+        var candidates: [CGPoint] = []
+        for i in 0..<max(points.count - 1, 1) {
+            let a = points[i], b = points[min(i + 1, points.count - 1)]
+            candidates.append(CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2))
+        }
+        func overlap(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
+            let ix = max(0, min(r1.maxX, r2.maxX) - max(r1.minX, r2.minX))
+            let iy = max(0, min(r1.maxY, r2.maxY) - max(r1.minY, r2.minY))
+            return ix * iy
+        }
+        let nudges: [CGFloat] = [0, w / 2 + 5, -(w / 2 + 5), w + 9, -(w + 9)]
+        var best = candidates[0]
+        var bestScore = CGFloat.greatestFiniteMagnitude
+        for c in candidates {
+            for dx in nudges {
+                let rect = CGRect(x: c.x + dx - w / 2, y: c.y - h / 2, width: w, height: h)
+                var score: CGFloat = abs(dx) * 0.15
+                for o in obstacles { score += overlap(rect, o.insetBy(dx: -3, dy: -3)) * 4 }
+                for p in placed { score += overlap(rect, p) * 2 }
+                if score < bestScore { bestScore = score; best = CGPoint(x: c.x + dx, y: c.y) }
+            }
+        }
+        placed.append(CGRect(x: best.x - w / 2, y: best.y - h / 2, width: w, height: h))
+        return best
+    }
+
     private static func drawEdgeLabel(_ label: String, at mid: CGPoint, theme: Theme, in context: CGContext) {
         let size = measure(label, size: 10.5)
         let pad: CGFloat = 3
@@ -709,12 +746,15 @@ enum DiagramRenderer {
 
         // Batch shafts by dash style so crossing edges don't stack alpha.
         strokeEdgeShafts(layout.edges.map { ($0.points, $0.kind.dashed) }, color: stroke, in: context)
+        var placedLabels: [CGRect] = []
+        let obstacles = layout.boxes.map(\.frame)
         for edge in layout.edges {
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawRelationMarker(edge.kind, at: edge.end, from: approach,
                                stroke: stroke, canvas: theme.canvas, in: context)
             if let label = edge.label, !label.isEmpty {
-                drawEdgeLabel(label, at: polylineMidpoint(edge.points), theme: theme, in: context)
+                let at = labelAnchor(for: edge.points, label: label, obstacles: obstacles, placed: &placedLabels)
+                drawEdgeLabel(label, at: at, theme: theme, in: context)
             }
         }
 
@@ -806,6 +846,8 @@ enum DiagramRenderer {
 
         // Batch shafts by dash style so crossing edges don't stack alpha.
         strokeEdgeShafts(layout.edges.map { ($0.points, !$0.identifying) }, color: stroke, in: context)
+        var placedLabels: [CGRect] = []
+        let obstacles = layout.boxes.map(\.frame)
         for edge in layout.edges {
             let fromApproach = edge.points.count > 1 ? edge.points[1] : edge.end
             let toApproach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
@@ -813,7 +855,8 @@ enum DiagramRenderer {
             drawCardinality(edge.toCard, at: edge.end, from: toApproach, color: stroke, in: context)
 
             if !edge.label.isEmpty {
-                drawEdgeLabel(edge.label, at: polylineMidpoint(edge.points), theme: theme, in: context)
+                let at = labelAnchor(for: edge.points, label: edge.label, obstacles: obstacles, placed: &placedLabels)
+                drawEdgeLabel(edge.label, at: at, theme: theme, in: context)
             }
         }
 
@@ -881,11 +924,14 @@ enum DiagramRenderer {
         context.strokePath()
         context.restoreGState()
 
+        var placedLabels: [CGRect] = []
+        let obstacles = layout.nodes.map(\.frame)
         for edge in layout.edges {
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawArrowhead(at: edge.end, from: approach, color: stroke, canvas: theme.canvas, in: context)
             if let label = edge.label, !label.isEmpty {
-                drawEdgeLabel(label, at: polylineMidpoint(edge.points), theme: theme, in: context)
+                let at = labelAnchor(for: edge.points, label: label, obstacles: obstacles, placed: &placedLabels)
+                drawEdgeLabel(label, at: at, theme: theme, in: context)
             }
         }
 
