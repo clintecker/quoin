@@ -6,21 +6,25 @@ import QuoinCore
 /// Owns the library: the user-picked root folder (persisted as a
 /// security-scoped bookmark), the scanned tree, and file operations.
 @MainActor
-final class LibraryModel: ObservableObject {
+@Observable
+final class LibraryModel {
 
     private static let bookmarkKey = "quoin.library.bookmark"
 
-    @Published private(set) var root: LibraryNode?
-    @Published private(set) var rootURL: URL?
-    @Published var quickOpenQuery = ""
-    @Published private(set) var quickOpenResults: [QuickOpen.Result] = []
+    // Formerly @Published; @Observable observes these plain properties. The
+    // internal state below is @ObservationIgnored to match the old @Published
+    // set exactly.
+    private(set) var root: LibraryNode?
+    private(set) var rootURL: URL?
+    var quickOpenQuery = ""
+    private(set) var quickOpenResults: [QuickOpen.Result] = []
     /// Persistent library-wide search (⇧⌘F) shown in the sidebar.
-    @Published var librarySearchQuery = ""
-    @Published private(set) var librarySearchResults: [QuickOpen.Result] = []
+    var librarySearchQuery = ""
+    private(set) var librarySearchResults: [QuickOpen.Result] = []
     /// Expanded folders in the tree (standardized paths). `reveal(url:)`
     /// expands a document's ancestors so opening via quick open or Finder
     /// shows the selection.
-    @Published var expandedFolders: Set<String> = []
+    var expandedFolders: Set<String> = []
 
     /// Expand every ancestor folder of `url` up to the library root.
     func reveal(url: URL) {
@@ -33,10 +37,10 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    private var accessedURL: URL?
-    private var eventsWatcher: FSEventsWatcher?
+    @ObservationIgnored private var accessedURL: URL?
+    @ObservationIgnored private var eventsWatcher: FSEventsWatcher?
     /// Inverse file moves for ⌘Z (design rule: sidebar moves are undoable).
-    private var moveUndoStack: [(from: URL, to: URL)] = []
+    @ObservationIgnored private var moveUndoStack: [(from: URL, to: URL)] = []
 
     init() {
         // `-QuoinLibraryPath /path` (launch argument → UserDefaults) bypasses

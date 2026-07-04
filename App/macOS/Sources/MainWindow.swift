@@ -5,7 +5,7 @@ import QuoinCore
 /// The main window per the handoff: library sidebar (⌘0) · tab bar +
 /// editor · outline inspector (⌥⌘0), with quick open (⇧⌘O) floating above.
 struct MainWindow: View {
-    @StateObject private var library = LibraryModel()
+    @State private var library = LibraryModel()
 
     @State private var sidebarSelection: URL?
     @State private var openTabs: [URL] = []

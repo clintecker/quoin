@@ -7,7 +7,7 @@ import QuoinCore
 /// chevrons, accent-filled selection), documents open on click, assets
 /// grayed, footer with the document count.
 struct LibrarySidebar: View {
-    @ObservedObject var library: LibraryModel
+    @Bindable var library: LibraryModel
     @Binding var selection: URL?
     @Binding var isSearchVisible: Bool
     let onOpen: (URL) -> Void
@@ -158,7 +158,7 @@ func handleFileDrop(_ providers: [NSItemProvider], into folder: URL, library: Li
 private struct LibraryRow: View {
     let node: LibraryNode
     let onOpen: (URL) -> Void
-    @ObservedObject var library: LibraryModel
+    var library: LibraryModel
 
     @State private var isRenaming = false
     @State private var draftName = ""
@@ -237,7 +237,7 @@ private struct LibraryRow: View {
 
 /// Centered floating panel: search row + fuzzy-title / full-text results.
 struct QuickOpenPanel: View {
-    @ObservedObject var library: LibraryModel
+    @Bindable var library: LibraryModel
     @Binding var isPresented: Bool
     let onOpen: (URL) -> Void
 

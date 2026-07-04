@@ -13,7 +13,7 @@ struct ReaderScreen: View {
     let initialText: String
     var onFileRenamed: (URL) -> Void = { _ in }
 
-    @StateObject private var model = ReaderModel()
+    @State private var model = ReaderModel()
     private let theme = Theme()
 
     @State private var formatCommand: FormatCommand?

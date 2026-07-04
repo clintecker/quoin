@@ -8,34 +8,42 @@ import QuoinRender
 /// state (active block + caret), which lives here because it must survive
 /// each edit's re-parse round trip.
 @MainActor
-final class ReaderModel: ObservableObject {
+@Observable
+final class ReaderModel {
 
-    @Published private(set) var rendered: RenderedDocument = .empty
-    @Published private(set) var outline: [HeadingInfo] = []
-    @Published private(set) var stats = DocumentStats()
-    @Published private(set) var activeBlockID: BlockID?
-    @Published private(set) var caretInActiveBlock: Int?
-    @Published private(set) var caretGeneration = 0
+    // Formerly @Published: with @Observable, plain stored properties are
+    // observed automatically. Everything below the UI state is marked
+    // @ObservationIgnored so exactly these properties drive view updates —
+    // the same set that used to be @Published.
+    private(set) var rendered: RenderedDocument = .empty
+    private(set) var outline: [HeadingInfo] = []
+    private(set) var stats = DocumentStats()
+    private(set) var activeBlockID: BlockID?
+    private(set) var caretInActiveBlock: Int?
+    private(set) var caretGeneration = 0
 
     /// Non-nil while an external change conflicts with unsaved local edits;
     /// holds the on-disk source for "use disk version".
-    @Published private(set) var conflictDiskSource: String?
+    private(set) var conflictDiskSource: String?
     /// The document's current URL; changes when the first H1 renames an
     /// Untitled file (design rule).
-    @Published private(set) var fileURL: URL?
+    private(set) var fileURL: URL?
 
-    var onFileRenamed: ((URL) -> Void)?
-
+    /// The parsed document, read by the editor screen; it changes in lockstep
+    /// with `rendered`, so it stays observed rather than ignored.
     private(set) var document: QuoinDocument = .empty
-    private var session: DocumentSession?
-    private var snapshotTask: Task<Void, Never>?
-    private var renderer = AttributedRenderer()
-    private var renameTask: Task<Void, Never>?
 
-    private var slugToBlock: [String: BlockID] = [:]
+    @ObservationIgnored var onFileRenamed: ((URL) -> Void)?
+
+    @ObservationIgnored private var session: DocumentSession?
+    @ObservationIgnored private var snapshotTask: Task<Void, Never>?
+    @ObservationIgnored private var renderer = AttributedRenderer()
+    @ObservationIgnored private var renameTask: Task<Void, Never>?
+
+    @ObservationIgnored private var slugToBlock: [String: BlockID] = [:]
     /// Per-block rendered fragments reused across re-renders so a keystroke
     /// only rebuilds the block that changed (see AttributedRenderer.render).
-    private var fragmentCache: [BlockID: NSAttributedString] = [:]
+    @ObservationIgnored private var fragmentCache: [BlockID: NSAttributedString] = [:]
 
     func start(fileURL: URL?, initialText: String) {
         guard session == nil else { return }
@@ -114,7 +122,7 @@ final class ReaderModel: ObservableObject {
         rerender()
     }
 
-    private var asyncRerenderTask: Task<Void, Never>?
+    @ObservationIgnored private var asyncRerenderTask: Task<Void, Never>?
 
     /// Coalesces re-renders when async images finish decoding — a document
     /// with 30 photos triggers one re-render, not 30.
