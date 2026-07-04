@@ -207,7 +207,7 @@ fail to compile. Supporting it means changing those guards to
   — 10k-deep nesting, null bytes, unclosed everything, brace bombs.
 - **Performance** (`PerformanceTests`): the PRD budgets as assertions.
 - **Conformance** (`RendererConformanceTests`): parses every fixture module
-  in `fixtures/renderer/`, snapshots structural metrics
+  in `Fixtures/renderer/`, snapshots structural metrics
   (`Snapshots/renderer-metrics.json`), and asserts every native diagram lays
   out non-degenerately. Regenerate after intentional changes with
   `QUOIN_UPDATE_SNAPSHOTS=1 swift test`.

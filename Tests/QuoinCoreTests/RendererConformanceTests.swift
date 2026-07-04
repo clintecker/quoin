@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 @testable import QuoinCore
 
-/// Renders every fixture module in `fixtures/renderer/` through the core
+/// Renders every fixture module in `Fixtures/renderer/` through the core
 /// parse + layout pipeline and guards against regressions:
 ///
 ///  1. every fixture parses, produces blocks, and preserves its source
@@ -13,7 +13,7 @@ import CoreGraphics
 ///  3. every mermaid diagram we render natively produces a non-degenerate
 ///     layout (guards the Phase 2 diagram routing).
 ///
-/// The fixtures double as dogfooding docs: `-QuoinLibraryPath fixtures/renderer`
+/// The fixtures double as dogfooding docs: `-QuoinLibraryPath Fixtures/renderer`
 /// loads them into the app. Regenerate the metrics snapshot after an
 /// intentional fixture/parser change with `QUOIN_UPDATE_SNAPSHOTS=1 swift test`.
 final class RendererConformanceTests: XCTestCase {
@@ -36,7 +36,7 @@ final class RendererConformanceTests: XCTestCase {
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // repo root
     }
-    private var fixturesDir: URL { repoRoot.appendingPathComponent("fixtures/renderer") }
+    private var fixturesDir: URL { repoRoot.appendingPathComponent("Fixtures/renderer") }
     private var snapshotFile: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

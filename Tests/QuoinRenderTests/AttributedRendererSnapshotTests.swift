@@ -5,7 +5,7 @@ import QuoinCore
 
 /// Golden-snapshot coverage for `AttributedRenderer` — the QuoinRender layer
 /// had no automated tests before this. Every fixture module in
-/// `fixtures/renderer/` is rendered through `AttributedRenderer.render(_:)`
+/// `Fixtures/renderer/` is rendered through `AttributedRenderer.render(_:)`
 /// with a pinned light `Theme`, reduced to a deterministic `DocDigest`
 /// (see `RenderDigest.swift`), and compared to a committed JSON golden.
 ///
@@ -28,7 +28,7 @@ final class AttributedRendererSnapshotTests: XCTestCase {
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // repo root
     }
-    private var fixturesDir: URL { repoRoot.appendingPathComponent("fixtures/renderer") }
+    private var fixturesDir: URL { repoRoot.appendingPathComponent("Fixtures/renderer") }
     private var snapshotFile: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -167,7 +167,7 @@ reintroducing full re-renders.
   array column rules — would let a few more fixture blocks render natively
   instead of falling back.
 - **Cross-cutting** ✅ CI conformance harness: the monolithic stress docs are
-  split into focused modules under `fixtures/renderer/`, and
+  split into focused modules under `Fixtures/renderer/`, and
   `RendererConformanceTests` parses each, snapshots structural metrics, and
   asserts every native diagram lays out non-degenerately. Regenerate the
   snapshot with `QUOIN_UPDATE_SNAPSHOTS=1 swift test`.

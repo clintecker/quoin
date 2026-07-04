@@ -22,7 +22,7 @@ the original monolithic stress documents. They serve two jobs:
    normal launch):
 
    ```sh
-   cp -R fixtures/renderer ~/Documents/ClintNotes/RendererFixtures
+   cp -R Fixtures/renderer ~/Documents/ClintNotes/RendererFixtures
    ```
 
    They then appear as a `RendererFixtures` folder in the sidebar; re-copy
