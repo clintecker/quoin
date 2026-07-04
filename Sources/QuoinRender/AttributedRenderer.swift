@@ -542,71 +542,21 @@ public struct AttributedRenderer {
     }
 
     private func renderTable(header: [TableCell], rows: [[TableCell]], alignments: [TableAlignment]) -> NSAttributedString {
-        // M1 table rendering: measured tab stops. Column widths come from the
-        // widest cell, capped so a runaway column can't eat the page.
-        let columnCount = max(header.count, rows.map(\.count).max() ?? 0)
-        guard columnCount > 0 else { return NSAttributedString() }
-
+        // M1 table rendering: measured tab stops. The column geometry (widths,
+        // alignment inference, tab stops) is a pure computation over the cells
+        // — extracted into TableLayout — leaving this method to emit the rows.
         let bodyFont = theme.bodyFont()
         let headerFont = boldVariant(of: bodyFont)
         let columnGap: CGFloat = 24
-        let maxColumnWidth = theme.maxContentWidth / 2
-
-        var widths = [CGFloat](repeating: 0, count: columnCount)
-        func measure(_ cells: [TableCell], font: PlatformFont) {
-            for (i, cell) in cells.enumerated() where i < columnCount {
-                let text = cell.inlines.plainText
-                let width = (text as NSString).size(withAttributes: [.font: font]).width
-                widths[i] = min(max(widths[i], width), maxColumnWidth)
-            }
-        }
-        measure(header, font: headerFont)
-        for row in rows { measure(row, font: bodyFont) }
-
-        // Numeric columns right-align with tabular numerals (element spec);
-        // explicit `---:`/`:-:` markers win, otherwise a column whose body
-        // cells are all numeric right-aligns automatically.
-        func isNumeric(_ text: String) -> Bool {
-            let trimmed = text.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { return false }
-            return trimmed.allSatisfy { $0.isNumber || "+-.,%$€£ ".contains($0) }
-                && trimmed.contains(where: \.isNumber)
-        }
-        var columnAlignment = [NSTextAlignment](repeating: .left, count: columnCount)
-        var columnIsNumeric = [Bool](repeating: false, count: columnCount)
-        for column in 0..<columnCount {
-            let cells = rows.compactMap { column < $0.count ? $0[column].inlines.plainText : nil }
-            columnIsNumeric[column] = !cells.isEmpty && cells.allSatisfy(isNumeric)
-            switch column < alignments.count ? alignments[column] : TableAlignment.none {
-            case .left: columnAlignment[column] = .left
-            case .center: columnAlignment[column] = .center
-            case .right: columnAlignment[column] = .right
-            case .none: columnAlignment[column] = columnIsNumeric[column] ? .right : .left
-            }
-        }
-
-        // Tab stops at column starts (column 0 needs none); alignment tabs
-        // place centered/right content within each column's span.
-        var tabStops: [NSTextTab] = []
-        var columnStart: CGFloat = 0
-        var totalWidth: CGFloat = 0
-        for column in 0..<columnCount {
-            if column > 0 {
-                switch columnAlignment[column] {
-                case .center:
-                    tabStops.append(NSTextTab(textAlignment: .center, location: columnStart + widths[column] / 2))
-                case .right:
-                    tabStops.append(NSTextTab(textAlignment: .right, location: columnStart + widths[column]))
-                default:
-                    tabStops.append(NSTextTab(textAlignment: .left, location: columnStart))
-                }
-            }
-            totalWidth = columnStart + widths[column]
-            columnStart += widths[column] + columnGap
-        }
+        guard let layout = TableLayout.compute(
+            header: header, rows: rows, alignments: alignments,
+            bodyFont: bodyFont, headerFont: headerFont,
+            columnGap: columnGap, maxColumnWidth: theme.maxContentWidth / 2,
+            measure: { text, font in (text as NSString).size(withAttributes: [.font: font]).width }
+        ) else { return NSAttributedString() }
 
         let style = paragraphStyle()
-        style.tabStops = tabStops
+        style.tabStops = layout.tabStops
         style.defaultTabInterval = columnGap
         style.lineHeightMultiple = 1.2
         style.paragraphSpacing = 5
@@ -620,7 +570,7 @@ public struct AttributedRenderer {
             attributes[.paragraphStyle] = style
             for (i, cell) in cells.enumerated() {
                 var cellAttributes = attributes
-                if columnIsNumeric[min(i, columnCount - 1)] {
+                if layout.isNumeric[min(i, layout.columnCount - 1)] {
                     cellAttributes[.font] = PlatformFont.monospacedDigitSystemFont(
                         ofSize: font.pointSize,
                         weight: font == headerFont ? .semibold : .regular
@@ -644,7 +594,7 @@ public struct AttributedRenderer {
         output.addAttribute(
             QuoinAttribute.blockDecoration,
             value: BlockDecoration(kind: .tableRules(
-                width: totalWidth,
+                width: layout.totalWidth,
                 header: theme.quoteRule,
                 body: theme.tableRule
             )),
