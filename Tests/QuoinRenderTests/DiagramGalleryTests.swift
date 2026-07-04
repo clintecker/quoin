@@ -95,6 +95,130 @@ final class DiagramGalleryTests: XCTestCase {
             Visual regression      :milestone, vr, 2026-07-17, 0d
             Canary                 :         canary, after vr, 2d
         """),
+
+        // Larger, denser diagrams to stress layout, routing, and degradation.
+        ("flowchart-complex", """
+        flowchart TD
+            A([Start]) --> B[Load cart]
+            B --> C{Items > 0?}
+            C -->|No| Z([Empty])
+            C -->|Yes| D[Validate stock]
+            D --> E{In stock?}
+            E -->|No| F[Notify user]
+            F --> B
+            E -->|Yes| G[Calculate total]
+            G --> H{Coupon?}
+            H -->|Yes| I[Apply discount]
+            H -->|No| J[Charge card]
+            I --> J
+            J --> K{Payment OK?}
+            K -->|No| L[Retry]
+            L --> J
+            K -->|Yes| M[(Save order)]
+            M --> N[Send email]
+            N --> O([Done])
+        """),
+        ("sequence-complex", """
+        sequenceDiagram
+            participant C as Client
+            participant G as Gateway
+            participant A as Auth
+            participant S as Service
+            C->>G: request + token
+            G->>A: validate token
+            A->>A: check signature
+            A-->>G: claims
+            G->>S: forward + claims
+            S-->>G: 200 payload
+            G-->>C: 200 payload
+        """),
+        ("class-complex", """
+        classDiagram
+            class Repository {
+                +save(item)
+                +find(id) Item
+                +delete(id)
+            }
+            class UserRepository {
+                +findByEmail(email) User
+            }
+            class User {
+                +String id
+                +String email
+                +activate()
+            }
+            class Session {
+                +String token
+                +Date expires
+            }
+            Repository <|-- UserRepository
+            UserRepository o-- User
+            User *-- Session
+        """),
+        ("er-complex", """
+        erDiagram
+            CUSTOMER ||--o{ ORDER : places
+            ORDER ||--|{ LINE_ITEM : contains
+            PRODUCT ||--o{ LINE_ITEM : "ordered in"
+            CATEGORY ||--o{ PRODUCT : groups
+            CUSTOMER {
+                int id
+                string name
+                string email
+            }
+            ORDER {
+                int id
+                date created
+                string status
+            }
+            PRODUCT {
+                int sku
+                string title
+                float price
+            }
+        """),
+        ("state-complex", """
+        stateDiagram-v2
+            [*] --> Idle
+            Idle --> Connecting : connect
+            Connecting --> Connected : ok
+            Connecting --> Idle : fail
+            state Connected {
+                [*] --> Syncing
+                Syncing --> Live : synced
+                Live --> Syncing : stale
+            }
+            Connected --> Idle : disconnect
+            Connected --> [*]
+        """),
+        ("gantt-complex", """
+        gantt
+            title Product Launch
+            dateFormat YYYY-MM-DD
+            section Research
+            User interviews   :done, r1, 2026-01-05, 10d
+            Competitive audit :done, r2, after r1, 5d
+            section Design
+            Wireframes        :active, d1, after r2, 8d
+            Visual design     :d2, after d1, 10d
+            Prototype         :crit, d3, after d2, 6d
+            section Build
+            Frontend          :b1, after d3, 20d
+            Backend           :b2, after d3, 18d
+            Integration       :crit, b3, after b1, 8d
+            section Launch
+            Beta              :milestone, m1, after b3, 0d
+            GA                :milestone, m2, after m1, 0d
+        """),
+        ("pie-complex", """
+        pie title Traffic sources
+            "Organic" : 40
+            "Direct" : 22
+            "Referral" : 15
+            "Social" : 12
+            "Email" : 8
+            "Paid" : 3
+        """),
     ]
 
     func testRenderGallery() throws {

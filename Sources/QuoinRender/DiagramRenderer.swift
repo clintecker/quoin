@@ -150,16 +150,28 @@ enum DiagramRenderer {
         let fill = theme.accent.withAlphaComponent(0.06)
 
         for edge in layout.edges {
+            // Leave a small gap between an arrowhead and the box it points at,
+            // so the head doesn't crowd the border. Pull both the shaft's end
+            // and the arrowhead tip back along the final segment.
+            var points = edge.points
+            let approach = points.count > 1 ? points[points.count - 2] : edge.start
+            if edge.hasArrow, points.count >= 2 {
+                let end = points[points.count - 1]
+                let dx = end.x - approach.x, dy = end.y - approach.y
+                let len = max(hypot(dx, dy), 0.001)
+                let gap: CGFloat = 3
+                points[points.count - 1] = CGPoint(x: end.x - dx / len * gap, y: end.y - dy / len * gap)
+            }
+
             context.saveGState()
             context.setStrokeColor(resolvedCGColor(stroke))
             context.setLineWidth(1)
             if edge.dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            strokePolyline(edge.points, in: context)
+            strokePolyline(points, in: context)
             context.restoreGState()
 
             if edge.hasArrow {
-                let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
-                drawArrowhead(at: edge.end, from: approach, color: stroke, canvas: theme.canvas, in: context)
+                drawArrowhead(at: points[points.count - 1], from: approach, color: stroke, canvas: theme.canvas, in: context)
             }
             if let label = edge.label, !label.isEmpty {
                 // Sit the label on the middle of the routed polyline, not a
@@ -885,23 +897,23 @@ enum DiagramRenderer {
 
         context.saveGState()
         context.setStrokeColor(resolvedCGColor(color))
-        context.setLineWidth(1.4)
+        context.setLineWidth(1.2)
         context.setLineCap(.round)
         context.setLineJoin(.round)
 
         // A perpendicular "one" tick across the line at `out`.
-        func tick(at out: CGFloat, half: CGFloat = 6.5) {
+        func tick(at out: CGFloat, half: CGFloat = 4.5) {
             context.beginPath()
             context.move(to: p(out: out, side: half))
             context.addLine(to: p(out: out, side: -half))
             context.strokePath()
         }
         // The "many" crow's foot: three prongs fanning from an apex up the line
-        // out to the entity box, wide enough to read as a foot, not a caret.
+        // out to the entity box — kept compact so it stays in proportion.
         func crowsFoot() {
-            let apex = p(out: 15, side: 0)
+            let apex = p(out: 11, side: 0)
             context.beginPath()
-            for side in [CGFloat(8), 0, -8] {
+            for side in [CGFloat(5), 0, -5] {
                 context.move(to: apex)
                 context.addLine(to: p(out: 1, side: side))
             }
@@ -911,15 +923,15 @@ enum DiagramRenderer {
         func circle(at out: CGFloat) {
             let c = p(out: out, side: 0)
             context.beginPath()
-            context.addEllipse(in: CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8))
+            context.addEllipse(in: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6))
             context.strokePath()
         }
 
         switch card {
-        case .one:        tick(at: 7); tick(at: 12)     // ‖  exactly one
-        case .zeroOrOne:  tick(at: 15); circle(at: 7)   // ○|  zero or one
-        case .oneOrMore:  crowsFoot(); tick(at: 19)     // ‹|  one or many
-        case .zeroOrMore: crowsFoot(); circle(at: 21)   // ‹○  zero or many
+        case .one:        tick(at: 6); tick(at: 9.5)    // ‖  exactly one
+        case .zeroOrOne:  tick(at: 11); circle(at: 5.5) // ○|  zero or one
+        case .oneOrMore:  crowsFoot(); tick(at: 14)     // ‹|  one or many
+        case .zeroOrMore: crowsFoot(); circle(at: 15)   // ‹○  zero or many
         }
         context.restoreGState()
     }
