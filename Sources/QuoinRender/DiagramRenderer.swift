@@ -356,10 +356,14 @@ enum DiagramRenderer {
     /// sideways nudges by overlap and keeps the cheapest; records the choice in
     /// `placed` so sibling labels spread apart.
     private static func labelAnchor(
-        for points: [CGPoint], label: String, obstacles: [CGRect], placed: inout [CGRect]
+        for points: [CGPoint], label: String, bounds: CGSize,
+        obstacles: [CGRect], placed: inout [CGRect]
     ) -> CGPoint {
         let size = measure(label, size: 10.5)
         let w = size.width + 6, h = size.height + 2
+        // Keep the whole label inside the canvas so a sideways nudge can't push
+        // it off the edge and clip.
+        func clampX(_ x: CGFloat) -> CGFloat { min(max(x, w / 2), max(w / 2, bounds.width - w / 2)) }
         var candidates: [CGPoint] = []
         for i in 0..<max(points.count - 1, 1) {
             let a = points[i], b = points[min(i + 1, points.count - 1)]
@@ -371,15 +375,16 @@ enum DiagramRenderer {
             return ix * iy
         }
         let nudges: [CGFloat] = [0, w / 2 + 5, -(w / 2 + 5), w + 9, -(w + 9)]
-        var best = candidates[0]
+        var best = CGPoint(x: clampX(candidates[0].x), y: candidates[0].y)
         var bestScore = CGFloat.greatestFiniteMagnitude
         for c in candidates {
             for dx in nudges {
-                let rect = CGRect(x: c.x + dx - w / 2, y: c.y - h / 2, width: w, height: h)
+                let cx = clampX(c.x + dx)
+                let rect = CGRect(x: cx - w / 2, y: c.y - h / 2, width: w, height: h)
                 var score: CGFloat = abs(dx) * 0.15
                 for o in obstacles { score += overlap(rect, o.insetBy(dx: -3, dy: -3)) * 4 }
                 for p in placed { score += overlap(rect, p) * 2 }
-                if score < bestScore { bestScore = score; best = CGPoint(x: c.x + dx, y: c.y) }
+                if score < bestScore { bestScore = score; best = CGPoint(x: cx, y: c.y) }
             }
         }
         placed.append(CGRect(x: best.x - w / 2, y: best.y - h / 2, width: w, height: h))
@@ -753,7 +758,7 @@ enum DiagramRenderer {
             drawRelationMarker(edge.kind, at: edge.end, from: approach,
                                stroke: stroke, canvas: theme.canvas, in: context)
             if let label = edge.label, !label.isEmpty {
-                let at = labelAnchor(for: edge.points, label: label, obstacles: obstacles, placed: &placedLabels)
+                let at = labelAnchor(for: edge.points, label: label, bounds: layout.size, obstacles: obstacles, placed: &placedLabels)
                 drawEdgeLabel(label, at: at, theme: theme, in: context)
             }
         }
@@ -855,7 +860,7 @@ enum DiagramRenderer {
             drawCardinality(edge.toCard, at: edge.end, from: toApproach, color: stroke, in: context)
 
             if !edge.label.isEmpty {
-                let at = labelAnchor(for: edge.points, label: edge.label, obstacles: obstacles, placed: &placedLabels)
+                let at = labelAnchor(for: edge.points, label: edge.label, bounds: layout.size, obstacles: obstacles, placed: &placedLabels)
                 drawEdgeLabel(edge.label, at: at, theme: theme, in: context)
             }
         }
@@ -930,7 +935,7 @@ enum DiagramRenderer {
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawArrowhead(at: edge.end, from: approach, color: stroke, canvas: theme.canvas, in: context)
             if let label = edge.label, !label.isEmpty {
-                let at = labelAnchor(for: edge.points, label: label, obstacles: obstacles, placed: &placedLabels)
+                let at = labelAnchor(for: edge.points, label: label, bounds: layout.size, obstacles: obstacles, placed: &placedLabels)
                 drawEdgeLabel(label, at: at, theme: theme, in: context)
             }
         }

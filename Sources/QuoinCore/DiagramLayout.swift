@@ -461,6 +461,21 @@ public enum DiagramLayoutEngine {
                 continue
             }
             let dummyCenters = chain[1..<(chain.count - 1)].compactMap { frames[$0].map { CGPoint(x: $0.midX, y: $0.midY) } }
+            // Straight column: when the two boxes' x-ranges overlap and there
+            // are no dummies to route around, attach both ends at one shared x
+            // so the edge is a single straight segment — no tiny S-hook from a
+            // near-alignment offset.
+            let overlapLo = max(fromFrame.minX, toFrame.minX) + 4
+            let overlapHi = min(fromFrame.maxX, toFrame.maxX) - 4
+            if dummyCenters.isEmpty, overlapLo <= overlapHi {
+                let x = min(max((fromFrame.midX + toFrame.midX) / 2, overlapLo), overlapHi)
+                let down = toFrame.midY >= fromFrame.midY
+                let start = CGPoint(x: x, y: down ? fromFrame.maxY : fromFrame.minY)
+                let end = CGPoint(x: x, y: down ? toFrame.minY : toFrame.maxY)
+                for p in [start, end] { maxX = max(maxX, p.x) }
+                routes.append([start, end])
+                continue
+            }
             let firstNext = dummyCenters.first ?? CGPoint(x: toFrame.midX, y: toFrame.midY)
             let lastPrev = dummyCenters.last ?? CGPoint(x: fromFrame.midX, y: fromFrame.midY)
             func attach(_ f: CGRect, towardX: CGFloat, bottom: Bool) -> CGPoint {
