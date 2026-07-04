@@ -6,21 +6,26 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
     name: swift test (macOS)
     runs-on: macos-15
     timeout-minutes: 30
+    outputs:
+      has_screenshots: ${{ steps.screenshot-output.outputs.has_screenshots }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Select newest Xcode 16
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -n 1)"
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_16*.app' -print | sort -V | tail -n 1)"
 
       - name: Swift version
         run: swift --version
+
+      - name: Dependency policy
+        run: bash scripts/check-dependency-policy.sh
 
       - name: Build
         run: swift build
@@ -49,6 +54,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
+          echo "::notice::Screenshot capture is advisory; failures here do not block CI."
           mkdir -p /tmp/quoin-fixtures /tmp/quoin-shots
           cp ../../Fixtures/*.md /tmp/quoin-fixtures/
           # TEST_RUNNER_ vars must be real environment variables of
@@ -60,6 +66,17 @@ jobs:
             test 2>&1 | tail -25
           ls -la /tmp/quoin-shots
 
+      - name: Check screenshot output
+        id: screenshot-output
+        if: always()
+        run: |
+          if ls /tmp/quoin-shots/*.png >/dev/null 2>&1; then
+            echo "has_screenshots=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_screenshots=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No screenshots were captured for this run."
+          fi
+
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,9 +85,6 @@ jobs:
           path: /tmp/quoin-shots
           if-no-files-found: ignore
 
-      # Also publish to a branch: artifact downloads go through Azure blob
-      # storage, which restricted environments can't always reach; a git
-      # branch is fetchable anywhere the repo is.
       - name: Build iOS app
         working-directory: App/iOS
         run: |
@@ -80,8 +94,24 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tail -60
 
+  publish-screenshots:
+    name: publish screenshots branch
+    runs-on: ubuntu-latest
+    needs: test
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.test.outputs.has_screenshots == 'true' }}
+    permissions:
+      contents: write
+    steps:
+      - name: Download screenshots
+        uses: actions/download-artifact@v4
+        with:
+          name: screenshots
+          path: /tmp/quoin-shots
+
+      # Also publish to a branch: artifact downloads go through Azure blob
+      # storage, which restricted environments can't always reach; a git
+      # branch is fetchable anywhere the repo is.
       - name: Publish screenshots branch
-        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
