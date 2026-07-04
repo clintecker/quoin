@@ -40,6 +40,7 @@ public enum MathAtomClass: Hashable, Sendable {
 public enum MathSymbolStyle: Hashable, Sendable {
     case italic   // variables
     case roman    // digits, function names, operators
+    case bold     // \mathbf — upright bold
 }
 
 /// Column alignment for a `.matrix` grid.
@@ -394,7 +395,7 @@ public enum MathParser {
         }
         switch node {
         case .symbol(let s, let cls, _):
-            return .symbol(map(s), cls, style: command == "mathbf" ? .roman : .roman)
+            return .symbol(map(s), cls, style: command == "mathbf" ? .bold : .roman)
         case .row(let children):
             return .row(children.map { styledLetters($0, command: command) })
         default:

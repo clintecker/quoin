@@ -140,14 +140,14 @@ enum MathScanner {
         guard start < chars.count, !chars[start].isWhitespace, chars[start] != "$" else { return nil }
         var i = start
         var lastNonSpace = -1
-        var sawBlankLine = false
         var newlineRun = 0
         while i < chars.count {
             let ch = chars[i]
             if ch == "\\" { i += 2; continue }
             if ch == "\n" {
                 newlineRun += 1
-                if newlineRun >= 2 { sawBlankLine = true; break }
+                // A blank line terminates an inline `$…$` scan (no closer found).
+                if newlineRun >= 2 { break }
             } else if !ch.isWhitespace {
                 newlineRun = 0
             }
@@ -165,7 +165,6 @@ enum MathScanner {
             if !ch.isWhitespace { lastNonSpace = i }
             i += 1
         }
-        _ = sawBlankLine
         return nil
     }
 }

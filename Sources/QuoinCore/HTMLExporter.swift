@@ -204,8 +204,12 @@ public enum HTMLExporter {
     .callout-note .callout-title{color:#0a84ff}
     .callout-tip{background:rgba(48,209,88,.04);border-color:rgba(48,209,88,.15)}
     .callout-tip .callout-title{color:#28a745}
+    .callout-important{background:rgba(175,82,222,.04);border-color:rgba(175,82,222,.15)}
+    .callout-important .callout-title{color:#8944ab}
     .callout-warning{background:rgba(255,159,10,.04);border-color:rgba(255,159,10,.15)}
     .callout-warning .callout-title{color:#c77c02}
+    .callout-caution{background:rgba(255,69,58,.04);border-color:rgba(255,69,58,.15)}
+    .callout-caution .callout-title{color:#d92d20}
     .callout-danger{background:rgba(255,69,58,.04);border-color:rgba(255,69,58,.15)}
     .callout-danger .callout-title{color:#d92d20}
     table{border-collapse:collapse;margin:0 0 12px;width:100%}

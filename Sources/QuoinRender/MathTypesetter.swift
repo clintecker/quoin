@@ -49,7 +49,7 @@ struct MathTypesetter {
         let s = size ?? baseSize
         switch node {
         case .symbol(let glyph, _, let style):
-            return textBox(glyph, size: s, italic: style == .italic)
+            return textBox(glyph, size: s, italic: style == .italic, bold: style == .bold)
 
         case .functionName(let name):
             return textBox(name, size: s, italic: false)
@@ -84,11 +84,11 @@ struct MathTypesetter {
 
     // MARK: - Text
 
-    private func font(size: CGFloat, italic: Bool, monospaced: Bool = false) -> CTFont {
+    private func font(size: CGFloat, italic: Bool, bold: Bool = false, monospaced: Bool = false) -> CTFont {
         if monospaced {
             return PlatformFont.monospacedSystemFont(ofSize: size, weight: .regular) as CTFont
         }
-        let base = PlatformFont.systemFont(ofSize: size)
+        let base = bold ? PlatformFont.boldSystemFont(ofSize: size) : PlatformFont.systemFont(ofSize: size)
         if italic {
             #if canImport(AppKit)
             if let descriptor = base.fontDescriptor.withSymbolicTraits(.italic) as NSFontDescriptor?,
@@ -104,8 +104,8 @@ struct MathTypesetter {
         return base as CTFont
     }
 
-    private func textBox(_ text: String, size: CGFloat, italic: Bool, monospaced: Bool = false) -> MathBox {
-        let ctFont = font(size: size, italic: italic, monospaced: monospaced)
+    private func textBox(_ text: String, size: CGFloat, italic: Bool, bold: Bool = false, monospaced: Bool = false) -> MathBox {
+        let ctFont = font(size: size, italic: italic, bold: bold, monospaced: monospaced)
         let ink = theme.ink
         let attributed = NSAttributedString(string: text, attributes: [
             kCTFontAttributeName as NSAttributedString.Key: ctFont,

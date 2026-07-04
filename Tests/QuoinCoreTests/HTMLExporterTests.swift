@@ -53,6 +53,19 @@ final class HTMLExporterTests: XCTestCase {
         XCTAssertTrue(html.contains("Note text."))
     }
 
+    func testEveryCalloutKindHasStyling() {
+        // Each CalloutKind must emit a class that the stylesheet actually defines,
+        // or the callout exports unstyled (regression: important/caution were bare).
+        for kind in CalloutKind.allCases {
+            let doc = MarkdownConverter.parse("> [!\(kind.rawValue.uppercased())]\n> body")
+            let html = HTMLExporter.export(doc)
+            XCTAssertTrue(html.contains("callout-\(kind.rawValue)"),
+                          "\(kind.rawValue) callout class not emitted")
+            XCTAssertTrue(html.contains(".callout-\(kind.rawValue){"),
+                          "\(kind.rawValue) callout has no CSS rule")
+        }
+    }
+
     func testCodeBlockKeepsLanguageAndEscapes() {
         let doc = MarkdownConverter.parse("```swift\nlet x = a < b\n```")
         let html = HTMLExporter.export(doc)

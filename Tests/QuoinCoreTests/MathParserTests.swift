@@ -21,6 +21,23 @@ final class MathParserTests: XCTestCase {
         XCTAssertEqual(d, .symbol("b", .ordinary, style: .italic))
     }
 
+    func testMathbfIsBold() {
+        // \mathbf must produce an upright bold symbol, distinct from roman.
+        guard case .symbol(let glyph, _, let style) = MathParser.parse("\\mathbf{x}") else {
+            return XCTFail("expected symbol")
+        }
+        XCTAssertEqual(glyph, "x")
+        XCTAssertEqual(style, .bold)
+    }
+
+    func testMathbbStaysRoman() {
+        guard case .symbol(let glyph, _, let style) = MathParser.parse("\\mathbb{R}") else {
+            return XCTFail("expected symbol")
+        }
+        XCTAssertEqual(glyph, "ℝ")
+        XCTAssertEqual(style, .roman)
+    }
+
     func testScripts() {
         let node = MathParser.parse("x_i^2")
         guard case .scripts(let base, let sub, let sup) = node else { return XCTFail("expected scripts") }

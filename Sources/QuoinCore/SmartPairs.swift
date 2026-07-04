@@ -49,11 +49,8 @@ public enum SmartPairs {
         guard pairs.contains(character) else { return nil }
         guard !isInsideCodeContext(text: text, caretUTF16: offset) else { return nil }
 
-        let chars = Array(text.utf16).map { $0 }
-        let next: Character? = {
-            guard offset < chars.count, let scalar = Unicode.Scalar(chars[offset]) else { return nil }
-            return Character(scalar)
-        }()
+        let caret = String.Index(utf16Offset: offset, in: text)
+        let next: Character? = caret < text.endIndex ? text[caret] : nil
 
         // Type-over: the closing half already sits at the caret.
         if next == character {
@@ -62,10 +59,7 @@ public enum SmartPairs {
 
         // `=` only pairs as part of `==`; a single equals is just text.
         if character == "=" {
-            let previous: Character? = {
-                guard offset > 0, let scalar = Unicode.Scalar(chars[offset - 1]) else { return nil }
-                return Character(scalar)
-            }()
+            let previous: Character? = caret > text.startIndex ? text[text.index(before: caret)] : nil
             guard previous == "=" else { return nil }
             // Second `=` of an opener: complete to `==caret==`.
             return Completion(insert: "=" + "==", caretOffset: 1)
