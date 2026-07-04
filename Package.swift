@@ -30,7 +30,9 @@ let package = Package(
         .testTarget(
             name: "QuoinCoreTests",
             dependencies: ["QuoinCore"],
-            path: "Tests/QuoinCoreTests"
+            path: "Tests/QuoinCoreTests",
+            // The conformance snapshot is read via #filePath, not the bundle.
+            exclude: ["Snapshots/renderer-metrics.json"]
         ),
     ]
 )
