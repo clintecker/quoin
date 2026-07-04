@@ -178,14 +178,7 @@ final class LibraryModel: ObservableObject {
     /// the file live once the editor supports it).
     func createDocument(in folder: URL? = nil) -> URL? {
         guard let target = folder ?? rootURL else { return nil }
-        var name = "Untitled"
-        var candidate = target.appendingPathComponent(name).appendingPathExtension("md")
-        var counter = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            name = "Untitled \(counter)"
-            candidate = target.appendingPathComponent(name).appendingPathExtension("md")
-            counter += 1
-        }
+        let candidate = Library.uniqueURL(baseName: "Untitled", extension: "md", in: target)
         guard (try? Data("".utf8).write(to: candidate)) != nil else { return nil }
         rescan()
         return candidate

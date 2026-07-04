@@ -58,6 +58,29 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(suffixed.lastPathComponent, "Beta 2.md")
     }
 
+    func testUniqueURLAppendsIncrementingSuffix() throws {
+        // No collision → the base name is used as-is.
+        let free = Library.uniqueURL(baseName: "Notes", extension: "md", in: root)
+        XCTAssertEqual(free.lastPathComponent, "Notes.md")
+
+        // With Notes.md and Notes 2.md present, the next free name is "Notes 3".
+        try Data("a".utf8).write(to: root.appendingPathComponent("Notes.md"))
+        try Data("b".utf8).write(to: root.appendingPathComponent("Notes 2.md"))
+        let next = Library.uniqueURL(baseName: "Notes", extension: "md", in: root)
+        XCTAssertEqual(next.lastPathComponent, "Notes 3.md")
+    }
+
+    func testUniqueURLTreatsExcludedURLAsFree() throws {
+        let notes = root.appendingPathComponent("Notes.md")
+        try Data("a".utf8).write(to: notes)
+        // Excluding the file itself: its own name doesn't count as a collision.
+        let same = Library.uniqueURL(baseName: "Notes", extension: "md", in: root, excluding: notes)
+        XCTAssertEqual(same, notes)
+        // Without the exclusion, the same name collides and gets suffixed.
+        let suffixed = Library.uniqueURL(baseName: "Notes", extension: "md", in: root)
+        XCTAssertEqual(suffixed.lastPathComponent, "Notes 2.md")
+    }
+
     func testFuzzyScoring() {
         XCTAssertNotNil(QuickOpen.fuzzyScore(query: "gam", candidate: "Gamma"))
         XCTAssertNil(QuickOpen.fuzzyScore(query: "xyz", candidate: "Gamma"))

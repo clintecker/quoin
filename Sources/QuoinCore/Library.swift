@@ -113,17 +113,37 @@ public enum Library {
         return destination
     }
 
+    /// A collision-free URL in `folder` for `baseName`.`ext`, appending a
+    /// " 2", " 3"… suffix until the name is free (design rule: silent, never a
+    /// modal). `excluding` is treated as non-colliding, so a rename whose only
+    /// clash is the file itself keeps its name. Shared by every "pick an
+    /// available filename" site (rename, new document, inserted image).
+    public static func uniqueURL(
+        baseName: String,
+        extension ext: String,
+        in folder: URL,
+        excluding: URL? = nil,
+        fileManager: FileManager = .default
+    ) -> URL {
+        func url(named name: String) -> URL {
+            folder.appendingPathComponent(name).appendingPathExtension(ext)
+        }
+        var candidate = url(named: baseName)
+        var counter = 2
+        while fileManager.fileExists(atPath: candidate.path), candidate != excluding {
+            candidate = url(named: "\(baseName) \(counter)")
+            counter += 1
+        }
+        return candidate
+    }
+
     /// Renames a document, keeping its extension; a name collision gets a
     /// " 2", " 3"… suffix silently (design rule: never a modal).
     public static func rename(_ url: URL, to newName: String, fileManager: FileManager = .default) throws -> URL {
-        let ext = url.pathExtension
-        let folder = url.deletingLastPathComponent()
-        var candidate = folder.appendingPathComponent(newName).appendingPathExtension(ext)
-        var counter = 2
-        while fileManager.fileExists(atPath: candidate.path), candidate != url {
-            candidate = folder.appendingPathComponent("\(newName) \(counter)").appendingPathExtension(ext)
-            counter += 1
-        }
+        let candidate = uniqueURL(
+            baseName: newName, extension: url.pathExtension,
+            in: url.deletingLastPathComponent(), excluding: url, fileManager: fileManager
+        )
         if candidate == url { return url }
         try fileManager.moveItem(at: url, to: candidate)
         return candidate

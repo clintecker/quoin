@@ -277,14 +277,10 @@ final class ReaderModel: ObservableObject {
         try? FileManager.default.createDirectory(at: assetsFolder, withIntermediateDirectories: true)
 
         // Silent-suffix collision handling, same rule as document names.
-        let base = sourceURL.deletingPathExtension().lastPathComponent
-        let ext = sourceURL.pathExtension
-        var destination = assetsFolder.appendingPathComponent(sourceURL.lastPathComponent)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: destination.path) {
-            destination = assetsFolder.appendingPathComponent("\(base) \(counter)").appendingPathExtension(ext)
-            counter += 1
-        }
+        let destination = Library.uniqueURL(
+            baseName: sourceURL.deletingPathExtension().lastPathComponent,
+            extension: sourceURL.pathExtension, in: assetsFolder
+        )
         guard (try? FileManager.default.copyItem(at: sourceURL, to: destination)) != nil else { return }
 
         let markdown = "\n\n![](assets/\(destination.lastPathComponent))\n"
