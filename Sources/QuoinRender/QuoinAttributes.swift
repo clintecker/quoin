@@ -34,6 +34,11 @@ public enum QuoinAttribute {
     /// first character maps to. Lets a click land the caret at the matching
     /// source position when the block flips to editable source.
     public static let embedSourceStart = NSAttributedString.Key("quoin.embedSourceStart")
+    /// Value: `NSNumber(true)` — marks a run awaiting async content (an image
+    /// still decoding). Its fragment must not be cached, or the placeholder
+    /// would be returned forever once the block's content-hash `BlockID`
+    /// stabilizes; the renderer drops such fragments from the cache.
+    public static let pendingContent = NSAttributedString.Key("quoin.pendingContent")
 }
 
 /// Custom URL schemes used for in-document interaction via the text view's

@@ -56,17 +56,6 @@ public struct AttributedRenderer {
     /// the document should re-render to pick it up.
     public let onContentReady: (@Sendable () -> Void)?
 
-    /// Per-block-render scratch (reference type so the struct's render chain
-    /// stays non-mutating): set when the fragment being built contains
-    /// content that is still loading (async image placeholder) and must not
-    /// enter the fragment cache. Main-actor only, like the renderer itself.
-    private final class RenderScratch { var pending = false }
-    private let scratch = RenderScratch()
-    private var blockHasPendingContent: Bool {
-        get { scratch.pending }
-        nonmutating set { scratch.pending = newValue }
-    }
-
     public init(
         theme: Theme = Theme(),
         baseURL: URL? = nil,
@@ -131,10 +120,10 @@ public struct AttributedRenderer {
                 // A fragment awaiting async content (an image still decoding)
                 // must NOT be cached: its BlockID is content-hash-stable, so a
                 // cached placeholder would be returned forever — the decoded
-                // image's re-render would hit the cache and never rebuild.
-                blockHasPendingContent = false
+                // image's re-render would hit the cache and never rebuild. The
+                // fragment marks itself pending (QuoinAttribute.pendingContent).
                 let fragment = render(block: block, depth: 0, document: document)
-                if isCacheable(block.kind), !blockHasPendingContent {
+                if isCacheable(block.kind), !fragmentHasPendingContent(fragment) {
                     newCache[block.id] = fragment
                 }
                 output.append(fragment)
@@ -953,8 +942,12 @@ public struct AttributedRenderer {
             maxDimension: theme.maxContentWidth * 2,
             onReady: onContentReady ?? {}
         ) else {
-            blockHasPendingContent = true
-            return placeholder(alt.isEmpty ? "loading image…" : alt)
+            let marked = NSMutableAttributedString(
+                attributedString: placeholder(alt.isEmpty ? "loading image…" : alt)
+            )
+            marked.addAttribute(QuoinAttribute.pendingContent, value: NSNumber(value: true),
+                                range: NSRange(location: 0, length: marked.length))
+            return marked
         }
 
         let attachment = NSTextAttachment()
@@ -972,6 +965,20 @@ public struct AttributedRenderer {
 
 
     // MARK: - Attribute helpers
+
+    /// True when a rendered fragment contains an async placeholder still
+    /// waiting on content (a decoding image tagged `pendingContent`). Such
+    /// fragments are dropped from the cache so the decoded image rebuilds.
+    private func fragmentHasPendingContent(_ fragment: NSAttributedString) -> Bool {
+        var pending = false
+        fragment.enumerateAttribute(
+            QuoinAttribute.pendingContent,
+            in: NSRange(location: 0, length: fragment.length)
+        ) { value, _, stop in
+            if value != nil { pending = true; stop.pointee = true }
+        }
+        return pending
+    }
 
     private func bodyAttributes() -> [NSAttributedString.Key: Any] {
         [
