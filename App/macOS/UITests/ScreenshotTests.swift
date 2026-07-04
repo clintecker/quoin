@@ -127,13 +127,45 @@ final class ScreenshotTests: XCTestCase {
         app.terminate()
     }
 
-    private func capture(name: String) {
-        let screenshot = XCUIScreen.main.screenshot()
+    /// Captures the app's window (cropped — README/CI quality) when
+    /// available, falling back to the full screen.
+    private func capture(name: String, window: XCUIElement? = nil) {
+        let screenshot: XCUIScreenshot
+        if let window, window.exists {
+            screenshot = window.screenshot()
+        } else {
+            screenshot = XCUIScreen.main.screenshot()
+        }
         let url = outputDirectory.appendingPathComponent("\(name).png")
         try? screenshot.pngRepresentation.write(to: url)
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// README feature gallery: each gallery fixture leads with its feature
+    /// so the first viewport is the shot — no synthetic scrolling.
+    func testCaptureFeatureGallery() throws {
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+
+        let shots: [(fixture: String, name: String)] = [
+            ("gallery-diagrams", "12-gallery-diagrams"),
+            ("gallery-math", "13-gallery-math"),
+            ("gallery-blocks", "14-gallery-blocks"),
+        ]
+        for entry in shots {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "-QuoinLibraryPath", fixturesPath,
+                "-QuoinShotOpen", "\(entry.fixture).md",
+            ]
+            app.launch()
+            let window = app.windows.firstMatch
+            XCTAssertTrue(window.waitForExistence(timeout: 10))
+            Thread.sleep(forTimeInterval: 3)
+            capture(name: entry.name, window: window)
+            app.terminate()
+        }
     }
 }
