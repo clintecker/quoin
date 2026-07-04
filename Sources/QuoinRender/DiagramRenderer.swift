@@ -69,20 +69,29 @@ enum DiagramRenderer {
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 
+            // Render into a padded canvas so any edge marker, arrowhead, or
+            // nudged label that reaches slightly past the layout's own bounds
+            // can't clip — a uniform safety border for every diagram type.
+            let pad: CGFloat = 10
+            let canvasSize = CGSize(width: size.width + pad * 2, height: size.height + pad * 2)
+
             #if canImport(AppKit)
             let appearance = NSAppearance(named: theme.prefersDark ? .darkAqua : .aqua)
-            let image = NSImage(size: size, flipped: true) { _ in
+            let image = NSImage(size: canvasSize, flipped: true) { _ in
                 guard let context = NSGraphicsContext.current?.cgContext else { return false }
+                context.translateBy(x: pad, y: pad)
+                let render = { draw(context) }
                 if let appearance {
-                    appearance.performAsCurrentDrawingAppearance { draw(context) }
+                    appearance.performAsCurrentDrawingAppearance(render)
                 } else {
-                    draw(context)
+                    render()
                 }
                 return true
             }
             #else
-            let renderer = UIGraphicsImageRenderer(size: size)
+            let renderer = UIGraphicsImageRenderer(size: canvasSize)
             let image = renderer.image { rendererContext in
+                rendererContext.cgContext.translateBy(x: pad, y: pad)
                 draw(rendererContext.cgContext)
             }
             #endif
