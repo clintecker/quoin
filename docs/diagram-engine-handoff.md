@@ -34,12 +34,16 @@ feasible: it would be QuoinCore's diagram files + a thin render protocol.
     route through chains; near-aligned edges snap to a shared column.
   - `routePolyline` / `simplifyCollinear` — orthogonal polyline through
     waypoints (vertical runs at waypoint x, horizontal jogs at midpoints).
+  - `brandesKoepfX` — **Brandes–Köpf horizontal coordinate assignment**
+    (arXiv:2008.01252): four biased alignment passes (up/down × left/right)
+    with type-1 conflict marking so inner dummy→dummy segments win, block
+    compaction, and per-node median balancing. Node adjacency is deduplicated
+    so parallel/back edges don't skew the index-based median. Used by both the
+    flowchart (`placeFlowchartFrames`) and box diagrams (`layeredRoutes`) for
+    the cross-axis position; layers still stack by main-axis gap.
   - Layout result structs: `FlowchartLayout`, `SequenceLayout`, `PieLayout`,
     `ClassLayout`, `ERLayout`, `StateLayout`, `GanttLayout`.
     `FlowchartLayout.PlacedEdge` carries a `labelPoint`.
-  - **DEAD CODE to remove**: `Placement`, `orderedLayers`, `layeredPlacement`,
-    `BoxFace`, `RoutedBoxEdge`, `routeBoxEdges`, `borderPoint` — all now unused
-    (every caller moved to `assignLayers`/`barycenterOrder`/`layeredRoutes`).
 - `Sources/QuoinCore/DiagramLayoutFlowchart.swift` — flowchart layout:
   `layout(_:)` runs assignLayers → insert dummy nodes for multi-layer edges →
   barycenterOrder → `placeFlowchartFrames` → `routeChains`. `placeEdgeLabels`
@@ -48,13 +52,20 @@ feasible: it would be QuoinCore's diagram files + a thin render protocol.
 - `Sources/QuoinCore/DiagramLayoutBoxDiagrams.swift` — class / ER / state
   layouts. All three call `layeredRoutes`. State recurses for composite scopes.
 - `Sources/QuoinRender/DiagramRenderer.swift` — CoreGraphics drawing:
-  - `attachmentString` — rasterizes a layout into a **padded** canvas (pad=10)
-    and caches by source+appearance.
+  - `attachmentString` — rasterizes a layout into a canvas sized to the **tight
+    content bbox** (`contentBounds`: the layout size unioned with every edge
+    point inflated by the max marker reach), translated to that box's origin +
+    a small pad. Caches by source+appearance.
   - per-type `draw(_ layout:…)` for flowchart/sequence/pie/class/ER/state/gantt.
   - `strokeEdgeShafts` — batches shafts by dash style, one composite stroke, so
     crossings don't stack translucent alpha into dark seams.
-  - `appendRoundedPolyline` — rounds each bend with `addArc(…, radius: 5)`
-    (**artifact source**, see below).
+  - `appendRoundedPolyline` — rounds each bend with `addArc`, clamping the
+    radius to half the shorter adjacent segment so short jogs can't pinch into a
+    cusp.
+  - `polylinePoint` / `labelAnchor` — arc-length label sampling; box-diagram
+    labels are placed at several fractions along the edge (not just the
+    midpoint) with strong sibling repulsion, so antiparallel edges' labels
+    spread apart instead of merging into one phrase.
   - `drawArrowhead` — erase (canvas fill) then fill, so a translucent head
     doesn't double the shaft's alpha; small tip gap.
   - `drawCardinality` (ER crow's-foot/tick/circle), `drawRelationMarker`
@@ -87,58 +98,42 @@ read the PNG, fix, re-render.
   `labelAnchor` (draw-time, clamped to bounds).
 - **Straightening:** near-aligned box edges snap to a shared column (removes the
   tiny S-hook when box x-ranges overlap).
-- **Anti-clipping:** uniform padded canvas; labels clamped to bounds.
-- 239 tests green throughout; commit + push to `main` per unit of work.
+- **Brandes–Köpf coordinate assignment** (`brandesKoepfX`) replaced the old
+  center-each-layer placement in BOTH the flowchart and the box diagrams: long
+  and back edges route as dead-straight vertical channels, decision spines and
+  inheritance/relation columns line up, and decisions center over their
+  children. Unit-tested (straight chain, sibling gap, inner-segment
+  straightness). Adjacency is deduplicated so parallel/back edges don't skew
+  the median heuristic.
+- **Arc-cusp clamp:** `appendRoundedPolyline` clamps each corner radius to half
+  its shorter adjacent segment (kills the pinch on short jogs).
+- **Antiparallel label spreading:** `labelAnchor` samples along arc length with
+  strong sibling repulsion ("connect"/"fail", "synced"/"stale" no longer merge).
+- **Tight bounds:** `contentBounds` sizes/translates the canvas to the true
+  drawn bbox (layout size ∪ edge points inflated by marker reach), so ER
+  crow's-feet, UML markers, and overrunning routes can't clip.
+- **Dead code removed:** `Placement`, `orderedLayers`, `layeredPlacement`,
+  `BoxFace`, `RoutedBoxEdge`, `routeBoxEdges`, `borderPoint` are gone.
+- 242 tests green throughout; commit + push to `main` per unit of work.
 
-## Open problems (CURRENT — all visible in the latest gallery renders; NOT fixed)
+## Open problems
 
-These are live defects in `er-complex`, `state-complex`, etc. Verify each with
-the gallery harness before and after any change.
+All six defects from the prior handoff (arc cusp, antiparallel label crowding,
+marker/connector clipping, loose bounds, center-then-snap coordinates, dead
+code) are **fixed** — see "What has been done". Verify any future change with
+the gallery harness.
 
-1. **Rounded-corner artifact (the "odd artifact on a routed-around line").**
-   `appendRoundedPolyline` rounds every bend with a fixed radius-5 arc
-   (`addArc(tangent1End:tangent2End:radius:5)`). When a jog's middle segment is
-   shorter than ~2×radius, the two arcs overlap and pinch into a cusp/notch.
-   Most visible on edges that jog to reach a **centered box between two
-   columns** — e.g. `ORDER→LINE_ITEM` and `PRODUCT→LINE_ITEM` in `er-complex`,
-   which must jog inward. The column-snap straightening does NOT help these
-   (the boxes' x-ranges don't overlap). → **Fix:** clamp each corner's radius to
-   `min(5, halfOfShorterAdjacentSegment)`; and/or reduce short jogs upstream via
-   Brandes–Köpf (#3).
-2. **Antiparallel-edge label crowding.** Two edges between the same pair of
-   boxes in opposite directions (Idle→Connecting "connect" and
-   Connecting→Idle "fail") put both label midpoints in the same gap; the labels
-   land side-by-side and read as one phrase ("connect fail"), and can crowd a
-   nearby channel edge (the "disconnect" line). → **Fix:** detect
-   antiparallel/sibling edges and bias their labels to opposite sides, or offset
-   labels a fixed fraction along the edge instead of at the midpoint; stronger
-   inter-label repulsion in `labelAnchor`.
-3. **Cardinality / relation markers clip, and connectors can clip.** ER
-   crow's-foot / tick / circle markers (`drawCardinality`) reach ~15–18pt off a
-   box border; UML markers (`drawRelationMarker`) reach ~14pt. The layout `size`
-   and the uniform pad=10 don't always cover a marker on a box near the canvas
-   edge, or a connector segment routed to the boundary — so markers/connectors
-   clip (e.g. the markers at `LINE_ITEM`'s top edge). → **Fix:** include marker
-   reach and route extents in the content bounds (#4), or raise the pad, but the
-   real fix is tight bounds.
-4. **Bounds via uniform pad, not tight bbox.** pad=10 in `attachmentString`;
-   layouts don't account for renderer-side marker/label extents. → **Fix:**
-   compute the true bounding box of everything drawn (boxes + route points +
-   marker reach + label rects) and size/translate the canvas to it. This
-   subsumes #3.
-5. **Coordinate assignment is center-then-snap, not Brandes–Köpf.** Layers are
-   centered independently, then near-aligned edges are snapped straight. This
-   leaves avoidable jogs (which feed artifact #1) and looser layouts.
-   → **Fix (biggest quality lever):** implement Brandes–Köpf horizontal
-   coordinate assignment (linear time, ≤2 bends/edge, aligns dummy chains into
-   straight runs). Paper: arXiv:2008.01252. dagre uses exactly this.
-6. **Dead code** in DiagramLayout.swift (list above) should be removed.
+Possible future polish (not defects, lower priority):
 
-### Suggested order of attack
-Quick wins first: (1) clamp arc radius — kills the artifact immediately; (4)
-tight bounds — kills marker/connector clipping (#3) too. Then the big lever:
-(5) Brandes–Köpf, which straightens layouts and removes most jogs so #1/#2
-largely disappear. Then (2) label spreading polish, (6) dead-code cleanup.
+- **Compactness on dense back-edge graphs.** `flowchart-complex` still drifts
+  rightward as it descends, because several long back-edge dummy channels stack
+  on one side and the barycenter *ordering* (not BK coordinate assignment)
+  decides which side they take. BK straightened the channels but can't move
+  them; improving this means better crossing-minimization / channel-side
+  assignment in `barycenterOrder`, or a post-pass that balances channel sides.
+- **Self-loops / edges within a composite crossing its border** are routed
+  simply; libavoid-style obstacle-aware routing is the heavy alternative if
+  hand-tuning stops paying off.
 
 ## What was tried and rejected
 
