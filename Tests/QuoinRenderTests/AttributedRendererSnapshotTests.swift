@@ -5,7 +5,7 @@ import QuoinCore
 
 /// Golden-snapshot coverage for `AttributedRenderer` — the QuoinRender layer
 /// had no automated tests before this. Every fixture module in
-/// `fixtures/renderer/` is rendered through `AttributedRenderer.render(_:)`
+/// `Fixtures/renderer/` is rendered through `AttributedRenderer.render(_:)`
 /// with a pinned light `Theme`, reduced to a deterministic `DocDigest`
 /// (see `RenderDigest.swift`), and compared to a committed JSON golden.
 ///
@@ -28,7 +28,7 @@ final class AttributedRendererSnapshotTests: XCTestCase {
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // repo root
     }
-    private var fixturesDir: URL { repoRoot.appendingPathComponent("fixtures/renderer") }
+    private var fixturesDir: URL { repoRoot.appendingPathComponent("Fixtures/renderer") }
     private var snapshotFile: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -78,10 +78,29 @@ final class AttributedRendererSnapshotTests: XCTestCase {
         // Compare per fixture so a failure names the module and diffs cleanly.
         XCTAssertEqual(Set(current.keys), Set(golden.keys), "fixture set changed")
         for (name, digest) in current.sorted(by: { $0.key < $1.key }) {
-            XCTAssertEqual(digest, golden[name],
-                "Render digest changed for \(name). If intentional, regenerate with "
-                + "QUOIN_UPDATE_SNAPSHOTS=1 swift test.")
+            guard let expected = golden[name] else { continue }
+            if digest != expected {
+                XCTFail("Render digest changed for \(name): \(firstDigestDifference(digest, expected)). "
+                    + "If intentional, regenerate with QUOIN_UPDATE_SNAPSHOTS=1 swift test.")
+            }
         }
+    }
+
+    private func firstDigestDifference(_ current: DocDigest, _ expected: DocDigest) -> String {
+        if current.runs.count != expected.runs.count {
+            return "run count \(current.runs.count), expected \(expected.runs.count)"
+        }
+        for index in current.runs.indices where current.runs[index] != expected.runs[index] {
+            return "run \(index) current \(summarize(current.runs[index])), expected \(summarize(expected.runs[index]))"
+        }
+        return "digests differ"
+    }
+
+    private func summarize(_ run: RunDigest) -> String {
+        let text = run.t.replacingOccurrences(of: "\n", with: "\\n")
+        let clipped = text.count > 40 ? String(text.prefix(40)) + "..." : text
+        return "{t:\(clipped.debugDescription), q:\(run.q), f:\(run.f ?? "nil"), p:\(run.p ?? "nil"), "
+            + "fg:\(run.fg ?? "nil"), bg:\(run.bg ?? "nil"), deco:\(run.deco ?? "nil")}"
     }
 
     /// The digest is a pure function of the render — rendering twice must

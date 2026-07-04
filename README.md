@@ -187,7 +187,7 @@ cd App/macOS && xcodegen && open Quoin.xcodeproj      # macOS
 cd App/iOS   && xcodegen && open QuoinIOS.xcodeproj   # iOS/iPadOS
 ```
 
-Fixtures for every feature area live in [`fixtures/renderer/`](fixtures/renderer/) —
+Fixtures for every feature area live in [`Fixtures/renderer/`](Fixtures/renderer/) —
 they drive the CI conformance harness (parse + metric snapshots + diagram-layout
 invariants) and double as in-app preview documents. CI runs the full test
 suite, builds both apps, enforces the performance budgets, and publishes UI

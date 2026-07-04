@@ -199,17 +199,19 @@ enum RenderDigester {
         if let para = attrs[.paragraphStyle] as? NSParagraphStyle { run.p = paragraphDigest(para) }
 
         let hasLink = attrs[.link] != nil
+        let isLinkLike = hasLink || attrs[.underlineStyle] != nil || attrs[.underlineColor] != nil
         let superscript = (attrs[.baselineOffset] as? NSNumber).map { $0.doubleValue > 0 } ?? false
+        let footnoteMarker = text.range(of: #"^\d+\. $"#, options: .regularExpression) != nil
         if let color = attrs[.foregroundColor] as? PlatformColor {
-            // Links (all accent-colored here) and the footnote-ref superscript
-            // (the only bare-accent run) are accent by construction — labeling
-            // them structurally keeps the token stable even when the machine's
-            // accent equals a system color.
-            run.fg = (hasLink || superscript) ? "accent" : tokenizer.token(for: color)
+            // Link-styled runs, footnote-ref superscripts, and rendered
+            // footnote ordinals are accent by construction. Labeling them
+            // structurally keeps the token stable when the machine accent is
+            // the default blue, which otherwise equals `systemBlue`.
+            run.fg = (isLinkLike || superscript || footnoteMarker) ? "accent" : tokenizer.token(for: color)
         }
         if let color = attrs[.backgroundColor] as? PlatformColor { run.bg = tokenizer.token(for: color) }
         if let color = attrs[.underlineColor] as? PlatformColor {
-            run.underline = hasLink ? "accent@\(alphaPct(color, tokenizer))" : tokenizer.token(for: color)
+            run.underline = isLinkLike ? "accent@\(alphaPct(color, tokenizer))" : tokenizer.token(for: color)
         } else if attrs[.underlineStyle] != nil {
             run.underline = "on"
         }
