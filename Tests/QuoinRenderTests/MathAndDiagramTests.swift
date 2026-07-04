@@ -114,6 +114,22 @@ final class MathAndDiagramTests: XCTestCase {
         XCTAssertGreaterThan(bounds.height, 0)
     }
 
+    func testGanttChartRendersNatively() throws {
+        let gantt = """
+        gantt
+            title Schedule
+            section Work
+            Design :done, d1, 2026-07-01, 2d
+            Build  :active, b1, after d1, 3d
+            Ship   :milestone, m1, after b1, 0d
+        """
+        let attachment = DiagramRenderer.attachmentString(source: gantt, theme: theme)
+        let string = try XCTUnwrap(attachment, "a gantt chart should render natively")
+        let bounds = try XCTUnwrap((string.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)?.bounds)
+        XCTAssertGreaterThan(bounds.width, 0)
+        XCTAssertGreaterThan(bounds.height, 0)
+    }
+
     func testUnsupportedDiagramReturnsNilSoRendererFallsBack() {
         // A dialect the parser doesn't model returns nil from the parser, so
         // the renderer keeps the fenced source card.

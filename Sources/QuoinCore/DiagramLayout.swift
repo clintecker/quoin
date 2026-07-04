@@ -94,6 +94,41 @@ public struct PieLayout: Sendable {
     public let legendOrigin: CGPoint
 }
 
+public struct GanttLayout: Sendable {
+    public struct Bar: Sendable {
+        public let label: String
+        /// The bar rectangle, or the milestone diamond's bounding box.
+        public let frame: CGRect
+        /// Right edge of the label gutter at the row's vertical center; the
+        /// renderer right-aligns the task label to this point.
+        public let labelPoint: CGPoint
+        public let isMilestone: Bool
+        public let status: GanttChart.Status
+    }
+
+    public struct SectionBand: Sendable {
+        public let name: String
+        /// Full-width tint band spanning the section's consecutive rows.
+        public let frame: CGRect
+        public let colorIndex: Int
+    }
+
+    public struct Tick: Sendable {
+        public let x: CGFloat
+        public let label: String   // day index
+        public let top: CGFloat
+        public let bottom: CGFloat
+    }
+
+    public let size: CGSize
+    public let title: String?
+    /// X where the bar area begins (right of the task-label gutter).
+    public let labelGutter: CGFloat
+    public let bars: [Bar]
+    public let sections: [SectionBand]
+    public let ticks: [Tick]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

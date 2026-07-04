@@ -102,7 +102,8 @@ that way.
 | Class | ✅ | compartments, orthogonal routing, ▷ ◆ ◇ markers, multiplicity labels |
 | ER | ✅ | crow's-foot cardinalities, identifying/non-identifying |
 | State (v2) | ✅ | composite states, choice diamonds, fork/join bars, per-scope `[*]` |
-| Gantt, gitGraph, mindmap, timeline, C4, … | 🟡 | tidy labelled source card |
+| Gantt | ✅ | sections, `after` dependencies, date/duration timeline, statuses, milestones |
+| gitGraph, mindmap, timeline, C4, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 

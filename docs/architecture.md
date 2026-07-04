@@ -137,8 +137,9 @@ box into an `NSTextAttachment` at theme size.
 ## Diagram engine
 
 `MermaidParser` (QuoinCore) parses flowchart/graph, sequence, pie, class, ER,
-and state (v2, recursive composites; nesting depth capped). Anything else
-returns nil → tidy source card.
+state (v2, recursive composites; nesting depth capped), and gantt (sections,
+`after` dependencies, date/duration timeline resolved to day offsets at parse
+time, statuses, milestones). Anything else returns nil → tidy source card.
 
 `DiagramLayoutEngine` (QuoinCore) is pure geometry with an injected text
 measurer, so it unit-tests without fonts:
