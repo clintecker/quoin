@@ -159,7 +159,7 @@ enum DiagramRenderer {
 
             if edge.hasArrow {
                 let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
-                drawArrowhead(at: edge.end, from: approach, color: stroke, in: context)
+                drawArrowhead(at: edge.end, from: approach, color: stroke, canvas: theme.canvas, in: context)
             }
             if let label = edge.label, !label.isEmpty {
                 // Sit the label on the middle of the routed polyline, not a
@@ -249,23 +249,28 @@ enum DiagramRenderer {
         return points.last!
     }
 
-    private static func drawArrowhead(at tip: CGPoint, from origin: CGPoint, color: PlatformColor, in context: CGContext) {
+    /// A filled arrowhead at `tip`. The head fills the canvas color first to
+    /// erase the shaft beneath it, then the (often translucent) arrow color on
+    /// top — otherwise the shaft's alpha adds to the head's and leaves a darker
+    /// seam down the middle.
+    private static func drawArrowhead(
+        at tip: CGPoint, from origin: CGPoint, color: PlatformColor, canvas: PlatformColor, in context: CGContext
+    ) {
         let angle = atan2(tip.y - origin.y, tip.x - origin.x)
-        let length: CGFloat = 7
-        let spread: CGFloat = 0.46
+        let length: CGFloat = 8.5
+        let spread: CGFloat = 0.40
+        let path = CGMutablePath()
+        path.move(to: tip)
+        path.addLine(to: CGPoint(x: tip.x - length * cos(angle - spread), y: tip.y - length * sin(angle - spread)))
+        path.addLine(to: CGPoint(x: tip.x - length * cos(angle + spread), y: tip.y - length * sin(angle + spread)))
+        path.closeSubpath()
+
         context.saveGState()
+        context.setFillColor(resolvedCGColor(canvas))
+        context.addPath(path)
+        context.fillPath()
         context.setFillColor(resolvedCGColor(color))
-        context.beginPath()
-        context.move(to: tip)
-        context.addLine(to: CGPoint(
-            x: tip.x - length * cos(angle - spread),
-            y: tip.y - length * sin(angle - spread)
-        ))
-        context.addLine(to: CGPoint(
-            x: tip.x - length * cos(angle + spread),
-            y: tip.y - length * sin(angle + spread)
-        ))
-        context.closePath()
+        context.addPath(path)
         context.fillPath()
         context.restoreGState()
     }
@@ -286,40 +291,27 @@ enum DiagramRenderer {
         drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
     }
 
-    /// Fills a node/box shape with a soft drop shadow, then strokes its border
-    /// crisp on top. The shadow gives every diagram shape — rectangle, diamond,
-    /// stadium, circle — a little depth so a diagram reads as floating cards
-    /// rather than flat outlines, while the shadow-free stroke keeps the border
-    /// sharp. All box diagrams share this so shapes stay visually consistent.
+    /// Fills a node/box shape and strokes its border — the shared body for
+    /// every diagram shape (rectangle, diamond, stadium, circle) so they stay
+    /// visually consistent across flowchart, class, ER, and state diagrams.
     private static func fillStrokeShape(
-        _ path: CGPath, fill: PlatformColor, stroke: PlatformColor,
-        shadow: Bool = true, in context: CGContext
+        _ path: CGPath, fill: PlatformColor, stroke: PlatformColor, in context: CGContext
     ) {
         context.saveGState()
-        if shadow {
-            context.setShadow(offset: CGSize(width: 0, height: -1.5), blur: 4,
-                              color: PlatformColor.black.withAlphaComponent(0.12).cgColor)
-        }
         context.setFillColor(resolvedCGColor(fill))
-        context.addPath(path)
-        context.fillPath()
-        context.restoreGState()
-
-        context.saveGState()
         context.setStrokeColor(resolvedCGColor(stroke))
         context.setLineWidth(1)
         context.addPath(path)
-        context.strokePath()
+        context.drawPath(using: .fillStroke)
         context.restoreGState()
     }
 
     /// Convenience for the common rounded-rectangle body.
     private static func fillStrokeBox(
-        _ frame: CGRect, radius: CGFloat, fill: PlatformColor, stroke: PlatformColor,
-        shadow: Bool = true, in context: CGContext
+        _ frame: CGRect, radius: CGFloat, fill: PlatformColor, stroke: PlatformColor, in context: CGContext
     ) {
         fillStrokeShape(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil),
-                        fill: fill, stroke: stroke, shadow: shadow, in: context)
+                        fill: fill, stroke: stroke, in: context)
     }
 
     /// State-machine start terminal: a solid filled dot.
@@ -409,7 +401,7 @@ enum DiagramRenderer {
                 drawArrowhead(
                     at: CGPoint(x: arrow.fromX, y: arrow.y + 12),
                     from: CGPoint(x: arrow.toX, y: arrow.y + 12),
-                    color: stroke, in: context
+                    color: stroke, canvas: theme.canvas, in: context
                 )
                 if !arrow.text.isEmpty {
                     let size = measure(arrow.text, size: 10.5)
@@ -421,7 +413,7 @@ enum DiagramRenderer {
                 drawArrowhead(
                     at: CGPoint(x: arrow.toX, y: arrow.y),
                     from: CGPoint(x: arrow.fromX, y: arrow.y),
-                    color: stroke, in: context
+                    color: stroke, canvas: theme.canvas, in: context
                 )
                 if !arrow.text.isEmpty {
                     drawText(arrow.text,
@@ -434,9 +426,20 @@ enum DiagramRenderer {
 
     // MARK: - Pie
 
+    /// A categorical palette for charts (pie slices, gantt section bands).
+    /// More saturated and distinct than the text-highlight pastels so slices
+    /// read as separate data series; tuned to sit well on light and dark.
+    private static let categoricalPalette: [PlatformColor] = [
+        rgbStatic(0x5B8FF9), // blue
+        rgbStatic(0x5AD8A6), // green
+        rgbStatic(0xF6BD16), // gold
+        rgbStatic(0xE8684A), // coral
+        rgbStatic(0x6DC8EC), // sky
+        rgbStatic(0x9270CA), // purple
+    ]
+
     private static func categoricalColor(_ index: Int) -> PlatformColor {
-        let palette = Theme.Highlight.allCases
-        return palette[index % palette.count].color
+        categoricalPalette[index % categoricalPalette.count]
     }
 
     private static func draw(_ layout: PieLayout, theme: Theme, in context: CGContext) {
@@ -446,11 +449,13 @@ enum DiagramRenderer {
                      size: 12.5, weight: .semibold, color: theme.ink, in: context)
         }
 
+        // Fill wedges without a per-wedge stroke, then draw one canvas-colored
+        // separator per boundary from the hub to the rim. Stroking each wedge
+        // outline drew every boundary twice and piled overlapping strokes at
+        // the center; a single line per boundary keeps the hub clean.
         for slice in layout.slices {
             context.saveGState()
             context.setFillColor(resolvedCGColor(categoricalColor(slice.colorIndex)))
-            context.setStrokeColor(resolvedCGColor(theme.canvas))
-            context.setLineWidth(1.5)
             context.beginPath()
             context.move(to: layout.center)
             context.addArc(
@@ -459,9 +464,23 @@ enum DiagramRenderer {
                 clockwise: false
             )
             context.closePath()
-            context.drawPath(using: .fillStroke)
+            context.fillPath()
             context.restoreGState()
         }
+        context.saveGState()
+        context.setStrokeColor(resolvedCGColor(theme.canvas))
+        context.setLineWidth(2)
+        context.setLineCap(.round)
+        for slice in layout.slices {
+            context.beginPath()
+            context.move(to: layout.center)
+            context.addLine(to: CGPoint(
+                x: layout.center.x + layout.radius * cos(CGFloat(slice.startAngle)),
+                y: layout.center.y + layout.radius * sin(CGFloat(slice.startAngle))
+            ))
+            context.strokePath()
+        }
+        context.restoreGState()
 
         // Legend with value chips, vertically stacked.
         var y = layout.legendOrigin.y
@@ -667,7 +686,7 @@ enum DiagramRenderer {
             context.drawPath(using: .fillStroke)
             context.restoreGState()
         case .association, .dependency:
-            drawArrowhead(at: tip, from: origin, color: stroke, in: context)
+            drawArrowhead(at: tip, from: origin, color: stroke, canvas: canvas, in: context)
         case .link:
             break
         }
@@ -761,7 +780,7 @@ enum DiagramRenderer {
             context.restoreGState()
 
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
-            drawArrowhead(at: edge.end, from: approach, color: stroke, in: context)
+            drawArrowhead(at: edge.end, from: approach, color: stroke, canvas: theme.canvas, in: context)
 
             if let label = edge.label, !label.isEmpty {
                 drawEdgeLabel(label, at: polylineMidpoint(edge.points), theme: theme, in: context)
@@ -804,8 +823,8 @@ enum DiagramRenderer {
         _ card: ERDiagram.Cardinality, at end: CGPoint, from other: CGPoint,
         color: PlatformColor, in context: CGContext
     ) {
-        let angle = atan2(other.y - end.y, other.x - end.x) // pointing inward
-        func point(out: CGFloat, side: CGFloat) -> CGPoint {
+        let angle = atan2(other.y - end.y, other.x - end.x) // pointing inward (up the line)
+        func p(out: CGFloat, side: CGFloat) -> CGPoint {
             CGPoint(
                 x: end.x + out * cos(angle) - side * sin(angle),
                 y: end.y + out * sin(angle) + side * cos(angle)
@@ -814,44 +833,42 @@ enum DiagramRenderer {
 
         context.saveGState()
         context.setStrokeColor(resolvedCGColor(color))
-        context.setLineWidth(1)
-        context.beginPath()
+        context.setLineWidth(1.4)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+
+        // A perpendicular "one" tick across the line at `out`.
+        func tick(at out: CGFloat, half: CGFloat = 6.5) {
+            context.beginPath()
+            context.move(to: p(out: out, side: half))
+            context.addLine(to: p(out: out, side: -half))
+            context.strokePath()
+        }
+        // The "many" crow's foot: three prongs fanning from an apex up the line
+        // out to the entity box, wide enough to read as a foot, not a caret.
+        func crowsFoot() {
+            let apex = p(out: 15, side: 0)
+            context.beginPath()
+            for side in [CGFloat(8), 0, -8] {
+                context.move(to: apex)
+                context.addLine(to: p(out: 1, side: side))
+            }
+            context.strokePath()
+        }
+        // The "zero" circle centered on the line at `out`.
+        func circle(at out: CGFloat) {
+            let c = p(out: out, side: 0)
+            context.beginPath()
+            context.addEllipse(in: CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8))
+            context.strokePath()
+        }
 
         switch card {
-        case .one:
-            // Two ticks.
-            for out in [CGFloat(6), 10] {
-                context.move(to: point(out: out, side: 5))
-                context.addLine(to: point(out: out, side: -5))
-            }
-        case .zeroOrOne:
-            context.move(to: point(out: 6, side: 5))
-            context.addLine(to: point(out: 6, side: -5))
-            context.strokePath()
-            context.beginPath()
-            let center = point(out: 13, side: 0)
-            context.addEllipse(in: CGRect(x: center.x - 3.5, y: center.y - 3.5, width: 7, height: 7))
-        case .oneOrMore:
-            // Crow's foot: three prongs fanning from an apex up the line down
-            // to the box edge (lifted 2pt off the border so it reads as an
-            // open foot, not a closed triangle), plus a "one" tick behind it.
-            for side in [CGFloat(6.5), 0, -6.5] {
-                context.move(to: point(out: 14, side: 0))
-                context.addLine(to: point(out: 2, side: side))
-            }
-            context.move(to: point(out: 17, side: 5))
-            context.addLine(to: point(out: 17, side: -5))
-        case .zeroOrMore:
-            for side in [CGFloat(6.5), 0, -6.5] {
-                context.move(to: point(out: 14, side: 0))
-                context.addLine(to: point(out: 2, side: side))
-            }
-            context.strokePath()
-            context.beginPath()
-            let center = point(out: 20, side: 0)
-            context.addEllipse(in: CGRect(x: center.x - 3.5, y: center.y - 3.5, width: 7, height: 7))
+        case .one:        tick(at: 7); tick(at: 12)     // ‖  exactly one
+        case .zeroOrOne:  tick(at: 15); circle(at: 7)   // ○|  zero or one
+        case .oneOrMore:  crowsFoot(); tick(at: 19)     // ‹|  one or many
+        case .zeroOrMore: crowsFoot(); circle(at: 21)   // ‹○  zero or many
         }
-        context.strokePath()
         context.restoreGState()
     }
 }
