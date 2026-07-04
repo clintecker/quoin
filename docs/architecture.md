@@ -17,24 +17,23 @@ serialized *from* the view at all.
 
 ## Data flow
 
+The edit loop is a one-way cycle: keystrokes never mutate the view directly —
+they become source edits, and the view only ever receives re-projections.
+
+```mermaid
+flowchart TD
+    Disk[document.md] -->|file events| Session[DocumentSession actor]
+    Session -->|autosave| Disk
+    Session -->|QuoinDocument snapshots| Model[ReaderModel]
+    Model -->|render + fragment cache| Renderer[AttributedRenderer]
+    Renderer -->|RenderedDocument| Coordinator
+    Coordinator -->|splice changed span only| TextView[QuoinTextView]
+    TextView -->|keystrokes| Coordinator
+    Coordinator -->|SourceEdit: byte range + replacement| Session
 ```
-                    ┌──────────────┐   snapshots (AsyncStream)
-   disk ⇄ watcher ⇄ │DocumentSession│ ─────────────────────────┐
-                    └──────────────┘                           ▼
-                        ▲    SourceEdit                 ┌────────────┐
-                        │ (byte range + replacement)    │ ReaderModel │ @MainActor
-                        │                               └────────────┘
-                 ┌──────────────┐                              │ render(document,
-                 │ Coordinator  │  onEditIntent                │   activeBlockID,
-                 │ (NSTextView  │ ◀─── keystrokes              │   cache:&fragments)
-                 │  delegate)   │                              ▼
-                 └──────────────┘                    ┌────────────────────┐
-                        ▲                            │ AttributedRenderer │
-                        │ spliceChanges(storage,     └────────────────────┘
-                        │   newAttributed)                     │
-                        └──────────────────────────────────────┘
-                                RenderedDocument (attributed + blockRanges)
-```
+
+(This diagram is mermaid — Quoin renders it natively, so this document
+doubles as a fixture.)
 
 ### Parse (QuoinCore)
 

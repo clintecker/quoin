@@ -135,24 +135,36 @@ Budgets from the PRD, enforced in CI (`PerformanceTests`):
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    subgraph Apps["App/macOS · App/iOS — SwiftUI shells (navigation only)"]
+        Shell[library · tabs · outline · find · export]
+    end
+    subgraph Render["QuoinRender — Apple platforms"]
+        TV[QuoinTextView — TextKit 2 + block decorations]
+        AR[AttributedRenderer — AST to attributed projection]
+        MT[MathTypesetter — TeX box model, CoreText]
+        DR[DiagramRenderer — CoreGraphics]
+    end
+    subgraph Core["QuoinCore — platform-free, Linux-testable"]
+        DS[DocumentSession — edits · undo · autosave · watching]
+        MC[MarkdownConverter — source to AST]
+        MP[MathParser · MermaidParser]
+        DL[DiagramLayoutEngine — pure geometry]
+    end
+    Shell --> TV
+    Shell --> DS
+    TV --> AR
+    AR --> MT
+    AR --> DR
+    AR --> MC
+    MT --> MP
+    DR --> DL
+    DL --> MP
+    DS --> MC
 ```
-┌────────────────────────────────────────────────────────────┐
-│ App/macOS · App/iOS (SwiftUI shells: library, tabs,        │
-│   outline, find, export — navigation containers only)      │
-├────────────────────────────────────────────────────────────┤
-│ QuoinRender (Apple platforms, #if canImport guarded)       │
-│   AttributedRenderer — AST → attributed-string projection  │
-│   MathTypesetter — TeX box model drawn with CoreText       │
-│   DiagramRenderer — CoreGraphics diagram drawing           │
-│   QuoinTextView — TextKit 2 view + block decorations       │
-├────────────────────────────────────────────────────────────┤
-│ QuoinCore (platform-free, Linux-testable)                  │
-│   MarkdownConverter — source ↔ AST (swift-markdown)        │
-│   DocumentSession — edits, undo, autosave, file watching   │
-│   MathParser / MermaidParser — LaTeX & Mermaid ASTs        │
-│   DiagramLayoutEngine — pure geometry, injected measurer   │
-└────────────────────────────────────────────────────────────┘
-```
+
+(Rendered by GitHub — and by Quoin itself, natively.)
 
 See [docs/architecture.md](docs/architecture.md) for the full data-flow and
 [docs/rendering-roadmap.md](docs/rendering-roadmap.md) for what's next.
