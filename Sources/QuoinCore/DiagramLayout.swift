@@ -373,6 +373,110 @@ public enum DiagramLayoutEngine {
         )
     }
 
+    /// Layered top-down layout with **dummy-node edge routing**, shared by the
+    /// class, ER, and state diagrams (the Sugiyama approach the flowchart uses).
+    /// Layers come from `layeringEdges` (already oriented by the caller — e.g.
+    /// class inheritance flipped so parents sit above children); every routing
+    /// edge that spans more than one layer gets dummy nodes in the intervening
+    /// layers, so it reserves a channel and runs *between* boxes instead of
+    /// elbowing around them. Returns the real-box frames, the canvas size, and
+    /// one orthogonal polyline per `routingEdges` entry, in order.
+    static func layeredRoutes(
+        ids: [String],
+        sizes: [String: CGSize],
+        layeringEdges: [(String, String)],
+        routingEdges: [(from: String, to: String)],
+        layerGap: CGFloat,
+        nodeGap: CGFloat,
+        margin: CGFloat
+    ) -> (frames: [String: CGRect], size: CGSize, routes: [[CGPoint]]) {
+        let layerBack = backEdgeIndices(ids: ids, edges: layeringEdges)
+        let forward = layeringEdges.enumerated().filter { !layerBack.contains($0.offset) }.map(\.element)
+        let layerOf = assignLayers(ids: ids, edges: forward)
+        let layerCount = (layerOf.values.max() ?? 0) + 1
+
+        // Dummy nodes for every routing edge spanning more than one layer.
+        var layers: [[String]] = Array(repeating: [], count: layerCount)
+        for id in ids where layerOf[id] != nil { layers[layerOf[id]!].append(id) }
+        var allSizes = sizes
+        var chains: [[String]] = []
+        var segmentEdges: [(String, String)] = []
+        for (index, edge) in routingEdges.enumerated() {
+            guard let lu = layerOf[edge.from], let lv = layerOf[edge.to] else { chains.append([]); continue }
+            let lo = min(lu, lv), hi = max(lu, lv)
+            if hi - lo <= 1 {
+                chains.append([edge.from, edge.to])
+                segmentEdges.append((edge.from, edge.to))
+                continue
+            }
+            var midByLayer: [(layer: Int, id: String)] = []
+            for layer in (lo + 1)...(hi - 1) {
+                let dummy = "\u{a7}b\(index).\(layer)"
+                layers[layer].append(dummy)
+                allSizes[dummy] = CGSize(width: 16, height: 1)
+                midByLayer.append((layer, dummy))
+            }
+            let mids = (lu < lv ? midByLayer : midByLayer.reversed()).map(\.id)
+            let chain = [edge.from] + mids + [edge.to]
+            chains.append(chain)
+            for k in 0..<(chain.count - 1) { segmentEdges.append((chain[k], chain[k + 1])) }
+        }
+
+        // Order + place (top-down).
+        let ordered = barycenterOrder(layers: layers, edges: segmentEdges)
+        var frames: [String: CGRect] = [:]
+        var y = margin
+        var crossExtent: CGFloat = 0
+        var layerWidths: [CGFloat] = []
+        for layer in ordered {
+            let total = layer.reduce(CGFloat(0)) { $0 + (allSizes[$1]?.width ?? 0) }
+                + CGFloat(max(layer.count - 1, 0)) * nodeGap
+            layerWidths.append(total)
+            crossExtent = max(crossExtent, total)
+        }
+        for (layerIndex, layer) in ordered.enumerated() {
+            let layerHeight = layer.map { allSizes[$0]?.height ?? 0 }.max() ?? 0
+            var x = margin + (crossExtent - layerWidths[layerIndex]) / 2
+            for id in layer {
+                let size = allSizes[id] ?? .zero
+                frames[id] = CGRect(x: x, y: y, width: size.width, height: size.height)
+                x += size.width + nodeGap
+            }
+            y += layerHeight + layerGap
+        }
+
+        // Route each edge through its chain waypoints.
+        var routes: [[CGPoint]] = []
+        var maxX = crossExtent + margin
+        for chain in chains {
+            guard chain.count >= 2, let fromFrame = frames[chain[0]], let toFrame = frames[chain[chain.count - 1]] else {
+                routes.append([.zero, .zero]); continue
+            }
+            // Same layer → route the short way through side faces.
+            if abs(fromFrame.midY - toFrame.midY) < 1 {
+                let right = toFrame.midX >= fromFrame.midX
+                let start = CGPoint(x: right ? fromFrame.maxX : fromFrame.minX, y: fromFrame.midY)
+                let end = CGPoint(x: right ? toFrame.minX : toFrame.maxX, y: toFrame.midY)
+                routes.append([start, end])
+                continue
+            }
+            let dummyCenters = chain[1..<(chain.count - 1)].compactMap { frames[$0].map { CGPoint(x: $0.midX, y: $0.midY) } }
+            let firstNext = dummyCenters.first ?? CGPoint(x: toFrame.midX, y: toFrame.midY)
+            let lastPrev = dummyCenters.last ?? CGPoint(x: fromFrame.midX, y: fromFrame.midY)
+            func attach(_ f: CGRect, towardX: CGFloat, bottom: Bool) -> CGPoint {
+                CGPoint(x: min(max(towardX, f.minX + 4), f.maxX - 4), y: bottom ? f.maxY : f.minY)
+            }
+            let start = attach(fromFrame, towardX: firstNext.x, bottom: firstNext.y >= fromFrame.midY)
+            let end = attach(toFrame, towardX: lastPrev.x, bottom: lastPrev.y > toFrame.midY)
+            let points = routePolyline([start] + dummyCenters + [end], horizontal: false)
+            for p in points { maxX = max(maxX, p.x) }
+            routes.append(points)
+        }
+
+        let size = CGSize(width: max(crossExtent, maxX - margin) + margin * 2, height: y - layerGap + margin)
+        return (frames, size, routes)
+    }
+
     // MARK: Orthogonal routing for layered box diagrams (class, ER)
 
     enum BoxFace { case top, bottom, left, right }

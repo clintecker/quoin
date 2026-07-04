@@ -342,7 +342,7 @@ extension DiagramLayoutEngine {
     /// the horizontal jogs happen at the midpoint between consecutive waypoints
     /// — i.e. in the gaps between layers, never across a node's row. Collinear
     /// runs are merged so straight edges stay two-point.
-    private static func routePolyline(_ waypoints: [CGPoint], horizontal: Bool) -> [CGPoint] {
+    static func routePolyline(_ waypoints: [CGPoint], horizontal: Bool) -> [CGPoint] {
         guard waypoints.count >= 2 else { return waypoints }
         var pts: [CGPoint] = [waypoints[0]]
         for i in 0..<(waypoints.count - 1) {
@@ -365,7 +365,7 @@ extension DiagramLayoutEngine {
 
     /// Drops points that lie on a straight run with their neighbours, and exact
     /// duplicates, so a polyline carries only its real bends.
-    private static func simplifyCollinear(_ pts: [CGPoint]) -> [CGPoint] {
+    static func simplifyCollinear(_ pts: [CGPoint]) -> [CGPoint] {
         guard pts.count > 2 else { return pts }
         var out: [CGPoint] = [pts[0]]
         for i in 1..<(pts.count - 1) {

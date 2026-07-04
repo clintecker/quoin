@@ -39,46 +39,34 @@ extension DiagramLayoutEngine {
             boxSizes[cls.name] = CGSize(width: max(width, 96), height: height)
         }
 
-        let placement = layeredPlacement(
+        // Dummy-node layered layout + routing (parents above children via the
+        // flipped layering edges; relations routed in their real direction so
+        // the inheritance marker lands on the parent).
+        let (frames, size, routes) = layeredRoutes(
             ids: diagram.classes.map(\.name),
             sizes: boxSizes,
-            edges: layeringEdges,
+            layeringEdges: layeringEdges,
+            routingEdges: diagram.relations.map { (from: $0.from, to: $0.to) },
             layerGap: 52, nodeGap: 30, margin: 14
         )
 
         let boxes = diagram.classes.compactMap { cls -> ClassLayout.Box? in
-            guard let frame = placement.frames[cls.name] else { return nil }
+            guard let frame = frames[cls.name] else { return nil }
             return ClassLayout.Box(
                 name: cls.name, attributes: cls.attributes, methods: cls.methods,
                 frame: frame, nameHeight: compartmentNameHeight, rowHeight: compartmentRowHeight
             )
         }
 
-        // Route relations as orthogonal elbows with per-face fan-out, sharing
-        // the layered-box router with the ER diagram.
-        let valid = diagram.relations.filter {
-            placement.frames[$0.from] != nil && placement.frames[$0.to] != nil
-        }
-        var frameList: [CGRect] = []
-        var frameIndex: [String: Int] = [:]
-        for cls in diagram.classes {
-            guard let frame = placement.frames[cls.name] else { continue }
-            frameIndex[cls.name] = frameList.count
-            frameList.append(frame)
-        }
-        let pairs = valid.map { (from: frameIndex[$0.from]!, to: frameIndex[$0.to]!) }
-        let routes = routeBoxEdges(frames: frameList, pairs: pairs)
-        let edges = zip(valid, routes).map { relation, route in
-            ClassLayout.Edge(
-                start: route.points.first!,
-                end: route.points.last!,
-                points: route.points,
-                kind: relation.kind,
-                label: relation.label
+        let edges = zip(diagram.relations, routes).compactMap { relation, points -> ClassLayout.Edge? in
+            guard points.count >= 2, frames[relation.from] != nil, frames[relation.to] != nil else { return nil }
+            return ClassLayout.Edge(
+                start: points.first!, end: points.last!, points: points,
+                kind: relation.kind, label: relation.label
             )
         }
 
-        return ClassLayout(size: placement.size, boxes: boxes, edges: edges)
+        return ClassLayout(size: size, boxes: boxes, edges: edges)
     }
 
     // MARK: ER
@@ -98,49 +86,34 @@ extension DiagramLayoutEngine {
             boxSizes[entity.name] = CGSize(width: max(width, 96), height: height)
         }
 
-        let placement = layeredPlacement(
+        // Tighter vertical gap (52): the crow's-foot markers reach ~21pt off
+        // each box, so this leaves room for them plus the relationship label.
+        let (frames, size, routes) = layeredRoutes(
             ids: diagram.entities.map(\.name),
             sizes: boxSizes,
-            // Tighter vertical gap: the crow's-foot markers reach ~21pt off
-            // each box, so 52 leaves room for them plus the relationship label
-            // without the loose air the old 64 left.
-            edges: diagram.relations.map { ($0.from, $0.to) },
+            layeringEdges: diagram.relations.map { ($0.from, $0.to) },
+            routingEdges: diagram.relations.map { (from: $0.from, to: $0.to) },
             layerGap: 52, nodeGap: 30, margin: 14
         )
 
         let boxes = diagram.entities.compactMap { entity -> ERLayout.Box? in
-            guard let frame = placement.frames[entity.name] else { return nil }
+            guard let frame = frames[entity.name] else { return nil }
             return ERLayout.Box(
                 name: entity.name, attributes: entity.attributes,
                 frame: frame, nameHeight: compartmentNameHeight, rowHeight: compartmentRowHeight
             )
         }
 
-        let valid = diagram.relations.filter {
-            placement.frames[$0.from] != nil && placement.frames[$0.to] != nil
-        }
-        var frameList: [CGRect] = []
-        var frameIndex: [String: Int] = [:]
-        for entity in diagram.entities {
-            guard let frame = placement.frames[entity.name] else { continue }
-            frameIndex[entity.name] = frameList.count
-            frameList.append(frame)
-        }
-        let pairs = valid.map { (from: frameIndex[$0.from]!, to: frameIndex[$0.to]!) }
-        let routes = routeBoxEdges(frames: frameList, pairs: pairs)
-        let edges = zip(valid, routes).map { relation, route in
-            ERLayout.Edge(
-                start: route.points.first!,
-                end: route.points.last!,
-                points: route.points,
-                fromCard: relation.fromCard,
-                toCard: relation.toCard,
-                label: relation.label,
-                identifying: relation.identifying
+        let edges = zip(diagram.relations, routes).compactMap { relation, points -> ERLayout.Edge? in
+            guard points.count >= 2, frames[relation.from] != nil, frames[relation.to] != nil else { return nil }
+            return ERLayout.Edge(
+                start: points.first!, end: points.last!, points: points,
+                fromCard: relation.fromCard, toCard: relation.toCard,
+                label: relation.label, identifying: relation.identifying
             )
         }
 
-        return ERLayout(size: placement.size, boxes: boxes, edges: edges)
+        return ERLayout(size: size, boxes: boxes, edges: edges)
     }
 
     // MARK: State
@@ -196,10 +169,11 @@ extension DiagramLayoutEngine {
             }
         }
 
-        let placement = layeredPlacement(
+        let (frames, scopeSize, routes) = layeredRoutes(
             ids: diagram.nodes.map(\.id),
             sizes: sizes,
-            edges: diagram.edges.map { ($0.from, $0.to) },
+            layeringEdges: diagram.edges.map { ($0.from, $0.to) },
+            routingEdges: diagram.edges.map { (from: $0.from, to: $0.to) },
             layerGap: 40, nodeGap: 26, margin: 6
         )
 
@@ -219,7 +193,7 @@ extension DiagramLayoutEngine {
         }
 
         for node in diagram.nodes {
-            guard let frame = placement.frames[node.id] else { continue }
+            guard let frame = frames[node.id] else { continue }
             if case .composite = node.kind, let child = childResults[node.id] {
                 outContainers.append(StateLayout.Container(
                     label: node.label, frame: frame,
@@ -255,27 +229,17 @@ extension DiagramLayoutEngine {
             }
         }
 
-        // Route this scope's own transitions with the shared fan-out router.
-        var frameList: [CGRect] = []
-        var frameIndex: [String: Int] = [:]
-        for node in diagram.nodes {
-            guard let frame = placement.frames[node.id] else { continue }
-            frameIndex[node.id] = frameList.count
-            frameList.append(frame)
-        }
-        let valid = diagram.edges.filter { frameIndex[$0.from] != nil && frameIndex[$0.to] != nil }
-        let pairs = valid.map { (from: frameIndex[$0.from]!, to: frameIndex[$0.to]!) }
-        let routes = routeBoxEdges(frames: frameList, pairs: pairs)
-        for (edge, route) in zip(valid, routes) {
+        // This scope's own transitions, routed through their dummy-node chains.
+        for (edge, points) in zip(diagram.edges, routes) {
+            guard points.count >= 2, frames[edge.from] != nil, frames[edge.to] != nil else { continue }
             outEdges.append(StateLayout.Edge(
-                start: route.points.first!, end: route.points.last!,
-                points: route.points, label: edge.label
+                start: points.first!, end: points.last!, points: points, label: edge.label
             ))
         }
 
         return StateScopeResult(
             nodes: outNodes, containers: outContainers,
-            edges: outEdges, size: placement.size
+            edges: outEdges, size: scopeSize
         )
     }
 
