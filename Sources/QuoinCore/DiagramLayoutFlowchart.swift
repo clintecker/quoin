@@ -79,6 +79,8 @@ extension DiagramLayoutEngine {
                 size = CGSize(width: 14, height: 14)
             case .stateEnd:
                 size = CGSize(width: 18, height: 18)
+            case .cylinder:
+                size.height += 12   // room for the top/bottom ellipse caps
             default:
                 break
             }

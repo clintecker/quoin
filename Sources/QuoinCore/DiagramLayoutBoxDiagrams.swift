@@ -101,8 +101,11 @@ extension DiagramLayoutEngine {
         let placement = layeredPlacement(
             ids: diagram.entities.map(\.name),
             sizes: boxSizes,
+            // Tighter vertical gap: the crow's-foot markers reach ~21pt off
+            // each box, so 52 leaves room for them plus the relationship label
+            // without the loose air the old 64 left.
             edges: diagram.relations.map { ($0.from, $0.to) },
-            layerGap: 64, nodeGap: 34, margin: 14
+            layerGap: 52, nodeGap: 30, margin: 14
         )
 
         let boxes = diagram.entities.compactMap { entity -> ERLayout.Box? in

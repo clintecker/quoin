@@ -23,6 +23,16 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertTrue(chart.edges[3].dashed)
     }
 
+    func testFlowchartCylinderShape() {
+        // `A[(label)]` is a database cylinder, not a rectangle whose label is
+        // the literal "(label)".
+        let diagram = MermaidParser.parse("flowchart TD\n  A[(Store)] --> B[Done]")
+        guard case .flowchart(let chart) = diagram else { return XCTFail("expected flowchart") }
+        XCTAssertEqual(chart.nodes[0].shape, .cylinder)
+        XCTAssertEqual(chart.nodes[0].label, "Store")
+        XCTAssertEqual(chart.nodes[1].shape, .rectangle)
+    }
+
     func testFlowchartLeftRight() {
         let diagram = MermaidParser.parse("flowchart LR\n  A --> B")
         guard case .flowchart(let chart) = diagram else { return XCTFail("expected flowchart") }

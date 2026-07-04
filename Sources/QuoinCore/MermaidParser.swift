@@ -31,6 +31,7 @@ public struct Flowchart: Hashable, Sendable {
         case stadium        // A([Label])
         case diamond        // A{Label}
         case circle         // A((Label))
+        case cylinder       // A[(Label)] — database
         case stateStart     // state diagram [*] as a source: filled dot
         case stateEnd       // state diagram [*] as a target: ringed dot
     }
@@ -387,6 +388,9 @@ public enum MermaidParser {
         }
         if let label = stripped("([", "])") {
             return Flowchart.Node(id: id, label: label, shape: .stadium)
+        }
+        if let label = stripped("[(", ")]") {
+            return Flowchart.Node(id: id, label: label, shape: .cylinder)
         }
         if let label = stripped("[", "]") {
             return Flowchart.Node(id: id, label: label, shape: .rectangle)

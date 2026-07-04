@@ -191,6 +191,14 @@ enum DiagramRenderer {
                 context.restoreGState()
                 continue
             }
+            if node.shape == .cylinder {
+                context.restoreGState()
+                let capH = drawCylinder(node.frame, fill: fill, stroke: stroke, in: context)
+                // Center the label in the body, below the top cap.
+                drawText(node.label, center: CGPoint(x: node.frame.midX, y: node.frame.midY + capH / 2),
+                         size: 12, weight: .medium, color: theme.ink, in: context)
+                continue
+            }
 
             let path: CGPath
             switch node.shape {
@@ -205,6 +213,8 @@ enum DiagramRenderer {
                 path = CGPath(ellipseIn: node.frame, transform: nil)
             case .diamond:
                 path = diamondPath(node.frame)
+            case .cylinder: // handled above with a continue; keep exhaustive
+                path = CGPath(roundedRect: node.frame, cornerWidth: 4, cornerHeight: 4, transform: nil)
             }
             context.restoreGState()
             fillStrokeShape(path, fill: fill, stroke: stroke, in: context)
@@ -326,6 +336,48 @@ enum DiagramRenderer {
         context.strokeEllipse(in: frame.insetBy(dx: 1, dy: 1))
         context.setFillColor(resolvedCGColor(color))
         context.fillEllipse(in: frame.insetBy(dx: 4.5, dy: 4.5))
+    }
+
+    /// A database cylinder: rectangular body with an elliptical top cap and a
+    /// bottom front arc. The silhouette (sides + top-back and bottom-front
+    /// arcs) is filled and stroked, then the top's visible front rim is drawn.
+    /// Returns the cap half-height so the caller can center the label below it.
+    @discardableResult
+    private static func drawCylinder(
+        _ f: CGRect, fill: PlatformColor, stroke: PlatformColor, in context: CGContext
+    ) -> CGFloat {
+        let capH = min(f.height * 0.14, 7)
+        let bodyTop = f.minY + capH
+        let bodyBottom = f.maxY - capH
+
+        let silhouette = CGMutablePath()
+        silhouette.move(to: CGPoint(x: f.minX, y: bodyTop))
+        silhouette.addLine(to: CGPoint(x: f.minX, y: bodyBottom))
+        silhouette.addQuadCurve(to: CGPoint(x: f.maxX, y: bodyBottom),
+                                control: CGPoint(x: f.midX, y: bodyBottom + capH * 2)) // front arc
+        silhouette.addLine(to: CGPoint(x: f.maxX, y: bodyTop))
+        silhouette.addQuadCurve(to: CGPoint(x: f.minX, y: bodyTop),
+                                control: CGPoint(x: f.midX, y: bodyTop - capH * 2))     // back arc
+        silhouette.closeSubpath()
+
+        context.saveGState()
+        context.setFillColor(resolvedCGColor(fill))
+        context.addPath(silhouette)
+        context.fillPath()
+        context.setStrokeColor(resolvedCGColor(stroke))
+        context.setLineWidth(1)
+        context.addPath(silhouette)
+        context.strokePath()
+
+        // The top cap's visible front rim (bulging down into the body).
+        let rim = CGMutablePath()
+        rim.move(to: CGPoint(x: f.minX, y: bodyTop))
+        rim.addQuadCurve(to: CGPoint(x: f.maxX, y: bodyTop),
+                         control: CGPoint(x: f.midX, y: bodyTop + capH * 2))
+        context.addPath(rim)
+        context.strokePath()
+        context.restoreGState()
+        return capH
     }
 
     /// Diamond (decision / choice) path inscribed in `f`.
