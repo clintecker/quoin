@@ -140,57 +140,18 @@ public struct AttributedRenderer {
                 output.append(fragment)
             }
             if index < document.blocks.count - 1 {
-                // Boxed blocks (callouts, code, tables, diagrams, the
-                // front-matter chip) get extra air in the separator so two
-                // adjacent cards never touch borders. The separator is not
-                // part of either block's decoration range, so this widens the
-                // external gap without padding the box interiors.
-                let separator = NSMutableAttributedString(string: "\n", attributes: bodyAttributes())
-                let nextKind = document.blocks[index + 1].kind
-                // A heading must hug the card it introduces, so only add the
-                // extra card air after a card, or before a card that isn't
-                // being introduced by a heading.
-                let currentIsHeading: Bool = { if case .heading = block.kind { return true } else { return false } }()
-                if isCard(block.kind) || (isCard(nextKind) && !currentIsHeading) {
-                    // A genuine short empty paragraph guarantees an external
-                    // gap between card boxes. Paragraph-spacing on the plain
-                    // separator alone is unreliable — that newline terminates
-                    // the previous paragraph and inherits its style — so we
-                    // append a dedicated low spacer line instead.
-                    var spacer = bodyAttributes()
-                    spacer[.font] = PlatformFont.systemFont(ofSize: 14)
-                    let spacerStyle = NSMutableParagraphStyle()
-                    spacerStyle.lineHeightMultiple = 1
-                    spacerStyle.paragraphSpacing = 0
-                    spacer[.paragraphStyle] = spacerStyle
-                    separator.append(NSAttributedString(string: "\n", attributes: spacer))
-                }
-                output.append(separator)
+                output.append(blockSeparator(after: block.kind, before: document.blocks[index + 1].kind))
             }
             blockRanges[block.id] = NSRange(location: start, length: output.length - start)
         }
 
         // Footnotes gather at document end: 12/1.6 secondary, top hairline.
         if !document.footnotes.isEmpty {
-            output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
-            output.append(renderThematicBreak())
-            for footnote in document.footnotes {
-                output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
-                let start = output.length
-                var marker = bodyAttributes()
-                marker[.font] = PlatformFont.systemFont(ofSize: 12, weight: .semibold)
-                marker[.foregroundColor] = theme.accent
-                output.append(NSAttributedString(string: "\(footnote.index). ", attributes: marker))
-                for block in footnote.blocks {
-                    let body = NSMutableAttributedString(attributedString: render(block: block, depth: 0, document: document))
-                    let full = NSRange(location: 0, length: body.length)
-                    body.addAttribute(.font, value: PlatformFont.systemFont(ofSize: 12), range: full)
-                    body.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: full)
-                    output.append(body)
-                }
-                if let firstBlock = footnote.blocks.first {
-                    blockRanges[firstBlock.id] = NSRange(location: start, length: output.length - start)
-                }
+            let base = output.length
+            let (footnoteText, footnoteRanges) = renderFootnotes(document)
+            output.append(footnoteText)
+            for (id, range) in footnoteRanges {
+                blockRanges[id] = NSRange(location: base + range.location, length: range.length)
             }
         }
         // Keep only fragments for blocks still present; drops removed blocks.
@@ -202,6 +163,61 @@ public struct AttributedRenderer {
             activeEditableRange: activeEditableRange,
             activeSourceText: activeSourceText
         )
+    }
+
+    /// The inter-block separator. Boxed blocks (callouts, code, tables,
+    /// diagrams, the front-matter chip) get extra air so two adjacent cards
+    /// never touch borders; the separator sits outside either block's
+    /// decoration range, so this widens the external gap without padding the
+    /// box interiors. A heading hugs the card it introduces, so the extra air
+    /// is added only after a card, or before a card not introduced by a heading.
+    private func blockSeparator(after currentKind: BlockKind, before nextKind: BlockKind) -> NSAttributedString {
+        let separator = NSMutableAttributedString(string: "\n", attributes: bodyAttributes())
+        let currentIsHeading: Bool = { if case .heading = currentKind { return true } else { return false } }()
+        if isCard(currentKind) || (isCard(nextKind) && !currentIsHeading) {
+            // A genuine short empty paragraph guarantees the external gap.
+            // Paragraph-spacing on the plain separator alone is unreliable —
+            // that newline terminates the previous paragraph and inherits its
+            // style — so append a dedicated low spacer line instead.
+            var spacer = bodyAttributes()
+            spacer[.font] = PlatformFont.systemFont(ofSize: 14)
+            let spacerStyle = NSMutableParagraphStyle()
+            spacerStyle.lineHeightMultiple = 1
+            spacerStyle.paragraphSpacing = 0
+            spacer[.paragraphStyle] = spacerStyle
+            separator.append(NSAttributedString(string: "\n", attributes: spacer))
+        }
+        return separator
+    }
+
+    /// The footnote section appended at document end (12/1.6 secondary text
+    /// under a top hairline). Returns the rendered run plus each footnote's
+    /// first-block range *relative to the run's start*; the caller offsets
+    /// them by the append position.
+    private func renderFootnotes(_ document: QuoinDocument) -> (NSAttributedString, [BlockID: NSRange]) {
+        let output = NSMutableAttributedString()
+        var ranges: [BlockID: NSRange] = [:]
+        output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+        output.append(renderThematicBreak())
+        for footnote in document.footnotes {
+            output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+            let start = output.length
+            var marker = bodyAttributes()
+            marker[.font] = PlatformFont.systemFont(ofSize: 12, weight: .semibold)
+            marker[.foregroundColor] = theme.accent
+            output.append(NSAttributedString(string: "\(footnote.index). ", attributes: marker))
+            for block in footnote.blocks {
+                let body = NSMutableAttributedString(attributedString: render(block: block, depth: 0, document: document))
+                let full = NSRange(location: 0, length: body.length)
+                body.addAttribute(.font, value: PlatformFont.systemFont(ofSize: 12), range: full)
+                body.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: full)
+                output.append(body)
+            }
+            if let firstBlock = footnote.blocks.first {
+                ranges[firstBlock.id] = NSRange(location: start, length: output.length - start)
+            }
+        }
+        return (output, ranges)
     }
 
     /// The active block's raw markdown, styled for in-place editing:
@@ -230,7 +246,7 @@ public struct AttributedRenderer {
         case .heading(let level, let inlines, _):
             content = renderHeading(level: level, inlines: inlines)
         case .paragraph(let inlines):
-            content = renderInlines(inlines, base: bodyAttributes(depth: depth))
+            content = renderInlines(inlines, base: bodyAttributes())
         case .codeBlock(let language, let code):
             content = renderCodeBlock(language: language, code: code)
         case .mermaid(let source):
@@ -345,24 +361,18 @@ public struct AttributedRenderer {
         let body = NSMutableAttributedString(string: code, attributes: attributes)
 
         // Native syntax highlighting: six token colors per the design spec.
+        // Character indices align with UTF-16 only for BMP text, so map each
+        // character offset to its UTF-16 offset. Prefix sums make every token's
+        // range O(1) instead of re-summing the string prefix per token.
         let chars = Array(code)
+        var utf16Offsets = [Int](repeating: 0, count: chars.count + 1)
+        for i in 0..<chars.count { utf16Offsets[i + 1] = utf16Offsets[i] + String(chars[i]).utf16.count }
         for token in SyntaxHighlighter.highlight(code: code, language: language) {
-            // Character indices align with UTF-16 only for BMP text; compute
-            // the UTF-16 range from the character range.
-            let prefix = String(chars[0..<token.range.lowerBound]).utf16.count
-            let length = String(chars[token.range.lowerBound..<min(token.range.upperBound, chars.count)]).utf16.count
-            let nsRange = NSRange(location: prefix, length: length)
+            let lower = token.range.lowerBound
+            let upper = min(token.range.upperBound, chars.count)
+            let nsRange = NSRange(location: utf16Offsets[lower], length: utf16Offsets[upper] - utf16Offsets[lower])
             guard nsRange.location + nsRange.length <= body.length else { continue }
-            let color: PlatformColor
-            switch token.kind {
-            case .keyword: color = Theme.CodeToken.keyword
-            case .function: color = Theme.CodeToken.function
-            case .type: color = Theme.CodeToken.type
-            case .comment: color = Theme.CodeToken.comment
-            case .string: color = Theme.CodeToken.string
-            case .number: color = Theme.CodeToken.number
-            }
-            body.addAttribute(.foregroundColor, value: color, range: nsRange)
+            body.addAttribute(.foregroundColor, value: codeTokenColor(token.kind), range: nsRange)
         }
 
         // Bottom padding inside the canvas: the last code paragraph carries it.
@@ -658,7 +668,7 @@ public struct AttributedRenderer {
         let output = NSMutableAttributedString()
         for (index, item) in items.enumerated() {
             if index > 0 {
-                output.append(NSAttributedString(string: "\n", attributes: bodyAttributes(depth: depth)))
+                output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
             }
             output.append(renderListItem(item, ordinal: ordered ? start + index : nil, depth: depth, document: document))
         }
@@ -963,12 +973,24 @@ public struct AttributedRenderer {
 
     // MARK: - Attribute helpers
 
-    private func bodyAttributes(depth: Int = 0) -> [NSAttributedString.Key: Any] {
+    private func bodyAttributes() -> [NSAttributedString.Key: Any] {
         [
             .font: theme.bodyFont(),
             .foregroundColor: theme.textColor,
             .paragraphStyle: paragraphStyle(),
         ]
+    }
+
+    /// Maps a highlighter token kind to its Graphite code color.
+    private func codeTokenColor(_ kind: SyntaxTokenKind) -> PlatformColor {
+        switch kind {
+        case .keyword: return Theme.CodeToken.keyword
+        case .function: return Theme.CodeToken.function
+        case .type: return Theme.CodeToken.type
+        case .comment: return Theme.CodeToken.comment
+        case .string: return Theme.CodeToken.string
+        case .number: return Theme.CodeToken.number
+        }
     }
 
     private func paragraphStyle() -> NSMutableParagraphStyle {
