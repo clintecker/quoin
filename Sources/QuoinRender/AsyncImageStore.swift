@@ -25,6 +25,15 @@ final class AsyncImageStore: @unchecked Sendable {
         cache.countLimit = 200
     }
 
+    /// Synchronous locked mutation — safe to call from async contexts because
+    /// the closure contains no suspension points (Swift 6 forbids raw
+    /// lock()/unlock() in async functions for exactly that hazard).
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
     /// Cache key includes mtime so an edited image refreshes on reload.
     private func key(for url: URL, maxDimension: CGFloat) -> String {
         let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date)
@@ -38,10 +47,11 @@ final class AsyncImageStore: @unchecked Sendable {
             return hit
         }
 
-        lock.lock()
-        let alreadyPending = pending.contains(cacheKey)
-        if !alreadyPending { pending.insert(cacheKey) }
-        lock.unlock()
+        let alreadyPending = withLock {
+            let pending = self.pending.contains(cacheKey)
+            if !pending { self.pending.insert(cacheKey) }
+            return pending
+        }
         guard !alreadyPending else { return nil }
 
         Task.detached(priority: .utility) { [weak self] in
@@ -50,9 +60,7 @@ final class AsyncImageStore: @unchecked Sendable {
             if let decoded {
                 self.cache.setObject(decoded, forKey: cacheKey as NSString)
             }
-            self.lock.lock()
-            self.pending.remove(cacheKey)
-            self.lock.unlock()
+            self.withLock { _ = self.pending.remove(cacheKey) }
             if decoded != nil { onReady() }
         }
         return nil
