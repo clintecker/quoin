@@ -37,10 +37,16 @@ enum DiagramRenderer {
             }
             let size: CGSize
             let draw: (CGContext) -> Void
+            // Edge polylines whose routes or endpoint markers can reach past the
+            // layout's own `size`; folded into the content bounds below so they
+            // never clip. Self-contained types (pie/sequence/gantt) leave this
+            // empty — their `size` already covers everything they draw.
+            var edgePolylines: [[CGPoint]] = []
             switch diagram {
             case .flowchart(let chart):
                 let layout = DiagramLayoutEngine.layout(chart, measure: measure)
                 size = layout.size
+                edgePolylines = layout.edges.map(\.points)
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
             case .sequence(let sequence):
                 let layout = DiagramLayoutEngine.layout(sequence, measure: measure)
@@ -53,14 +59,17 @@ enum DiagramRenderer {
             case .classDiagram(let classDiagram):
                 let layout = DiagramLayoutEngine.layout(classDiagram, measure: measure)
                 size = layout.size
+                edgePolylines = layout.edges.map(\.points)
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
             case .er(let er):
                 let layout = DiagramLayoutEngine.layout(er, measure: measure)
                 size = layout.size
+                edgePolylines = layout.edges.map(\.points)
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
             case .state(let state):
                 let layout = DiagramLayoutEngine.layout(state, measure: measure)
                 size = layout.size
+                edgePolylines = layout.edges.map(\.points)
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
             case .gantt(let gantt):
                 let layout = DiagramLayoutEngine.layout(gantt, measure: measure)
@@ -69,17 +78,25 @@ enum DiagramRenderer {
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 
-            // Render into a padded canvas so any edge marker, arrowhead, or
-            // nudged label that reaches slightly past the layout's own bounds
-            // can't clip — a uniform safety border for every diagram type.
-            let pad: CGFloat = 10
-            let canvasSize = CGSize(width: size.width + pad * 2, height: size.height + pad * 2)
+            // The true drawn bounds: the layout's `size` (which covers boxes and
+            // clamped labels) unioned with every edge point inflated by the
+            // maximum marker reach — crow's feet, UML markers, and arrowheads
+            // reach inward along the edge (already spanned) but spread a few
+            // points perpendicular, so a uniform inflate of the route points
+            // captures them. Translating to this box's origin also rescues any
+            // route that ran to a negative coordinate.
+            let bounds = contentBounds(size: size, edges: edgePolylines)
+            guard bounds.width < 4000, bounds.height < 4000 else { return nil }
+            let pad: CGFloat = 6
+            let canvasSize = CGSize(width: bounds.width + pad * 2, height: bounds.height + pad * 2)
+            let originX = pad - bounds.minX
+            let originY = pad - bounds.minY
 
             #if canImport(AppKit)
             let appearance = NSAppearance(named: theme.prefersDark ? .darkAqua : .aqua)
             let image = NSImage(size: canvasSize, flipped: true) { _ in
                 guard let context = NSGraphicsContext.current?.cgContext else { return false }
-                context.translateBy(x: pad, y: pad)
+                context.translateBy(x: originX, y: originY)
                 let render = { draw(context) }
                 if let appearance {
                     appearance.performAsCurrentDrawingAppearance(render)
@@ -91,7 +108,7 @@ enum DiagramRenderer {
             #else
             let renderer = UIGraphicsImageRenderer(size: canvasSize)
             let image = renderer.image { rendererContext in
-                rendererContext.cgContext.translateBy(x: pad, y: pad)
+                rendererContext.cgContext.translateBy(x: originX, y: originY)
                 draw(rendererContext.cgContext)
             }
             #endif
@@ -330,6 +347,26 @@ enum DiagramRenderer {
     /// Midpoint by arc length along the polyline — where an edge label sits.
     private static func polylineMidpoint(_ points: [CGPoint]) -> CGPoint {
         polylinePoint(points, fraction: 0.5)
+    }
+
+    /// The true bounding box of everything a box/flowchart diagram draws: the
+    /// layout's own `size` (boxes + clamped labels) unioned with every edge
+    /// point inflated by the maximum endpoint-marker reach. Markers point
+    /// inward along the edge (already inside the point-to-point span) and only
+    /// spread a few points perpendicular, so a uniform inflate captures them
+    /// without having to know each marker's exact geometry.
+    private static func contentBounds(size: CGSize, edges: [[CGPoint]]) -> CGRect {
+        var box = CGRect(origin: .zero, size: size)
+        // Widest perpendicular marker spread across all types: the ER crow's
+        // foot / zero-circle and the UML triangle sit within this of the line.
+        let markerReach: CGFloat = 8
+        for points in edges {
+            for p in points {
+                box = box.union(CGRect(x: p.x - markerReach, y: p.y - markerReach,
+                                       width: markerReach * 2, height: markerReach * 2))
+            }
+        }
+        return box
     }
 
     /// A filled arrowhead at `tip`. The head fills the canvas color first to
