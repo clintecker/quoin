@@ -284,14 +284,20 @@ extension DiagramLayoutEngine {
         func attach(_ id: String, cross: CGFloat, rightOrBottom: Bool) -> CGPoint {
             let f = frames[id]!
             let shape = shapeOf[id] ?? .rectangle
+            // A decision meets its edges at a vertex, not a slanted face: enter
+            // at the top/bottom point (TD) or the left/right point (LR), with
+            // the cross-axis alignment happening in the layer gap. Attaching to
+            // a slant leaves the arrowhead stuck on the diamond's side.
+            if shape == .diamond {
+                return horizontal
+                    ? CGPoint(x: rightOrBottom ? f.maxX : f.minX, y: f.midY)
+                    : CGPoint(x: f.midX, y: rightOrBottom ? f.maxY : f.minY)
+            }
             if horizontal {
                 let y = min(max(cross, f.minY), f.maxY)
                 let hh = max(f.height / 2, 0.001)
                 var x = rightOrBottom ? f.maxX : f.minX
                 switch shape {
-                case .diamond:
-                    let dx = (f.width / 2) * (1 - min(abs(y - f.midY) / hh, 1))
-                    x = rightOrBottom ? f.midX + dx : f.midX - dx
                 case .circle, .stateStart, .stateEnd:
                     let dx = (f.width / 2) * sqrt(max(0, 1 - pow((y - f.midY) / hh, 2)))
                     x = rightOrBottom ? f.midX + dx : f.midX - dx
@@ -303,9 +309,6 @@ extension DiagramLayoutEngine {
                 let hw = max(f.width / 2, 0.001)
                 var y = rightOrBottom ? f.maxY : f.minY
                 switch shape {
-                case .diamond:
-                    let dy = (f.height / 2) * (1 - min(abs(x - f.midX) / hw, 1))
-                    y = rightOrBottom ? f.midY + dy : f.midY - dy
                 case .circle, .stateStart, .stateEnd:
                     let dy = (f.height / 2) * sqrt(max(0, 1 - pow((x - f.midX) / hw, 2)))
                     y = rightOrBottom ? f.midY + dy : f.midY - dy

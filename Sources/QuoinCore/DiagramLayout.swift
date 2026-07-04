@@ -386,6 +386,11 @@ public enum DiagramLayoutEngine {
             y += layerHeight + layerGap
         }
 
+        // Antiparallel detection: an edge whose reverse also exists must not
+        // share the reverse's column, or the two render as one line.
+        var directedPairs = Set<String>()
+        for edge in routingEdges { directedPairs.insert(edge.from + "\u{1}" + edge.to) }
+
         // Route each edge through its chain waypoints.
         var routes: [[CGPoint]] = []
         var maxX = crossExtent + margin
@@ -409,8 +414,14 @@ public enum DiagramLayoutEngine {
             let overlapLo = max(fromFrame.minX, toFrame.minX) + 4
             let overlapHi = min(fromFrame.maxX, toFrame.maxX) - 4
             if dummyCenters.isEmpty, overlapLo <= overlapHi {
-                let x = min(max((fromFrame.midX + toFrame.midX) / 2, overlapLo), overlapHi)
+                var x = min(max((fromFrame.midX + toFrame.midX) / 2, overlapLo), overlapHi)
                 let down = toFrame.midY >= fromFrame.midY
+                // If a reverse edge exists between the same pair, shift the two
+                // to opposite sides of the shared column so they read as two
+                // distinct parallel lines (e.g. state "connect" / "fail").
+                if directedPairs.contains(chain[chain.count - 1] + "\u{1}" + chain[0]) {
+                    x = min(max(x + (down ? 7 : -7), overlapLo), overlapHi)
+                }
                 let start = CGPoint(x: x, y: down ? fromFrame.maxY : fromFrame.minY)
                 let end = CGPoint(x: x, y: down ? toFrame.minY : toFrame.maxY)
                 for p in [start, end] { maxX = max(maxX, p.x) }
