@@ -255,6 +255,26 @@ enum DiagramRenderer {
         context.strokePath()
     }
 
+    /// Strokes a set of edge shafts, batching by dash style so each group is a
+    /// single composite stroke — crossing edges then don't stack their
+    /// translucent strokes into darker seams. Each entry is (polyline, dashed).
+    private static func strokeEdgeShafts(
+        _ shafts: [(points: [CGPoint], dashed: Bool)], color: PlatformColor, in context: CGContext
+    ) {
+        for dashed in [false, true] {
+            let group = shafts.filter { $0.dashed == dashed }
+            guard !group.isEmpty else { continue }
+            context.saveGState()
+            context.setStrokeColor(resolvedCGColor(color))
+            context.setLineWidth(1)
+            if dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
+            context.beginPath()
+            for shaft in group { appendRoundedPolyline(shaft.points, to: context) }
+            context.strokePath()
+            context.restoreGState()
+        }
+    }
+
     /// Appends a rounded polyline as a new subpath *without* stroking, so many
     /// edges can be accumulated into one path and stroked in a single pass.
     /// A single stroke composites overlapping segments as one region, so
@@ -678,18 +698,12 @@ enum DiagramRenderer {
         let hairline = theme.ink.withAlphaComponent(0.18)
         let fill = theme.accent.withAlphaComponent(0.06)
 
+        // Batch shafts by dash style so crossing edges don't stack alpha.
+        strokeEdgeShafts(layout.edges.map { ($0.points, $0.kind.dashed) }, color: stroke, in: context)
         for edge in layout.edges {
-            context.saveGState()
-            context.setStrokeColor(resolvedCGColor(stroke))
-            context.setLineWidth(1)
-            if edge.kind.dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            strokePolyline(edge.points, in: context)
-            context.restoreGState()
-
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawRelationMarker(edge.kind, at: edge.end, from: approach,
                                stroke: stroke, canvas: theme.canvas, in: context)
-
             if let label = edge.label, !label.isEmpty {
                 drawEdgeLabel(label, at: polylineMidpoint(edge.points), theme: theme, in: context)
             }
@@ -781,14 +795,9 @@ enum DiagramRenderer {
         let hairline = theme.ink.withAlphaComponent(0.18)
         let fill = theme.accent.withAlphaComponent(0.06)
 
+        // Batch shafts by dash style so crossing edges don't stack alpha.
+        strokeEdgeShafts(layout.edges.map { ($0.points, !$0.identifying) }, color: stroke, in: context)
         for edge in layout.edges {
-            context.saveGState()
-            context.setStrokeColor(resolvedCGColor(stroke))
-            context.setLineWidth(1)
-            if !edge.identifying { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            strokePolyline(edge.points, in: context)
-            context.restoreGState()
-
             let fromApproach = edge.points.count > 1 ? edge.points[1] : edge.end
             let toApproach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawCardinality(edge.fromCard, at: edge.start, from: fromApproach, color: stroke, in: context)
@@ -853,17 +862,19 @@ enum DiagramRenderer {
             context.restoreGState()
         }
 
-        // Transitions (including those flattened out of composites).
-        for edge in layout.edges {
-            context.saveGState()
-            context.setStrokeColor(resolvedCGColor(stroke))
-            context.setLineWidth(1)
-            strokePolyline(edge.points, in: context)
-            context.restoreGState()
+        // Transitions (including those flattened out of composites): batch the
+        // shafts into one stroke so crossing lines don't stack their alpha.
+        context.saveGState()
+        context.setStrokeColor(resolvedCGColor(stroke))
+        context.setLineWidth(1)
+        context.beginPath()
+        for edge in layout.edges { appendRoundedPolyline(edge.points, to: context) }
+        context.strokePath()
+        context.restoreGState()
 
+        for edge in layout.edges {
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawArrowhead(at: edge.end, from: approach, color: stroke, canvas: theme.canvas, in: context)
-
             if let label = edge.label, !label.isEmpty {
                 drawEdgeLabel(label, at: polylineMidpoint(edge.points), theme: theme, in: context)
             }
