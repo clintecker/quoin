@@ -307,15 +307,17 @@ enum DiagramRenderer {
         context.addLine(to: points.last!)
     }
 
-    /// Midpoint by arc length along the polyline — where an edge label sits.
-    private static func polylineMidpoint(_ points: [CGPoint]) -> CGPoint {
+    /// Point at `fraction` of the arc length along the polyline (0 = start,
+    /// 1 = end). `0.5` is the midpoint where an edge label sits by default;
+    /// other fractions let sibling labels slide apart along their edges.
+    private static func polylinePoint(_ points: [CGPoint], fraction: CGFloat) -> CGPoint {
         guard points.count > 1 else { return points.first ?? .zero }
         var total: CGFloat = 0
         for i in 1..<points.count { total += hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y) }
-        var remaining = total / 2
+        var remaining = total * min(max(fraction, 0), 1)
         for i in 1..<points.count {
             let seg = hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y)
-            if remaining <= seg {
+            if remaining <= seg || i == points.count - 1 {
                 let t = seg == 0 ? 0 : remaining / seg
                 return CGPoint(x: points[i-1].x + (points[i].x - points[i-1].x) * t,
                                y: points[i-1].y + (points[i].y - points[i-1].y) * t)
@@ -323,6 +325,11 @@ enum DiagramRenderer {
             remaining -= seg
         }
         return points.last!
+    }
+
+    /// Midpoint by arc length along the polyline — where an edge label sits.
+    private static func polylineMidpoint(_ points: [CGPoint]) -> CGPoint {
+        polylinePoint(points, fraction: 0.5)
     }
 
     /// A filled arrowhead at `tip`. The head fills the canvas color first to
@@ -371,27 +378,33 @@ enum DiagramRenderer {
         // Keep the whole label inside the canvas so a sideways nudge can't push
         // it off the edge and clip.
         func clampX(_ x: CGFloat) -> CGFloat { min(max(x, w / 2), max(w / 2, bounds.width - w / 2)) }
-        var candidates: [CGPoint] = []
-        for i in 0..<max(points.count - 1, 1) {
-            let a = points[i], b = points[min(i + 1, points.count - 1)]
-            candidates.append(CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2))
-        }
+        func clampY(_ y: CGFloat) -> CGFloat { min(max(y, h / 2), max(h / 2, bounds.height - h / 2)) }
         func overlap(_ r1: CGRect, _ r2: CGRect) -> CGFloat {
             let ix = max(0, min(r1.maxX, r2.maxX) - max(r1.minX, r2.minX))
             let iy = max(0, min(r1.maxY, r2.maxY) - max(r1.minY, r2.minY))
             return ix * iy
         }
+        // Sample along the edge's arc length, not just at the midpoint, so two
+        // antiparallel edges between the same box pair can slide their labels
+        // apart along their lines instead of stacking into one phrase. Each
+        // sample is also nudged sideways to clear a box or a sibling label.
+        let fractions: [CGFloat] = [0.5, 0.38, 0.62, 0.27, 0.73]
         let nudges: [CGFloat] = [0, w / 2 + 5, -(w / 2 + 5), w + 9, -(w + 9)]
-        var best = CGPoint(x: clampX(candidates[0].x), y: candidates[0].y)
+        let mid = polylineMidpoint(points)
+        var best = CGPoint(x: clampX(mid.x), y: clampY(mid.y))
         var bestScore = CGFloat.greatestFiniteMagnitude
-        for c in candidates {
+        for f in fractions {
+            let base = polylinePoint(points, fraction: f)
             for dx in nudges {
-                let cx = clampX(c.x + dx)
-                let rect = CGRect(x: cx - w / 2, y: c.y - h / 2, width: w, height: h)
-                var score: CGFloat = abs(dx) * 0.15
+                let cx = clampX(base.x + dx)
+                let cy = clampY(base.y)
+                let rect = CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
+                // Prefer the midpoint and the line itself; but let real overlap
+                // (a box, or a sibling label) easily outvote those preferences.
+                var score: CGFloat = abs(dx) * 0.15 + abs(f - 0.5) * 18
                 for o in obstacles { score += overlap(rect, o.insetBy(dx: -3, dy: -3)) * 4 }
-                for p in placed { score += overlap(rect, p) * 2 }
-                if score < bestScore { bestScore = score; best = CGPoint(x: cx, y: c.y) }
+                for p in placed { score += overlap(rect, p.insetBy(dx: -4, dy: -4)) * 6 }
+                if score < bestScore { bestScore = score; best = CGPoint(x: cx, y: cy) }
             }
         }
         placed.append(CGRect(x: best.x - w / 2, y: best.y - h / 2, width: w, height: h))
