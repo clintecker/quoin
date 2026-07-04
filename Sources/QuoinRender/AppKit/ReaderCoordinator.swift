@@ -138,54 +138,20 @@ extension MarkdownReaderView {
                affectedCharRange.location + affectedCharRange.length <= active.location + active.length {
                 let relStart = affectedCharRange.location - active.location
                 let relRange = relStart..<(relStart + affectedCharRange.length)
-                guard let byteRange = EditMapping.utf8Range(inText: sourceText, utf16Range: relRange) else {
+
+                // Classify the keystroke (smart-pair wrap / complete /
+                // type-over, or a plain replacement) as one pure intent, then
+                // apply its single uniform edit: UTF-16 range → bytes, caret
+                // offset within the replacement → bytes.
+                let intent = EditIntent.classify(
+                    sourceText: sourceText, range: relRange, replacement: replacementString ?? ""
+                )
+                let (utf16Range, text, caret) = intent.edit
+                guard let byteRange = EditMapping.utf8Range(inText: sourceText, utf16Range: utf16Range) else {
                     return false
                 }
-
-                // Smart pairs, wrapping variant: a delimiter typed over a
-                // non-empty selection wraps it (select a word, press `*` →
-                // `*word*`) instead of replacing it.
-                if affectedCharRange.length > 0,
-                   let replacement = replacementString,
-                   replacement.count == 1,
-                   let character = replacement.first {
-                    let selected = (sourceText as NSString).substring(
-                        with: NSRange(location: relStart, length: affectedCharRange.length)
-                    )
-                    if let wrap = SmartPairs.wrap(
-                        typing: character,
-                        selection: selected,
-                        inText: sourceText,
-                        selectionStartUTF16: relStart
-                    ) {
-                        let caretDelta = EditMapping.utf8Offset(inText: wrap.insert, utf16Offset: wrap.caretOffset)
-                        onEdit(byteRange, wrap.insert, caretDelta)
-                        return false
-                    }
-                }
-
-                // Smart pairs: a lone delimiter keystroke may complete to a
-                // pair (caret inside) or type over an existing closer.
-                if affectedCharRange.length == 0,
-                   let replacement = replacementString,
-                   replacement.count == 1,
-                   let character = replacement.first,
-                   let completion = SmartPairs.completion(typing: character, inText: sourceText, caretUTF16: relStart) {
-                    if completion.insert.isEmpty {
-                        // Type-over: rewrite the existing closer with itself,
-                        // which just advances the caret past it.
-                        let overRange = relStart..<(relStart + 1)
-                        guard let overBytes = EditMapping.utf8Range(inText: sourceText, utf16Range: overRange) else { return false }
-                        let existing = (sourceText as NSString).substring(with: NSRange(location: relStart, length: 1))
-                        onEdit(overBytes, existing, existing.utf8.count)
-                    } else {
-                        let caretDelta = EditMapping.utf8Offset(inText: completion.insert, utf16Offset: completion.caretOffset)
-                        onEdit(byteRange, completion.insert, caretDelta)
-                    }
-                    return false
-                }
-
-                onEdit(byteRange, replacementString ?? "", nil)
+                let caretDelta = caret.flatMap { EditMapping.utf8Offset(inText: text, utf16Offset: $0) }
+                onEdit(byteRange, text, caretDelta)
                 return false
             }
 
