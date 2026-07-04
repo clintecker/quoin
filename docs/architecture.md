@@ -153,11 +153,14 @@ measurer, so it unit-tests without fonts:
   (vertical runs in the channels, horizontal jogs confined to inter-layer
   gaps); attachment points project onto node outlines. Edge labels are placed
   by a collision-scoring pass so they don't overprint boxes.
-- **Box diagrams (class/ER/state):** shared `layeredPlacement` +
-  `routeBoxEdges` — per-face attachment slots sorted by the opposite
-  endpoint's cross coordinate, orthogonal elbows with rounded corners.
-  Composite states lay out recursively; each child scope becomes a fixed-size
-  titled container in its parent, then flattens to absolute coordinates.
+- **Box diagrams (class/ER/state):** shared `layeredRoutes` — the same
+  dummy-node layered routing as the flowchart, top-down: layers, dummy nodes
+  for multi-layer edges reserving channels, barycenter ordering, coordinate
+  assignment, then orthogonal routing through each edge's chain. Near-aligned
+  edges snap to a shared column so they stay straight; same-layer edges take a
+  short side-face route. Composite states lay out recursively; each child scope
+  becomes a fixed-size titled container in its parent, then flattens to
+  absolute coordinates.
 
 `DiagramRenderer` (QuoinRender) draws layouts with CoreGraphics — nodes,
 polylines, arrowheads, UML markers, crow's feet — and caches rendered images
