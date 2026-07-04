@@ -155,8 +155,8 @@ justification in the TRD first; the default answer is no.
 
 ## Workflow
 
-- Commit and push after every meaningful unit of work, to BOTH `main` and
-  the active session branch (user directive).
+- Commit and push after every meaningful unit of work, to `main` (user
+  directive).
 - CI runs `swift test` on a macOS runner (`.github/workflows/ci.yml`).
   Cloud/Linux sessions have no Swift toolchain — CI is the compile feedback
   loop; keep it green.
