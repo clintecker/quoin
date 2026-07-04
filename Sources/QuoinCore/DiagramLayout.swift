@@ -330,6 +330,7 @@ public enum DiagramLayoutEngine {
         var allSizes = sizes
         var chains: [[String]] = []
         var segmentEdges: [(String, String)] = []
+        var dummies: Set<String> = []
         for (index, edge) in routingEdges.enumerated() {
             guard let lu = layerOf[edge.from], let lv = layerOf[edge.to] else { chains.append([]); continue }
             let lo = min(lu, lv), hi = max(lu, lv)
@@ -343,6 +344,7 @@ public enum DiagramLayoutEngine {
                 let dummy = "\u{a7}b\(index).\(layer)"
                 layers[layer].append(dummy)
                 allSizes[dummy] = CGSize(width: 16, height: 1)
+                dummies.insert(dummy)
                 midByLayer.append((layer, dummy))
             }
             let mids = (lu < lv ? midByLayer : midByLayer.reversed()).map(\.id)
@@ -351,25 +353,35 @@ public enum DiagramLayoutEngine {
             for k in 0..<(chain.count - 1) { segmentEdges.append((chain[k], chain[k + 1])) }
         }
 
-        // Order + place (top-down).
+        // Order, then assign x with Brandes–Köpf (top-down; cross axis is x) so
+        // dummy channels and box columns align into straight runs.
         let ordered = barycenterOrder(layers: layers, edges: segmentEdges)
+        var breadth: [String: CGFloat] = [:]
+        for layer in ordered { for id in layer { breadth[id] = allSizes[id]?.width ?? 0 } }
+        let xCenter = brandesKoepfX(
+            layers: ordered, segments: segmentEdges, breadth: breadth,
+            dummies: dummies, minGap: nodeGap)
+        var minCross = CGFloat.greatestFiniteMagnitude
+        var maxCross = -CGFloat.greatestFiniteMagnitude
+        for layer in ordered {
+            for id in layer {
+                let w = allSizes[id]?.width ?? 0
+                let c = xCenter[id] ?? 0
+                minCross = min(minCross, c - w / 2)
+                maxCross = max(maxCross, c + w / 2)
+            }
+        }
+        let shiftX = margin - (minCross.isFinite ? minCross : 0)
+        let crossExtent = maxCross > minCross ? maxCross - minCross : 0
+
         var frames: [String: CGRect] = [:]
         var y = margin
-        var crossExtent: CGFloat = 0
-        var layerWidths: [CGFloat] = []
         for layer in ordered {
-            let total = layer.reduce(CGFloat(0)) { $0 + (allSizes[$1]?.width ?? 0) }
-                + CGFloat(max(layer.count - 1, 0)) * nodeGap
-            layerWidths.append(total)
-            crossExtent = max(crossExtent, total)
-        }
-        for (layerIndex, layer) in ordered.enumerated() {
             let layerHeight = layer.map { allSizes[$0]?.height ?? 0 }.max() ?? 0
-            var x = margin + (crossExtent - layerWidths[layerIndex]) / 2
             for id in layer {
                 let size = allSizes[id] ?? .zero
-                frames[id] = CGRect(x: x, y: y, width: size.width, height: size.height)
-                x += size.width + nodeGap
+                let cx = (xCenter[id] ?? 0) + shiftX
+                frames[id] = CGRect(x: cx - size.width / 2, y: y, width: size.width, height: size.height)
             }
             y += layerHeight + layerGap
         }
