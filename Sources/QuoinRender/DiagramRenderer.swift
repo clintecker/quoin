@@ -150,17 +150,7 @@ enum DiagramRenderer {
             context.setStrokeColor(resolvedCGColor(stroke))
             context.setLineWidth(1)
             if edge.dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            context.beginPath()
-            // Orthogonal polyline with softly rounded corners.
-            context.move(to: edge.points[0])
-            if edge.points.count > 2 {
-                for index in 1..<(edge.points.count - 1) {
-                    context.addArc(tangent1End: edge.points[index],
-                                   tangent2End: edge.points[index + 1], radius: 5)
-                }
-            }
-            context.addLine(to: edge.points.last!)
-            context.strokePath()
+            strokePolyline(edge.points, in: context)
             context.restoreGState()
 
             if edge.hasArrow {
@@ -175,15 +165,7 @@ enum DiagramRenderer {
                 let a = pts[(pts.count - 1) / 2]
                 let b = pts[pts.count / 2]
                 let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
-                let size = measure(label, size: 10.5)
-                let pad: CGFloat = 3
-                let rect = CGRect(
-                    x: mid.x - size.width / 2 - pad, y: mid.y - size.height / 2 - pad,
-                    width: size.width + pad * 2, height: size.height + pad * 2
-                )
-                context.setFillColor(resolvedCGColor(theme.canvas))
-                context.fill(rect)
-                drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
+                drawEdgeLabel(label, at: mid, theme: theme, in: context)
             }
         }
 
@@ -196,16 +178,12 @@ enum DiagramRenderer {
             // State-diagram terminals draw specially: a filled dot and a
             // ringed dot, in ink rather than the accent tint.
             if node.shape == .stateStart {
-                context.setFillColor(resolvedCGColor(theme.ink.withAlphaComponent(0.75)))
-                context.fillEllipse(in: node.frame)
+                drawStartTerminal(node.frame, color: theme.ink.withAlphaComponent(0.75), in: context)
                 context.restoreGState()
                 continue
             }
             if node.shape == .stateEnd {
-                context.setStrokeColor(resolvedCGColor(theme.ink.withAlphaComponent(0.75)))
-                context.strokeEllipse(in: node.frame.insetBy(dx: 1, dy: 1))
-                context.setFillColor(resolvedCGColor(theme.ink.withAlphaComponent(0.75)))
-                context.fillEllipse(in: node.frame.insetBy(dx: 4.5, dy: 4.5))
+                drawEndTerminal(node.frame, color: theme.ink.withAlphaComponent(0.75), in: context)
                 context.restoreGState()
                 continue
             }
@@ -222,13 +200,7 @@ enum DiagramRenderer {
             case .circle, .stateStart, .stateEnd: // terminals handled above
                 path = CGPath(ellipseIn: node.frame, transform: nil)
             case .diamond:
-                let p = CGMutablePath()
-                p.move(to: CGPoint(x: node.frame.midX, y: node.frame.minY))
-                p.addLine(to: CGPoint(x: node.frame.maxX, y: node.frame.midY))
-                p.addLine(to: CGPoint(x: node.frame.midX, y: node.frame.maxY))
-                p.addLine(to: CGPoint(x: node.frame.minX, y: node.frame.midY))
-                p.closeSubpath()
-                path = p
+                path = diamondPath(node.frame)
             }
             context.addPath(path)
             context.drawPath(using: .fillStroke)
@@ -295,6 +267,74 @@ enum DiagramRenderer {
         context.restoreGState()
     }
 
+    // MARK: - Shared drawing primitives
+
+    /// Draws an edge label centered on `mid` over a canvas-colored pad so the
+    /// routed line doesn't show through. Callers pick `mid` themselves — the
+    /// flowchart uses an index midpoint, box diagrams use `polylineMidpoint`.
+    private static func drawEdgeLabel(_ label: String, at mid: CGPoint, theme: Theme, in context: CGContext) {
+        let size = measure(label, size: 10.5)
+        let pad: CGFloat = 3
+        context.setFillColor(resolvedCGColor(theme.canvas))
+        context.fill(CGRect(
+            x: mid.x - size.width / 2 - pad, y: mid.y - size.height / 2 - pad,
+            width: size.width + pad * 2, height: size.height + pad * 2
+        ))
+        drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
+    }
+
+    /// Filled + hairline-stroked rounded rectangle — the shared node/box body.
+    private static func fillStrokeBox(
+        _ frame: CGRect, radius: CGFloat, fill: PlatformColor, stroke: PlatformColor, in context: CGContext
+    ) {
+        context.saveGState()
+        context.setFillColor(resolvedCGColor(fill))
+        context.setStrokeColor(resolvedCGColor(stroke))
+        context.setLineWidth(1)
+        context.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        context.drawPath(using: .fillStroke)
+        context.restoreGState()
+    }
+
+    /// State-machine start terminal: a solid filled dot.
+    private static func drawStartTerminal(_ frame: CGRect, color: PlatformColor, in context: CGContext) {
+        context.setFillColor(resolvedCGColor(color))
+        context.fillEllipse(in: frame)
+    }
+
+    /// State-machine end terminal: a ring around a solid dot.
+    private static func drawEndTerminal(_ frame: CGRect, color: PlatformColor, in context: CGContext) {
+        context.setStrokeColor(resolvedCGColor(color))
+        context.strokeEllipse(in: frame.insetBy(dx: 1, dy: 1))
+        context.setFillColor(resolvedCGColor(color))
+        context.fillEllipse(in: frame.insetBy(dx: 4.5, dy: 4.5))
+    }
+
+    /// Diamond (decision / choice) path inscribed in `f`.
+    private static func diamondPath(_ f: CGRect) -> CGPath {
+        let p = CGMutablePath()
+        p.move(to: CGPoint(x: f.midX, y: f.minY))
+        p.addLine(to: CGPoint(x: f.maxX, y: f.midY))
+        p.addLine(to: CGPoint(x: f.midX, y: f.maxY))
+        p.addLine(to: CGPoint(x: f.minX, y: f.midY))
+        p.closeSubpath()
+        return p
+    }
+
+    /// A self-bracketed horizontal hairline (compartment separators).
+    private static func strokeHLine(
+        y: CGFloat, from x0: CGFloat, to x1: CGFloat, color: PlatformColor, in context: CGContext
+    ) {
+        context.saveGState()
+        context.setStrokeColor(resolvedCGColor(color))
+        context.setLineWidth(1)
+        context.beginPath()
+        context.move(to: CGPoint(x: x0, y: y))
+        context.addLine(to: CGPoint(x: x1, y: y))
+        context.strokePath()
+        context.restoreGState()
+    }
+
     // MARK: - Sequence
 
     private static func draw(_ layout: SequenceLayout, theme: Theme, in context: CGContext) {
@@ -315,14 +355,7 @@ enum DiagramRenderer {
         }
 
         for head in layout.heads {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(theme.accent.withAlphaComponent(0.06)))
-            context.setStrokeColor(resolvedCGColor(stroke))
-            context.setLineWidth(1)
-            let path = CGPath(roundedRect: head.frame, cornerWidth: 6, cornerHeight: 6, transform: nil)
-            context.addPath(path)
-            context.drawPath(using: .fillStroke)
-            context.restoreGState()
+            fillStrokeBox(head.frame, radius: 6, fill: theme.accent.withAlphaComponent(0.06), stroke: stroke, in: context)
             drawText(head.label, center: CGPoint(x: head.frame.midX, y: head.frame.midY),
                      size: 12, weight: .medium, color: theme.ink, in: context)
         }
@@ -453,27 +486,12 @@ enum DiagramRenderer {
                                stroke: stroke, canvas: theme.canvas, in: context)
 
             if let label = edge.label, !label.isEmpty {
-                let mid = polylineMidpoint(edge.points)
-                let size = measure(label, size: 10.5)
-                let pad: CGFloat = 3
-                context.setFillColor(resolvedCGColor(theme.canvas))
-                context.fill(CGRect(
-                    x: mid.x - size.width / 2 - pad, y: mid.y - size.height / 2 - pad,
-                    width: size.width + pad * 2, height: size.height + pad * 2
-                ))
-                drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
+                drawEdgeLabel(label, at: polylineMidpoint(edge.points), theme: theme, in: context)
             }
         }
 
         for box in layout.boxes {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(fill))
-            context.setStrokeColor(resolvedCGColor(stroke))
-            context.setLineWidth(1)
-            let path = CGPath(roundedRect: box.frame, cornerWidth: 4, cornerHeight: 4, transform: nil)
-            context.addPath(path)
-            context.drawPath(using: .fillStroke)
-            context.restoreGState()
+            fillStrokeBox(box.frame, radius: 4, fill: fill, stroke: stroke, in: context)
 
             drawText(box.name,
                      center: CGPoint(x: box.frame.midX, y: box.frame.minY + box.nameHeight / 2),
@@ -481,14 +499,7 @@ enum DiagramRenderer {
 
             var rowY = box.frame.minY + box.nameHeight
             func separator() {
-                context.saveGState()
-                context.setStrokeColor(resolvedCGColor(hairline))
-                context.setLineWidth(1)
-                context.beginPath()
-                context.move(to: CGPoint(x: box.frame.minX, y: rowY))
-                context.addLine(to: CGPoint(x: box.frame.maxX, y: rowY))
-                context.strokePath()
-                context.restoreGState()
+                strokeHLine(y: rowY, from: box.frame.minX, to: box.frame.maxX, color: hairline, in: context)
             }
             let textX = box.frame.minX + 12
             if !box.attributes.isEmpty {
@@ -579,27 +590,12 @@ enum DiagramRenderer {
             drawCardinality(edge.toCard, at: edge.end, from: toApproach, color: stroke, in: context)
 
             if !edge.label.isEmpty {
-                let mid = polylineMidpoint(edge.points)
-                let size = measure(edge.label, size: 10.5)
-                let pad: CGFloat = 3
-                context.setFillColor(resolvedCGColor(theme.canvas))
-                context.fill(CGRect(
-                    x: mid.x - size.width / 2 - pad, y: mid.y - size.height / 2 - pad,
-                    width: size.width + pad * 2, height: size.height + pad * 2
-                ))
-                drawText(edge.label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
+                drawEdgeLabel(edge.label, at: polylineMidpoint(edge.points), theme: theme, in: context)
             }
         }
 
         for box in layout.boxes {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(fill))
-            context.setStrokeColor(resolvedCGColor(stroke))
-            context.setLineWidth(1)
-            let path = CGPath(roundedRect: box.frame, cornerWidth: 4, cornerHeight: 4, transform: nil)
-            context.addPath(path)
-            context.drawPath(using: .fillStroke)
-            context.restoreGState()
+            fillStrokeBox(box.frame, radius: 4, fill: fill, stroke: stroke, in: context)
 
             drawText(box.name,
                      center: CGPoint(x: box.frame.midX, y: box.frame.minY + box.nameHeight / 2),
@@ -607,14 +603,7 @@ enum DiagramRenderer {
 
             if !box.attributes.isEmpty {
                 var rowY = box.frame.minY + box.nameHeight
-                context.saveGState()
-                context.setStrokeColor(resolvedCGColor(hairline))
-                context.setLineWidth(1)
-                context.beginPath()
-                context.move(to: CGPoint(x: box.frame.minX, y: rowY))
-                context.addLine(to: CGPoint(x: box.frame.maxX, y: rowY))
-                context.strokePath()
-                context.restoreGState()
+                strokeHLine(y: rowY, from: box.frame.minX, to: box.frame.maxX, color: hairline, in: context)
 
                 rowY += 5
                 let typeX = box.frame.minX + 12
@@ -671,13 +660,7 @@ enum DiagramRenderer {
             drawArrowhead(at: edge.end, from: approach, color: stroke, in: context)
 
             if let label = edge.label, !label.isEmpty {
-                let mid = polylineMidpoint(edge.points)
-                let size = measure(label, size: 10.5)
-                let pad: CGFloat = 3
-                context.setFillColor(resolvedCGColor(theme.canvas))
-                context.fill(CGRect(x: mid.x - size.width / 2 - pad, y: mid.y - size.height / 2 - pad,
-                                    width: size.width + pad * 2, height: size.height + pad * 2))
-                drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
+                drawEdgeLabel(label, at: polylineMidpoint(edge.points), theme: theme, in: context)
             }
         }
 
@@ -688,22 +671,11 @@ enum DiagramRenderer {
             context.setLineWidth(1)
             switch node.kind {
             case .start:
-                context.setFillColor(resolvedCGColor(solid))
-                context.fillEllipse(in: node.frame)
+                drawStartTerminal(node.frame, color: solid, in: context)
             case .end:
-                context.setStrokeColor(resolvedCGColor(solid))
-                context.strokeEllipse(in: node.frame.insetBy(dx: 1, dy: 1))
-                context.setFillColor(resolvedCGColor(solid))
-                context.fillEllipse(in: node.frame.insetBy(dx: 4.5, dy: 4.5))
+                drawEndTerminal(node.frame, color: solid, in: context)
             case .choice:
-                let f = node.frame
-                let p = CGMutablePath()
-                p.move(to: CGPoint(x: f.midX, y: f.minY))
-                p.addLine(to: CGPoint(x: f.maxX, y: f.midY))
-                p.addLine(to: CGPoint(x: f.midX, y: f.maxY))
-                p.addLine(to: CGPoint(x: f.minX, y: f.midY))
-                p.closeSubpath()
-                context.addPath(p)
+                context.addPath(diamondPath(node.frame))
                 context.setFillColor(resolvedCGColor(nodeFill))
                 context.drawPath(using: .fillStroke)
             case .fork, .join:
