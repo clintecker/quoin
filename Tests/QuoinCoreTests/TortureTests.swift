@@ -17,6 +17,32 @@ final class TortureTests: XCTestCase {
         XCTAssertFalse(doc.blocks.isEmpty)
     }
 
+    func testPathologicalMathNestingDegradesInsteadOfCrashing() {
+        // 10k nested braces would overflow the parser stack without the
+        // pre-scan depth cap; the expression must degrade to .unsupported.
+        let bombs = [
+            String(repeating: "{", count: 10_000),
+            String(repeating: "{x", count: 10_000) + String(repeating: "}", count: 10_000),
+            String(repeating: "\\begin{pmatrix} a ", count: 5_000),
+        ]
+        for bomb in bombs {
+            XCTAssertFalse(MathParser.isFullySupported(MathParser.parse(bomb)))
+        }
+        // Reasonable nesting still parses natively.
+        XCTAssertTrue(MathParser.isFullySupported(MathParser.parse("{{{{x^2}}}}")))
+    }
+
+    func testPathologicalStateNestingDegradesInsteadOfCrashing() {
+        // 10k nested composites must fall back (nil → tidy source card).
+        var lines = ["stateDiagram-v2"]
+        for i in 0..<10_000 { lines.append("state S\(i) {") }
+        lines.append(contentsOf: Array(repeating: "}", count: 10_000))
+        XCTAssertNil(MermaidParser.parse(lines.joined(separator: "\n")))
+        // Reasonable nesting still parses.
+        let sane = "stateDiagram-v2\nstate A {\nstate B {\n[*] --> X\n}\n}"
+        XCTAssertNotNil(MermaidParser.parse(sane))
+    }
+
     func testHugeTable() {
         var source = "| " + (1...30).map { "col\($0)" }.joined(separator: " | ") + " |\n"
         source += "|" + String(repeating: "---|", count: 30) + "\n"

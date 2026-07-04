@@ -456,12 +456,12 @@ extension MarkdownReaderView {
                   let storage = contentStorage.textStorage
             else { return }
 
-            // Clear previous highlights.
-            for range in matchRanges {
-                if let textRange = textRange(range, in: contentStorage) {
-                    layoutManager.removeRenderingAttribute(.backgroundColor, for: textRange)
-                }
-            }
+            // Clear previous highlights across the whole document, not just
+            // the remembered match ranges: after an incremental splice those
+            // NSRanges are pre-edit coordinates, so clearing at the shifted
+            // locations would leave stale highlights behind. Search is the
+            // only user of rendering attributes, so a blanket clear is safe.
+            layoutManager.removeRenderingAttribute(.backgroundColor, for: contentStorage.documentRange)
             matchRanges = []
 
             let trimmed = query.trimmingCharacters(in: .whitespaces)

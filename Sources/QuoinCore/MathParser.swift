@@ -51,9 +51,27 @@ public enum MathMatrixStyle: Hashable, Sendable {
 
 public enum MathParser {
 
+    /// Parser recursion depth tracks brace / environment nesting; adversarial
+    /// input ("{{{{…" ×10k) would otherwise overflow the stack. Past this
+    /// bound the whole expression degrades to styled source (PRD rule:
+    /// unknown input degrades, never crashes).
+    static let maxNestingDepth = 64
+
     /// Parses a LaTeX math string. Unknown commands become `.unsupported`
     /// leaves; the parse itself never fails.
     public static func parse(_ latex: String) -> MathNode {
+        // Linear pre-scan bounds recursion before it starts: parse recursion
+        // depth ≤ max brace nesting + \begin count.
+        var depth = 0, maxDepth = 0
+        for ch in latex {
+            if ch == "{" { depth += 1; maxDepth = max(maxDepth, depth) }
+            if ch == "}" { depth = max(0, depth - 1) }
+        }
+        let begins = latex.components(separatedBy: "\\begin").count - 1
+        guard maxDepth <= maxNestingDepth, begins <= maxNestingDepth else {
+            return .unsupported(latex)
+        }
+
         var tokens = Tokenizer(latex).tokenize()[...]
         let nodes = parseRow(&tokens, until: nil)
         return nodes.count == 1 ? nodes[0] : .row(nodes)

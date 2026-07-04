@@ -359,6 +359,17 @@ public enum MermaidParser {
     /// `<<choice>>` / `<<fork>>` / `<<join>>` annotations mark special shapes;
     /// transitions are arrows with an optional `: label`.
     static func parseState(body: [String]) -> StateDiagram? {
+        // Composite parsing (and the layout that mirrors it) recurses once per
+        // `state X {` nesting level. A linear pre-scan bounds that depth so
+        // adversarial input can't overflow the stack — past the cap the block
+        // degrades to the tidy styled-source card.
+        var depth = 0, maxDepth = 0
+        for line in body {
+            if line.hasPrefix("state "), line.hasSuffix("{") { depth += 1; maxDepth = max(maxDepth, depth) }
+            if line == "}" { depth = max(0, depth - 1) }
+        }
+        guard maxDepth <= 32 else { return nil }
+
         var index = 0
         var scopeCounter = 0
         let direction = detectStateDirection(body)

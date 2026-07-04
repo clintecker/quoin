@@ -56,6 +56,17 @@ public struct AttributedRenderer {
     /// the document should re-render to pick it up.
     public let onContentReady: (@Sendable () -> Void)?
 
+    /// Per-block-render scratch (reference type so the struct's render chain
+    /// stays non-mutating): set when the fragment being built contains
+    /// content that is still loading (async image placeholder) and must not
+    /// enter the fragment cache. Main-actor only, like the renderer itself.
+    private final class RenderScratch { var pending = false }
+    private let scratch = RenderScratch()
+    private var blockHasPendingContent: Bool {
+        get { scratch.pending }
+        nonmutating set { scratch.pending = newValue }
+    }
+
     public init(
         theme: Theme = Theme(),
         baseURL: URL? = nil,
@@ -117,8 +128,15 @@ public struct AttributedRenderer {
                 newCache[block.id] = cached
                 output.append(cached)
             } else {
+                // A fragment awaiting async content (an image still decoding)
+                // must NOT be cached: its BlockID is content-hash-stable, so a
+                // cached placeholder would be returned forever — the decoded
+                // image's re-render would hit the cache and never rebuild.
+                blockHasPendingContent = false
                 let fragment = render(block: block, depth: 0, document: document)
-                if isCacheable(block.kind) { newCache[block.id] = fragment }
+                if isCacheable(block.kind), !blockHasPendingContent {
+                    newCache[block.id] = fragment
+                }
                 output.append(fragment)
             }
             if index < document.blocks.count - 1 {
@@ -916,13 +934,16 @@ public struct AttributedRenderer {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return placeholder("missing image: \(source)")
         }
-        // Async decode: first render shows a quiet placeholder, the decoded
-        // image arrives via onContentReady → re-render (cache hit).
+        // Async decode: first render shows a quiet placeholder; the decoded
+        // image arrives via onContentReady → re-render. The pending flag keeps
+        // this placeholder fragment out of the block cache so that re-render
+        // actually rebuilds it (a cached placeholder would stick forever).
         guard let image = AsyncImageStore.shared.image(
             at: fileURL,
             maxDimension: theme.maxContentWidth * 2,
             onReady: onContentReady ?? {}
         ) else {
+            blockHasPendingContent = true
             return placeholder(alt.isEmpty ? "loading image…" : alt)
         }
 
