@@ -329,17 +329,24 @@ extension DiagramLayoutEngine {
                 let inCross = faceCross(edge.to, group: forwardIn[edge.to], index: index)
                 start = attachPoint(edge.from, cross: outCross, rightOrBottom: true)
                 end = attachPoint(edge.to, cross: inCross, rightOrBottom: false)
-                let jog = horizontal ? abs(start.y - end.y) : abs(start.x - end.x)
-                if jog > 0.5 {
-                    if horizontal {
-                        let midX = (start.x + end.x) / 2
-                        points = [start, CGPoint(x: midX, y: start.y), CGPoint(x: midX, y: end.y), end]
-                    } else {
-                        let midY = (start.y + end.y) / 2
-                        points = [start, CGPoint(x: start.x, y: midY), CGPoint(x: end.x, y: midY), end]
-                    }
+                if !horizontal,
+                   let routed = channelRoute(start: start, end: end, from: from, to: to, frames: frames) {
+                    // A multi-layer edge that would pass under intervening nodes
+                    // is diverted through a clear vertical channel.
+                    points = routed
                 } else {
-                    points = [start, end]
+                    let jog = horizontal ? abs(start.y - end.y) : abs(start.x - end.x)
+                    if jog > 0.5 {
+                        if horizontal {
+                            let midX = (start.x + end.x) / 2
+                            points = [start, CGPoint(x: midX, y: start.y), CGPoint(x: midX, y: end.y), end]
+                        } else {
+                            let midY = (start.y + end.y) / 2
+                            points = [start, CGPoint(x: start.x, y: midY), CGPoint(x: end.x, y: midY), end]
+                        }
+                    } else {
+                        points = [start, end]
+                    }
                 }
             }
             placedEdges.append(FlowchartLayout.PlacedEdge(
@@ -349,6 +356,54 @@ extension DiagramLayoutEngine {
         }
 
         return (placedEdges, crossLimit)
+    }
+
+    /// Routes a top-down forward edge that spans intervening layers so it
+    /// doesn't pass *under* the nodes between its endpoints. Drops into the gap
+    /// below the source, slides sideways to a vertical channel whose x is clear
+    /// of every intervening node, runs down that channel, then crosses into the
+    /// target. Returns nil when the straight column is already clear (adjacent
+    /// layers, or an unobstructed x), so simple edges keep their direct route.
+    private static func channelRoute(
+        start: CGPoint, end: CGPoint, from: CGRect, to: CGRect, frames: [String: CGRect]
+    ) -> [CGPoint]? {
+        guard end.y - start.y > 1 else { return nil }
+        // Nodes wholly between `from`'s bottom and `to`'s top — the layers the
+        // edge must clear.
+        let blockers = frames.values.filter { $0.minY >= from.maxY - 1 && $0.maxY <= to.minY + 1 }
+        guard !blockers.isEmpty else { return nil }
+
+        let pad: CGFloat = 8
+        func crosses(_ x: CGFloat) -> Bool {
+            blockers.contains { $0.minX - pad <= x && x <= $0.maxX + pad }
+        }
+        // A clear straight column needs no diversion.
+        if abs(start.x - end.x) < 0.5, !crosses(start.x) { return nil }
+
+        // Prefer the target's column, then the source's, then the nearest clear
+        // gap beside a blocker.
+        var channelX = end.x
+        if crosses(channelX) {
+            if !crosses(start.x) {
+                channelX = start.x
+            } else {
+                let candidates = blockers.flatMap { [$0.minX - pad - 4, $0.maxX + pad + 4] }
+                channelX = candidates.sorted { abs($0 - end.x) < abs($1 - end.x) }
+                    .first(where: { !crosses($0) }) ?? start.x
+            }
+        }
+        if abs(channelX - start.x) < 0.5, abs(channelX - end.x) < 0.5 { return nil }
+
+        let exitY = start.y + pad + 4
+        let enterY = end.y - pad - 4
+        return [
+            start,
+            CGPoint(x: start.x, y: exitY),
+            CGPoint(x: channelX, y: exitY),
+            CGPoint(x: channelX, y: enterY),
+            CGPoint(x: end.x, y: enterY),
+            end,
+        ]
     }
 
     // MARK: Sequence
