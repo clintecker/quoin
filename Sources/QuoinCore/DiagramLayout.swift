@@ -227,11 +227,6 @@ public enum DiagramLayoutEngine {
 
     // MARK: Shared box placement
 
-    struct Placement {
-        let frames: [String: CGRect]
-        let size: CGSize
-    }
-
     /// Back edges (cycle-closing) found by DFS, as indices into `edges`.
     /// Layering must ignore them or a cycle drifts nodes down without bound.
     static func backEdgeIndices(ids: [String], edges: [(String, String)]) -> Set<Int> {
@@ -253,30 +248,6 @@ public enum DiagramLayoutEngine {
         }
         for id in ids where (color[id] ?? 0) == 0 { visit(id) }
         return back
-    }
-
-    /// Longest-path layering followed by two barycenter-ordering sweeps,
-    /// returning ordered layers of ids. Coordinate assignment is left to the
-    /// caller because the axis and per-layer alignment differ per diagram
-    /// (top-down boxes vs. the direction-aware flowchart). Shared by
-    /// `layeredPlacement` and the flowchart engine.
-    ///
-    /// `layeringEdges` must already have cycle back edges removed so layers
-    /// don't drift downward without bound. `barycenterEdges` drives cross-axis
-    /// ordering and defaults to `layeringEdges`; the flowchart passes the full
-    /// edge set here so a retry loop still influences sibling order.
-    static func orderedLayers(
-        ids: [String],
-        layeringEdges: [(String, String)],
-        barycenterEdges: [(String, String)]? = nil
-    ) -> [[String]] {
-        let layerOf = assignLayers(ids: ids, edges: layeringEdges)
-        let maxLayer = layerOf.values.max() ?? 0
-        var layers: [[String]] = []
-        for index in 0...maxLayer {
-            layers.append(ids.filter { layerOf[$0] == index })
-        }
-        return barycenterOrder(layers: layers, edges: barycenterEdges ?? layeringEdges)
     }
 
     /// Longest-path layer assignment: every node starts at layer 0 and each
@@ -329,48 +300,6 @@ public enum DiagramLayoutEngine {
             }
         }
         return layers
-    }
-
-    /// Longest-path layering + barycenter ordering for arbitrary sized
-    /// boxes, top-down. Shared by the class, ER, and state layouts. Cycles
-    /// are made acyclic for layering by ignoring DFS back edges.
-    static func layeredPlacement(
-        ids: [String],
-        sizes: [String: CGSize],
-        edges allEdges: [(String, String)],
-        layerGap: CGFloat,
-        nodeGap: CGFloat,
-        margin: CGFloat
-    ) -> Placement {
-        let backEdges = backEdgeIndices(ids: ids, edges: allEdges)
-        let edges = allEdges.enumerated().filter { !backEdges.contains($0.offset) }.map(\.element)
-        let layers = orderedLayers(ids: ids, layeringEdges: edges)
-
-        var frames: [String: CGRect] = [:]
-        var y = margin
-        var crossExtent: CGFloat = 0
-        var layerWidths: [CGFloat] = []
-        for layer in layers {
-            let total = layer.reduce(CGFloat(0)) { $0 + (sizes[$1]?.width ?? 0) }
-                + CGFloat(max(layer.count - 1, 0)) * nodeGap
-            layerWidths.append(total)
-            crossExtent = max(crossExtent, total)
-        }
-        for (layerIndex, layer) in layers.enumerated() {
-            let layerHeight = layer.map { sizes[$0]?.height ?? 0 }.max() ?? 0
-            var x = margin + (crossExtent - layerWidths[layerIndex]) / 2
-            for id in layer {
-                let size = sizes[id] ?? .zero
-                frames[id] = CGRect(x: x, y: y, width: size.width, height: size.height)
-                x += size.width + nodeGap
-            }
-            y += layerHeight + layerGap
-        }
-
-        return Placement(
-            frames: frames,
-            size: CGSize(width: crossExtent + margin * 2, height: y - layerGap + margin)
-        )
     }
 
     /// Layered top-down layout with **dummy-node edge routing**, shared by the
@@ -490,121 +419,5 @@ public enum DiagramLayoutEngine {
 
         let size = CGSize(width: max(crossExtent, maxX - margin) + margin * 2, height: y - layerGap + margin)
         return (frames, size, routes)
-    }
-
-    // MARK: Orthogonal routing for layered box diagrams (class, ER)
-
-    enum BoxFace { case top, bottom, left, right }
-
-    /// One routed edge: the orthogonal polyline plus the faces it attaches to.
-    struct RoutedBoxEdge {
-        let points: [CGPoint]
-    }
-
-    /// Routes edges between layered boxes as clean right-angled elbows with
-    /// per-face fan-out: every edge leaving (or entering) the same face gets
-    /// its own attachment slot, ordered by the opposite endpoint's cross
-    /// coordinate so sibling lines fan out instead of crossing. Vertical
-    /// neighbours attach top↔bottom; side-by-side boxes attach left↔right.
-    /// Shared by the class and ER layouts so both read the same way.
-    static func routeBoxEdges(
-        frames: [CGRect],
-        pairs: [(from: Int, to: Int)]
-    ) -> [RoutedBoxEdge] {
-        // Choose a face pair for each edge from the boxes' relative position.
-        struct Plan { var fromFace: BoxFace; var toFace: BoxFace }
-        var plans: [Plan] = []
-        // Attachment requests bucketed per (box, face); each carries a sort key.
-        struct Req { let edge: Int; let isStart: Bool; let sortKey: CGFloat }
-        var buckets: [String: [Req]] = [:]
-        func key(_ box: Int, _ face: BoxFace) -> String { "\(box)#\(face)" }
-
-        for (i, pair) in pairs.enumerated() {
-            let a = frames[pair.from], b = frames[pair.to]
-            let fromFace: BoxFace, toFace: BoxFace
-            if b.minY >= a.maxY {            // b clearly below a
-                fromFace = .bottom; toFace = .top
-            } else if b.maxY <= a.minY {     // b clearly above a
-                fromFace = .top; toFace = .bottom
-            } else if b.midX >= a.midX {     // side-by-side, b to the right
-                fromFace = .right; toFace = .left
-            } else {
-                fromFace = .left; toFace = .right
-            }
-            plans.append(Plan(fromFace: fromFace, toFace: toFace))
-            // Sort key = opposite box's coordinate on this face's cross axis.
-            let fromKey = (fromFace == .top || fromFace == .bottom) ? b.midX : b.midY
-            let toKey = (toFace == .top || toFace == .bottom) ? a.midX : a.midY
-            buckets[key(pair.from, fromFace), default: []].append(Req(edge: i, isStart: true, sortKey: fromKey))
-            buckets[key(pair.to, toFace), default: []].append(Req(edge: i, isStart: false, sortKey: toKey))
-        }
-
-        // Assign each edge its attach point on both faces.
-        var starts = [CGPoint](repeating: .zero, count: pairs.count)
-        var ends = [CGPoint](repeating: .zero, count: pairs.count)
-        for (bucketKey, reqs) in buckets {
-            let sorted = reqs.sorted { $0.sortKey < $1.sortKey }
-            let n = sorted.count
-            // Box + face back out of the key.
-            let parts = bucketKey.split(separator: "#")
-            let box = frames[Int(parts[0])!]
-            let face: BoxFace
-            switch parts[1] {
-            case "top": face = .top
-            case "bottom": face = .bottom
-            case "left": face = .left
-            default: face = .right
-            }
-            for (slot, req) in sorted.enumerated() {
-                // Spread across the middle 70% of the face; one edge centres.
-                let t = n == 1 ? 0.5 : 0.15 + 0.7 * CGFloat(slot) / CGFloat(n - 1)
-                let point: CGPoint
-                switch face {
-                case .top:    point = CGPoint(x: box.minX + box.width * t, y: box.minY)
-                case .bottom: point = CGPoint(x: box.minX + box.width * t, y: box.maxY)
-                case .left:   point = CGPoint(x: box.minX, y: box.minY + box.height * t)
-                case .right:  point = CGPoint(x: box.maxX, y: box.minY + box.height * t)
-                }
-                if req.isStart { starts[req.edge] = point } else { ends[req.edge] = point }
-            }
-        }
-
-        // Build the elbow polyline for each edge from its two attach points.
-        var routes: [RoutedBoxEdge] = []
-        for (i, plan) in plans.enumerated() {
-            let s = starts[i], e = ends[i]
-            let vertical = (plan.fromFace == .top || plan.fromFace == .bottom)
-            var points: [CGPoint]
-            if vertical {
-                if abs(s.x - e.x) < 0.5 {
-                    points = [s, e]
-                } else {
-                    let midY = (s.y + e.y) / 2
-                    points = [s, CGPoint(x: s.x, y: midY), CGPoint(x: e.x, y: midY), e]
-                }
-            } else {
-                if abs(s.y - e.y) < 0.5 {
-                    points = [s, e]
-                } else {
-                    let midX = (s.x + e.x) / 2
-                    points = [s, CGPoint(x: midX, y: s.y), CGPoint(x: midX, y: e.y), e]
-                }
-            }
-            routes.append(RoutedBoxEdge(points: points))
-        }
-        return routes
-    }
-
-    /// Intersection of the rect border with the segment from its center
-    /// toward `point` — edges attach to borders, not centers.
-    static func borderPoint(of rect: CGRect, toward point: CGPoint) -> CGPoint {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let dx = point.x - center.x
-        let dy = point.y - center.y
-        guard dx != 0 || dy != 0 else { return center }
-        let scaleX = dx != 0 ? (rect.width / 2) / abs(dx) : CGFloat.greatestFiniteMagnitude
-        let scaleY = dy != 0 ? (rect.height / 2) / abs(dy) : CGFloat.greatestFiniteMagnitude
-        let scale = min(scaleX, scaleY)
-        return CGPoint(x: center.x + dx * scale, y: center.y + dy * scale)
     }
 }

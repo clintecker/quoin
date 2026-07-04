@@ -4,8 +4,8 @@ import CoreGraphics
 #endif
 
 /// Class, ER, and state diagram engines — the "layered boxes" family. They
-/// share layeredPlacement (cycle-safe longest-path layering) and
-/// routeBoxEdges (orthogonal fan-out routing) from DiagramLayout.swift.
+/// share `layeredRoutes` (cycle-safe longest-path layering with dummy-node
+/// channel routing) from DiagramLayout.swift.
 extension DiagramLayoutEngine {
 
     // MARK: Class

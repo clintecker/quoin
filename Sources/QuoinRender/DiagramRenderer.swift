@@ -293,8 +293,15 @@ enum DiagramRenderer {
         context.move(to: points[0])
         if points.count > 2 {
             for index in 1..<(points.count - 1) {
-                context.addArc(tangent1End: points[index],
-                               tangent2End: points[index + 1], radius: 5)
+                let prev = points[index - 1], corner = points[index], next = points[index + 1]
+                let inLen = hypot(corner.x - prev.x, corner.y - prev.y)
+                let outLen = hypot(next.x - corner.x, next.y - corner.y)
+                // Clamp the corner radius so neither arc consumes more than half
+                // of its adjacent segment. Two corners share a middle segment, so
+                // capping each at half its length keeps their arcs from eating
+                // past each other and pinching into a cusp on short jogs.
+                let radius = min(5, inLen / 2, outLen / 2)
+                context.addArc(tangent1End: corner, tangent2End: next, radius: radius)
             }
         }
         context.addLine(to: points.last!)
