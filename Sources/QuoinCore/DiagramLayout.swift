@@ -420,4 +420,215 @@ public enum DiagramLayoutEngine {
         let size = CGSize(width: max(crossExtent, maxX - margin) + margin * 2, height: y - layerGap + margin)
         return (frames, size, routes)
     }
+
+    // MARK: Brandes–Köpf horizontal coordinate assignment
+
+    /// Assigns each node a cross-axis **center** coordinate using the
+    /// Brandes–Köpf algorithm (arXiv:2008.01252, the method dagre uses). Given
+    /// the barycenter-ordered `layers` and the `segments` joining consecutive
+    /// layers, it aligns edges — especially dummy-chain "inner" segments — into
+    /// straight runs while preserving each layer's order and a minimum gap.
+    ///
+    /// It runs four biased passes (align up/down × pack left/right) and returns
+    /// the per-node median of the four, which cancels directional bias. Inner
+    /// segments (dummy→dummy) win alignment over crossing non-inner segments via
+    /// type-1 conflict marking, so long/back edges become vertical channels.
+    ///
+    /// Coordinates are relative (not yet normalized to a margin); the caller
+    /// shifts them. `breadth[id]` is the node's extent along the cross axis and
+    /// `dummies` marks the synthetic long-edge nodes.
+    static func brandesKoepfX(
+        layers: [[String]],
+        segments: [(String, String)],
+        breadth: [String: CGFloat],
+        dummies: Set<String>,
+        minGap: CGFloat
+    ) -> [String: CGFloat] {
+        // Flatten node list; index each node's layer and within-layer position.
+        var layerOf: [String: Int] = [:]
+        var posOf: [String: Int] = [:]
+        for (li, layer) in layers.enumerated() {
+            for (o, v) in layer.enumerated() { layerOf[v] = li; posOf[v] = o }
+        }
+        guard !layerOf.isEmpty else { return [:] }
+
+        // Upper/lower adjacency between consecutive layers, from the segments.
+        // Deduplicated per node: BK's median heuristic is index-based, so a
+        // neighbor counted twice (parallel edges, or a forward + back edge
+        // between the same pair) would bias alignment toward it.
+        var upN: [String: [String]] = [:]
+        var downN: [String: [String]] = [:]
+        var upSeen: [String: Set<String>] = [:]
+        var downSeen: [String: Set<String>] = [:]
+        for (a, b) in segments {
+            guard let la = layerOf[a], let lb = layerOf[b], la != lb else { continue }
+            let (hi, lo) = la < lb ? (a, b) : (b, a)
+            if downSeen[hi, default: []].insert(lo).inserted { downN[hi, default: []].append(lo) }
+            if upSeen[lo, default: []].insert(hi).inserted { upN[lo, default: []].append(hi) }
+        }
+
+        // 1. Type-1 conflicts: a non-inner segment that crosses an inner
+        // (dummy→dummy) segment. Computed once on the original ordering; lookup
+        // is order-independent (pairs stored unordered).
+        var conflicts = Set<String>()
+        func conflictKey(_ a: String, _ b: String) -> String { a < b ? a + "\u{1}" + b : b + "\u{1}" + a }
+        func hasConflict(_ a: String, _ b: String) -> Bool { conflicts.contains(conflictKey(a, b)) }
+        func isInnerLower(_ v: String) -> String? {
+            guard dummies.contains(v) else { return nil }
+            for u in upN[v] ?? [] where dummies.contains(u) { return u }
+            return nil
+        }
+        for i in 0..<max(layers.count - 1, 0) {
+            let lower = layers[i + 1]
+            var k0 = 0
+            var l = 0
+            for l1 in 0..<lower.count {
+                let v = lower[l1]
+                let innerUpper = isInnerLower(v)
+                if l1 == lower.count - 1 || innerUpper != nil {
+                    let k1 = innerUpper.flatMap { posOf[$0] } ?? (layers[i].count - 1)
+                    while l <= l1 {
+                        let w = lower[l]
+                        for u in upN[w] ?? [] {
+                            let k = posOf[u] ?? 0
+                            if k < k0 || k > k1 { conflicts.insert(conflictKey(u, w)) }
+                        }
+                        l += 1
+                    }
+                    k0 = k1
+                }
+            }
+        }
+
+        func sep(_ u: String, _ w: String) -> CGFloat {
+            (breadth[u] ?? 0) / 2 + (breadth[w] ?? 0) / 2 + minGap
+        }
+
+        // 2. Vertical alignment into blocks (root/align chains), respecting
+        // conflicts and non-crossing order. `neighbor` is the adjacent-layer set
+        // to align against; `ordering` is the (possibly reversed) layering.
+        func verticalAlignment(
+            _ ordering: [[String]], neighbor: [String: [String]]
+        ) -> (root: [String: String], align: [String: String]) {
+            var root: [String: String] = [:]
+            var align: [String: String] = [:]
+            var pos: [String: Int] = [:]
+            for layer in ordering {
+                for (o, v) in layer.enumerated() { root[v] = v; align[v] = v; pos[v] = o }
+            }
+            for layer in ordering {
+                var prevIdx = -1
+                for v in layer {
+                    let ws = (neighbor[v] ?? []).sorted { (pos[$0] ?? 0) < (pos[$1] ?? 0) }
+                    guard !ws.isEmpty else { continue }
+                    let mp = Double(ws.count - 1) / 2
+                    for m in Int(floor(mp))...Int(ceil(mp)) {
+                        guard align[v] == v else { continue }
+                        let w = ws[m]
+                        let wp = pos[w] ?? 0
+                        if prevIdx < wp, !hasConflict(v, w) {
+                            align[w] = v
+                            root[v] = root[w] ?? w
+                            align[v] = root[v] ?? v
+                            prevIdx = wp
+                        }
+                    }
+                }
+            }
+            return (root, align)
+        }
+
+        // 3. Horizontal compaction: place each block as tight as order + sep
+        // allow, then merge block classes toward their sinks (original paper).
+        func horizontalCompaction(
+            _ ordering: [[String]], root: [String: String], align: [String: String]
+        ) -> [String: CGFloat] {
+            var pos: [String: Int] = [:]
+            var lidx: [String: Int] = [:]
+            for (li, layer) in ordering.enumerated() {
+                for (o, v) in layer.enumerated() { pos[v] = o; lidx[v] = li }
+            }
+            var sink: [String: String] = [:]
+            var shift: [String: CGFloat] = [:]
+            var x: [String: CGFloat] = [:]
+            for layer in ordering { for v in layer { sink[v] = v; shift[v] = .greatestFiniteMagnitude } }
+
+            func placeBlock(_ v: String) {
+                guard x[v] == nil else { return }
+                x[v] = 0
+                var w = v
+                repeat {
+                    let p = pos[w] ?? 0
+                    if p > 0 {
+                        let leftNode = ordering[lidx[w] ?? 0][p - 1]
+                        let u = root[leftNode] ?? leftNode
+                        placeBlock(u)
+                        if sink[v] == v { sink[v] = sink[u] ?? u }
+                        if sink[v] != sink[u] {
+                            let s = sink[u] ?? u
+                            shift[s] = min(shift[s] ?? .greatestFiniteMagnitude,
+                                           (x[v] ?? 0) - (x[u] ?? 0) - sep(leftNode, w))
+                        } else {
+                            x[v] = max(x[v] ?? 0, (x[u] ?? 0) + sep(leftNode, w))
+                        }
+                    }
+                    w = align[w] ?? w
+                } while w != v
+            }
+
+            for layer in ordering { for v in layer where (root[v] ?? v) == v { placeBlock(v) } }
+            for layer in ordering {
+                for v in layer {
+                    let r = root[v] ?? v
+                    x[v] = x[r] ?? 0
+                    let s = shift[sink[r] ?? r] ?? .greatestFiniteMagnitude
+                    if s < .greatestFiniteMagnitude { x[v] = (x[v] ?? 0) + s }
+                }
+            }
+            return x
+        }
+
+        // Run the four passes: {up, down} alignment × {left, right} packing.
+        func run(up: Bool, left: Bool) -> [String: CGFloat] {
+            var ordering = up ? layers : layers.reversed().map { $0 }
+            if !left { ordering = ordering.map { $0.reversed() } }
+            let neighbor = up ? upN : downN
+            let alignment = verticalAlignment(ordering, neighbor: neighbor)
+            var xs = horizontalCompaction(ordering, root: alignment.root, align: alignment.align)
+            if !left { for k in xs.keys { xs[k] = -(xs[k] ?? 0) } }
+            return xs
+        }
+        let xss: [[String: CGFloat]] = [
+            run(up: true, left: true), run(up: true, left: false),
+            run(up: false, left: true), run(up: false, left: false),
+        ]
+
+        // 4. Balance: align the four layouts (left ones to a common min, right
+        // ones to a common max) against the smallest-width layout, then take the
+        // per-node median (mean of the two middle values).
+        func width(_ xs: [String: CGFloat]) -> CGFloat {
+            var mn = CGFloat.greatestFiniteMagnitude, mx = -CGFloat.greatestFiniteMagnitude
+            for (v, x) in xs {
+                let hw = (breadth[v] ?? 0) / 2
+                mn = min(mn, x - hw); mx = max(mx, x + hw)
+            }
+            return mx - mn
+        }
+        let alignTo = xss.min { width($0) < width($1) } ?? xss[0]
+        let alignMin = alignTo.values.min() ?? 0
+        let alignMax = alignTo.values.max() ?? 0
+        var aligned: [[String: CGFloat]] = []
+        for (idx, xs) in xss.enumerated() {
+            let left = idx % 2 == 0   // order above is [ul, ur, dl, dr]
+            let delta = left ? alignMin - (xs.values.min() ?? 0) : alignMax - (xs.values.max() ?? 0)
+            aligned.append(delta == 0 ? xs : xs.mapValues { $0 + delta })
+        }
+
+        var result: [String: CGFloat] = [:]
+        for v in layerOf.keys {
+            let four = aligned.map { $0[v] ?? 0 }.sorted()
+            result[v] = (four[1] + four[2]) / 2
+        }
+        return result
+    }
 }

@@ -414,4 +414,52 @@ final class DiagramLayoutTests: XCTestCase {
         let sweep = layout.slices.last!.endAngle - layout.slices.first!.startAngle
         XCTAssertEqual(sweep, 2 * Double.pi, accuracy: 0.001)
     }
+
+    // MARK: Brandes–Köpf coordinate assignment
+
+    /// A straight chain A→B→C (one node per layer) must land on a single
+    /// vertical line — every node shares one x.
+    func testBrandesKoepfStraightChainIsColinear() {
+        let layers = [["A"], ["B"], ["C"]]
+        let segments = [("A", "B"), ("B", "C")]
+        let breadth: [String: CGFloat] = ["A": 40, "B": 40, "C": 40]
+        let x = DiagramLayoutEngine.brandesKoepfX(
+            layers: layers, segments: segments, breadth: breadth, dummies: [], minGap: 20)
+        XCTAssertEqual(x["A"]!, x["B"]!, accuracy: 0.001)
+        XCTAssertEqual(x["B"]!, x["C"]!, accuracy: 0.001)
+    }
+
+    /// Two siblings in the lower layer under one parent keep the minimum gap
+    /// (breadth/2 + breadth/2 + minGap) and stay in order.
+    func testBrandesKoepfSiblingsRespectMinimumGap() {
+        let layers = [["P"], ["L", "R"]]
+        let segments = [("P", "L"), ("P", "R")]
+        let breadth: [String: CGFloat] = ["P": 40, "L": 40, "R": 40]
+        let x = DiagramLayoutEngine.brandesKoepfX(
+            layers: layers, segments: segments, breadth: breadth, dummies: [], minGap: 20)
+        XCTAssertLessThan(x["L"]!, x["R"]!)                       // order preserved
+        XCTAssertGreaterThanOrEqual(x["R"]! - x["L"]!, 60 - 0.01) // 20+20 + gap 20
+    }
+
+    /// A long edge routed through a two-dummy channel has a genuine inner
+    /// (dummy→dummy) segment, which type-1 conflict marking forces straight:
+    /// the two dummies share one x even when a parallel real path competes for
+    /// space beside them.
+    func testBrandesKoepfInnerSegmentStaysStraight() {
+        // A→C spans layers 0→3 via dummies D1, D2. A parallel real path
+        // A→B→E→C runs alongside, so the dummy channel must hold its column.
+        let layers = [["A"], ["D1", "B"], ["D2", "E"], ["C"]]
+        let segments = [
+            ("A", "D1"), ("D1", "D2"), ("D2", "C"),   // long edge's dummy chain
+            ("A", "B"), ("B", "E"), ("E", "C"),        // parallel real path
+        ]
+        let breadth: [String: CGFloat] = ["A": 40, "B": 40, "C": 40, "E": 40, "D1": 16, "D2": 16]
+        let x = DiagramLayoutEngine.brandesKoepfX(
+            layers: layers, segments: segments, breadth: breadth, dummies: ["D1", "D2"], minGap: 20)
+        // The inner segment D1→D2 is dummy→dummy: BK keeps it vertical.
+        XCTAssertEqual(x["D1"]!, x["D2"]!, accuracy: 0.5)
+        // And the two layer-order pairs never overlap or swap.
+        XCTAssertLessThan(x["D1"]!, x["B"]!)
+        XCTAssertLessThan(x["D2"]!, x["E"]!)
+    }
 }

@@ -41,6 +41,7 @@ extension DiagramLayoutEngine {
         var sizes = flowchartNodeSizes(chart.nodes, measure: measure)
         var chains: [[String]] = []
         var segmentEdges: [(String, String)] = []
+        var dummies: Set<String> = []
         for (index, edge) in chart.edges.enumerated() {
             guard let lu = layerOf[edge.from], let lv = layerOf[edge.to] else { chains.append([]); continue }
             let lo = min(lu, lv), hi = max(lu, lv)
@@ -54,6 +55,7 @@ extension DiagramLayoutEngine {
                 let dummy = "\u{a7}\(index).\(layer)"
                 layers[layer].append(dummy)
                 sizes[dummy] = CGSize(width: dummyBreadth, height: 1)
+                dummies.insert(dummy)
                 midByLayer.append((layer, dummy))
             }
             let mids = (lu < lv ? midByLayer : midByLayer.reversed()).map(\.id)
@@ -62,10 +64,19 @@ extension DiagramLayoutEngine {
             for k in 0..<(chain.count - 1) { segmentEdges.append((chain[k], chain[k + 1])) }
         }
 
-        // 3. Order every layer (real + dummy) by barycenter; 4. assign
-        // coordinates (dummies take a narrow channel between real nodes).
+        // 3. Order every layer (real + dummy) by barycenter; 4. assign cross
+        // coordinates with Brandes–Köpf so chains and dummy channels align into
+        // straight runs (the cross axis is x for TD, y for LR).
         let ordered = barycenterOrder(layers: layers, edges: segmentEdges)
-        let placement = placeFlowchartFrames(layers: ordered, sizes: sizes, horizontal: horizontal)
+        var crossBreadth: [String: CGFloat] = [:]
+        for layer in ordered {
+            for id in layer { crossBreadth[id] = horizontal ? (sizes[id]?.height ?? 0) : (sizes[id]?.width ?? 0) }
+        }
+        let crossCenter = brandesKoepfX(
+            layers: ordered, segments: segmentEdges, breadth: crossBreadth,
+            dummies: dummies, minGap: flowchartNodeGap)
+        let placement = placeFlowchartFrames(
+            layers: ordered, sizes: sizes, crossCenter: crossCenter, horizontal: horizontal)
 
         // 5. Route each edge through its chain's waypoints.
         let (placedEdges, crossLimit) = routeChains(
@@ -192,53 +203,53 @@ extension DiagramLayoutEngine {
     }
 
     /// Places the ordered layers along the main axis (down for TD, across for
-    /// LR), centering each layer on the cross axis. `mainContentEnd` is the
-    /// final main-axis dimension (trailing layer gap trimmed, margin added);
-    /// `crossExtent` is the widest layer, before back-edge lanes extend it.
+    /// LR), using the Brandes–Köpf `crossCenter` for each node's cross-axis
+    /// position (normalized so the leftmost/topmost edge sits at the margin).
+    /// `mainContentEnd` is the final main-axis dimension (trailing layer gap
+    /// trimmed, margin added); `crossExtent` is the full cross span.
     private static func placeFlowchartFrames(
         layers: [[String]],
         sizes: [String: CGSize],
+        crossCenter: [String: CGFloat],
         horizontal: Bool
     ) -> (frames: [String: CGRect], mainContentEnd: CGFloat, crossExtent: CGFloat) {
         let layerGap = flowchartLayerGap
-        let nodeGap = flowchartNodeGap
         let margin = flowchartMargin
+
+        // Normalize BK's relative coordinates so the min cross edge = margin.
+        func breadth(_ id: String) -> CGFloat { horizontal ? sizes[id]!.height : sizes[id]!.width }
+        var minCross = CGFloat.greatestFiniteMagnitude
+        var maxCross = -CGFloat.greatestFiniteMagnitude
+        for layer in layers {
+            for id in layer {
+                let c = crossCenter[id] ?? 0
+                minCross = min(minCross, c - breadth(id) / 2)
+                maxCross = max(maxCross, c + breadth(id) / 2)
+            }
+        }
+        let shift = margin - (minCross.isFinite ? minCross : 0)
+        let crossExtent = maxCross > minCross ? maxCross - minCross : 0
 
         var frames: [String: CGRect] = [:]
         var mainOffset = margin
-        var crossExtent: CGFloat = 0
-
-        var layerCrossSizes: [CGFloat] = []
         for layer in layers {
-            let total = layer.reduce(CGFloat(0)) { sum, id in
-                sum + (horizontal ? sizes[id]!.height : sizes[id]!.width)
-            } + CGFloat(max(layer.count - 1, 0)) * nodeGap
-            layerCrossSizes.append(total)
-            crossExtent = max(crossExtent, total)
-        }
-
-        for (layerIndex, layer) in layers.enumerated() {
             let mainSize = layer.map { horizontal ? sizes[$0]!.width : sizes[$0]!.height }.max() ?? 0
-            var crossOffset = margin + (crossExtent - layerCrossSizes[layerIndex]) / 2
             for id in layer {
                 let size = sizes[id]!
-                let frame: CGRect
+                let center = (crossCenter[id] ?? 0) + shift
                 if horizontal {
-                    frame = CGRect(
+                    frames[id] = CGRect(
                         x: mainOffset + (mainSize - size.width) / 2,
-                        y: crossOffset,
+                        y: center - size.height / 2,
                         width: size.width, height: size.height
                     )
-                    crossOffset += size.height + nodeGap
                 } else {
-                    frame = CGRect(
-                        x: crossOffset,
+                    frames[id] = CGRect(
+                        x: center - size.width / 2,
                         y: mainOffset + (mainSize - size.height) / 2,
                         width: size.width, height: size.height
                     )
-                    crossOffset += size.width + nodeGap
                 }
-                frames[id] = frame
             }
             mainOffset += mainSize + layerGap
         }
