@@ -337,13 +337,10 @@ extension MarkdownReaderView {
             // Ranges include their trailing separator, so boundaries can
             // match two blocks; prefer the strictly-containing (earlier) one
             // deterministically by picking the largest containing start.
-            var best: (id: BlockID, location: Int)?
-            for (id, range) in blockRanges where index >= range.location && index < range.location + range.length {
-                if best == nil || range.location > best!.location {
-                    best = (id, range.location)
-                }
-            }
-            return best?.id
+            blockRanges
+                .filter { index >= $0.value.location && index < $0.value.location + $0.value.length }
+                .max { $0.value.location < $1.value.location }?
+                .key
         }
 
         /// True when the character sits in an embed block (code/math/mermaid
@@ -396,7 +393,7 @@ extension MarkdownReaderView {
         func scrollBlockToTop(_ range: NSRange, in textView: NSTextView) {
             guard let layoutManager = textView.textLayoutManager,
                   let contentStorage = textView.textContentStorage,
-                  let textRange = textRange(range, in: contentStorage) else {
+                  let textRange = nsTextRange(range, in: contentStorage) else {
                 textView.scrollRangeToVisible(range)
                 return
             }
@@ -488,7 +485,7 @@ extension MarkdownReaderView {
 
             let theme = parent.theme
             for (index, range) in matchRanges.enumerated() {
-                guard let textRange = textRange(range, in: contentStorage) else { continue }
+                guard let textRange = nsTextRange(range, in: contentStorage) else { continue }
                 let color = index == activeOrdinal
                     ? theme.searchHighlight
                     : theme.searchHighlight.withAlphaComponent(0.35)
@@ -500,13 +497,6 @@ extension MarkdownReaderView {
             }
         }
 
-        private func textRange(_ range: NSRange, in contentStorage: NSTextContentStorage) -> NSTextRange? {
-            let documentStart = contentStorage.documentRange.location
-            guard let start = contentStorage.location(documentStart, offsetBy: range.location),
-                  let end = contentStorage.location(start, offsetBy: range.length)
-            else { return nil }
-            return NSTextRange(location: start, end: end)
-        }
     }
 }
 #endif

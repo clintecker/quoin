@@ -71,7 +71,7 @@ final class QuoinTextView: NSTextView {
 
         let origin = textContainerOrigin
         for run in decorationRuns {
-            guard let textRange = textRange(for: run.range, in: contentManager) else { continue }
+            guard let textRange = nsTextRange(run.range, in: contentManager) else { continue }
 
             var frames: [CGRect] = []
             var textWidth: CGFloat = 0
@@ -184,12 +184,5 @@ final class QuoinTextView: NSTextView {
         }
     }
 
-    private func textRange(for range: NSRange, in contentManager: NSTextContentManager) -> NSTextRange? {
-        let documentStart = contentManager.documentRange.location
-        guard let start = contentManager.location(documentStart, offsetBy: range.location),
-              let end = contentManager.location(start, offsetBy: range.length)
-        else { return nil }
-        return NSTextRange(location: start, end: end)
-    }
 }
 #endif

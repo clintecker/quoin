@@ -348,28 +348,31 @@ struct MathTypesetter {
 
     // MARK: - Delimiters
 
+    /// A single fence glyph scaled to `targetHeight` and vertically centered
+    /// on `bodyBox`'s extent. Shared by the inline delimiter path and the
+    /// matrix/grid path, which differ only in the target height they pass.
+    private func stretchedFence(_ glyph: String, targetHeight: CGFloat, around bodyBox: MathBox, size: CGFloat) -> MathBox {
+        guard !glyph.isEmpty else { return .empty }
+        let probe = textBox(glyph, size: size, italic: false)
+        let scale = max(1, targetHeight / max(probe.height, 1))
+        let scaled = textBox(glyph, size: size * scale, italic: false)
+        // Center the fence on the body's vertical extent.
+        let offset = (bodyBox.ascent - bodyBox.descent) / 2 - (scaled.ascent - scaled.descent) / 2
+        return MathBox(
+            width: scaled.width,
+            ascent: scaled.ascent + offset,
+            descent: scaled.descent - offset
+        ) { context, pen in
+            scaled.draw(context, CGPoint(x: pen.x, y: pen.y + offset))
+        }
+    }
+
     private func delimitedBox(_ left: String, _ body: MathNode, _ right: String, size: CGFloat, display: Bool) -> MathBox {
         let bodyBox = layout(body, size: size, display: display)
 
-        func fence(_ glyph: String) -> MathBox {
-            guard !glyph.isEmpty else { return .empty }
-            let probe = textBox(glyph, size: size, italic: false)
-            let needed = max(bodyBox.height, size)
-            let scale = max(1, needed / max(probe.height, 1))
-            let scaled = textBox(glyph, size: size * scale, italic: false)
-            // Center the fence on the body's vertical extent.
-            let offset = (bodyBox.ascent - bodyBox.descent) / 2 - (scaled.ascent - scaled.descent) / 2
-            return MathBox(
-                width: scaled.width,
-                ascent: scaled.ascent + offset,
-                descent: scaled.descent - offset
-            ) { context, pen in
-                scaled.draw(context, CGPoint(x: pen.x, y: pen.y + offset))
-            }
-        }
-
-        let leftBox = fence(left)
-        let rightBox = fence(right)
+        let target = max(bodyBox.height, size)
+        let leftBox = stretchedFence(left, targetHeight: target, around: bodyBox, size: size)
+        let rightBox = stretchedFence(right, targetHeight: target, around: bodyBox, size: size)
         let width = leftBox.width + bodyBox.width + rightBox.width
         let ascent = max(bodyBox.ascent, leftBox.ascent, rightBox.ascent)
         let descent = max(bodyBox.descent, leftBox.descent, rightBox.descent)
@@ -464,18 +467,8 @@ struct MathTypesetter {
 
     /// Fences an already-laid-out box (the grid) with stretched delimiters.
     private func delimitedBoxAround(_ bodyBox: MathBox, left: String, right: String, size: CGFloat) -> MathBox {
-        func fence(_ glyph: String) -> MathBox {
-            guard !glyph.isEmpty else { return .empty }
-            let probe = textBox(glyph, size: size, italic: false)
-            let scale = max(1, bodyBox.height / max(probe.height, 1))
-            let scaled = textBox(glyph, size: size * scale, italic: false)
-            let offset = (bodyBox.ascent - bodyBox.descent) / 2 - (scaled.ascent - scaled.descent) / 2
-            return MathBox(width: scaled.width, ascent: scaled.ascent + offset, descent: scaled.descent - offset) { context, pen in
-                scaled.draw(context, CGPoint(x: pen.x, y: pen.y + offset))
-            }
-        }
-        let leftBox = fence(left)
-        let rightBox = fence(right)
+        let leftBox = stretchedFence(left, targetHeight: bodyBox.height, around: bodyBox, size: size)
+        let rightBox = stretchedFence(right, targetHeight: bodyBox.height, around: bodyBox, size: size)
         let width = leftBox.width + bodyBox.width + rightBox.width + size * 0.1
         return MathBox(width: width,
                        ascent: max(bodyBox.ascent, leftBox.ascent, rightBox.ascent),
