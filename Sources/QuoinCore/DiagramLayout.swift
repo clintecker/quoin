@@ -447,15 +447,19 @@ public enum DiagramLayoutEngine {
     // MARK: Brandes–Köpf horizontal coordinate assignment
 
     /// Assigns each node a cross-axis **center** coordinate using the
-    /// Brandes–Köpf algorithm (arXiv:2008.01252, the method dagre uses). Given
+    /// Brandes–Köpf algorithm — Brandes & Köpf, "Fast and Simple Horizontal
+    /// Coordinate Assignment", GD 2001, LNCS 2265, pp. 31–44 (the method dagre
+    /// uses). Stage comments below cite the paper's Alg. 1–4 / sections. Given
     /// the barycenter-ordered `layers` and the `segments` joining consecutive
     /// layers, it aligns edges — especially dummy-chain "inner" segments — into
     /// straight runs while preserving each layer's order and a minimum gap.
     ///
-    /// It runs four biased passes (align up/down × pack left/right) and returns
-    /// the per-node median of the four, which cancels directional bias. Inner
-    /// segments (dummy→dummy) win alignment over crossing non-inner segments via
-    /// type-1 conflict marking, so long/back edges become vertical channels.
+    /// It runs four biased passes (align up/down × pack left/right, Alg. 4) and
+    /// returns the per-node average median of the four, which cancels
+    /// directional bias and is provably order- and separation-preserving
+    /// (Lemma 1). Inner segments (dummy→dummy) win alignment over crossing
+    /// non-inner segments via type-1 conflict marking, so long/back edges become
+    /// vertical channels.
     ///
     /// Coordinates are relative (not yet normalized to a margin); the caller
     /// shifts them. `breadth[id]` is the node's extent along the cross axis and
@@ -475,10 +479,11 @@ public enum DiagramLayoutEngine {
         }
         guard !layerOf.isEmpty else { return [:] }
 
-        // Upper/lower adjacency between consecutive layers, from the segments.
-        // Deduplicated per node: BK's median heuristic is index-based, so a
-        // neighbor counted twice (parallel edges, or a forward + back edge
-        // between the same pair) would bias alignment toward it.
+        // Upper/lower adjacency (the paper's neighbor SETS N⁻/N⁺, §2) between
+        // consecutive layers, from the segments. Deduplicated per node because
+        // they are sets: BK's median heuristic is index-based, so a neighbor
+        // counted twice (parallel edges, or a forward + back edge between the
+        // same pair) would bias alignment toward it.
         var upN: [String: [String]] = [:]
         var downN: [String: [String]] = [:]
         var upSeen: [String: Set<String>] = [:]
@@ -490,9 +495,13 @@ public enum DiagramLayoutEngine {
             if upSeen[lo, default: []].insert(hi).inserted { upN[lo, default: []].append(hi) }
         }
 
-        // 1. Type-1 conflicts: a non-inner segment that crosses an inner
-        // (dummy→dummy) segment. Computed once on the original ordering; lookup
-        // is order-independent (pairs stored unordered).
+        // Alg. 1 (§4.1) — mark type-1 conflicts: a non-inner segment that
+        // crosses an inner (dummy→dummy) segment, resolved in favour of the
+        // inner one. Computed once on the original ordering; lookup is
+        // order-independent (pairs stored unordered). The paper's loop runs
+        // i ← 2..h-2; scanning every pair here is equivalent because dummies
+        // never occupy the top/bottom layer, so no inner segment touches those
+        // pairs and none is marked there.
         var conflicts = Set<String>()
         func conflictKey(_ a: String, _ b: String) -> String { a < b ? a + "\u{1}" + b : b + "\u{1}" + a }
         func hasConflict(_ a: String, _ b: String) -> Bool { conflicts.contains(conflictKey(a, b)) }
@@ -527,9 +536,11 @@ public enum DiagramLayoutEngine {
             (breadth[u] ?? 0) / 2 + (breadth[w] ?? 0) / 2 + minGap
         }
 
-        // 2. Vertical alignment into blocks (root/align chains), respecting
-        // conflicts and non-crossing order. `neighbor` is the adjacent-layer set
-        // to align against; `ordering` is the (possibly reversed) layering.
+        // Alg. 2 (§4.1) — vertical alignment into blocks (root/align chains):
+        // align each vertex with its median neighbor when the segment isn't a
+        // conflict and doesn't cross an already-used alignment. `neighbor` is
+        // the adjacent-layer set to align against; `ordering` is the (possibly
+        // reversed) layering.
         func verticalAlignment(
             _ ordering: [[String]], neighbor: [String: [String]]
         ) -> (root: [String: String], align: [String: String]) {
@@ -544,6 +555,8 @@ public enum DiagramLayoutEngine {
                 for v in layer {
                     let ws = (neighbor[v] ?? []).sorted { (pos[$0] ?? 0) < (pos[$1] ?? 0) }
                     guard !ws.isEmpty else { continue }
+                    // The two median neighbors: paper's m ← ⌊(d+1)/2⌋, ⌈(d+1)/2⌉
+                    // (1-indexed) is ⌊mp⌋…⌈mp⌉ with mp=(d-1)/2 here (0-indexed).
                     let mp = Double(ws.count - 1) / 2
                     for m in Int(floor(mp))...Int(ceil(mp)) {
                         guard align[v] == v else { continue }
@@ -561,8 +574,10 @@ public enum DiagramLayoutEngine {
             return (root, align)
         }
 
-        // 3. Horizontal compaction: place each block as tight as order + sep
-        // allow, then merge block classes toward their sinks (original paper).
+        // Alg. 3 (§4.2) — horizontal compaction: place each block as tight as
+        // order + separation allow (longest-path within a class), then merge
+        // block classes toward their sinks. `sep` generalizes the paper's
+        // constant δ to variable-width boxes: (w_u + w_v)/2 + gap.
         func horizontalCompaction(
             _ ordering: [[String]], root: [String: String], align: [String: String]
         ) -> [String: CGFloat] {
@@ -611,7 +626,9 @@ public enum DiagramLayoutEngine {
             return x
         }
 
-        // Run the four passes: {up, down} alignment × {left, right} packing.
+        // Alg. 4 (§4.3) — run the four passes: {up, down} alignment × {left,
+        // right} packing. Right passes reverse each layer and negate the result
+        // (the standard trick, so the symmetric case reuses the same code).
         func run(up: Bool, left: Bool) -> [String: CGFloat] {
             var ordering = up ? layers : layers.reversed().map { $0 }
             if !left { ordering = ordering.map { $0.reversed() } }
@@ -626,9 +643,10 @@ public enum DiagramLayoutEngine {
             run(up: false, left: true), run(up: false, left: false),
         ]
 
-        // 4. Balance: align the four layouts (left ones to a common min, right
-        // ones to a common max) against the smallest-width layout, then take the
-        // per-node median (mean of the two middle values).
+        // Balancing (§4.3): align the four layouts against the smallest-width
+        // one (left passes to its min, right passes to its max), then take the
+        // per-node "average median" — mean of the two middle values. Lemma 1
+        // proves this stays order- and separation-preserving.
         func width(_ xs: [String: CGFloat]) -> CGFloat {
             var mn = CGFloat.greatestFiniteMagnitude, mx = -CGFloat.greatestFiniteMagnitude
             for (v, x) in xs {

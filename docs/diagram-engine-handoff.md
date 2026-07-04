@@ -35,7 +35,8 @@ feasible: it would be QuoinCore's diagram files + a thin render protocol.
   - `routePolyline` / `simplifyCollinear` — orthogonal polyline through
     waypoints (vertical runs at waypoint x, horizontal jogs at midpoints).
   - `brandesKoepfX` — **Brandes–Köpf horizontal coordinate assignment**
-    (arXiv:2008.01252): four biased alignment passes (up/down × left/right)
+    (Brandes & Köpf, GD 2001, LNCS 2265, pp. 31–44): four biased alignment
+    passes (up/down × left/right)
     with type-1 conflict marking so inner dummy→dummy segments win, block
     compaction, and per-node median balancing. Node adjacency is deduplicated
     so parallel/back edges don't skew the index-based median. Used by both the
@@ -160,7 +161,10 @@ Possible future polish (not defects, lower priority):
 
 - Layered graph drawing (Sugiyama): https://en.wikipedia.org/wiki/Layered_graph_drawing
 - dagre wiki: https://github.com/dagrejs/dagre/wiki
-- Brandes–Köpf coordinate assignment: https://arxiv.org/pdf/2008.01252
+- Brandes–Köpf coordinate assignment: Brandes & Köpf, "Fast and Simple
+  Horizontal Coordinate Assignment", GD 2001, LNCS 2265, pp. 31–44. The
+  `brandesKoepfX` implementation has been cross-checked against its Alg. 1–4,
+  §4.3, and Lemma 1 (the average-median separation-preservation proof).
 - ELK Layered: https://eclipse.dev/elk/reference/algorithms/org-eclipse-elk-layered.html
 - libavoid / Adaptagrams (orthogonal obstacle-avoiding routing, the heavier
   alternative for hand-placed nodes): http://www.adaptagrams.org/documentation/libavoid.html
