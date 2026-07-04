@@ -27,6 +27,9 @@ jobs:
       - name: Dependency policy
         run: bash scripts/check-dependency-policy.sh
 
+      - name: Generated project policy
+        run: bash scripts/check-generated-projects.sh
+
       - name: Build
         run: swift build
 

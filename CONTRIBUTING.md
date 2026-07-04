@@ -26,12 +26,20 @@ Requirements:
 - XcodeGen for app projects: `brew install xcodegen`
 - GitHub CLI for tracker hygiene checks: `brew install gh`
 
+Editor defaults are declared in `.editorconfig`: LF line endings, UTF-8,
+final newlines, spaces for indentation, and 4-space Swift indentation.
+Quoin does not currently require SwiftFormat or SwiftLint. That is
+intentional: formatter or linter adoption would add project policy and tool
+surface, so keep Swift style changes review-driven until the TRD justifies a
+new dependency or required tool.
+
 Package checks run from the repository root:
 
 ```sh
 swift build
 swift test
 bash scripts/check-dependency-policy.sh
+bash scripts/check-generated-projects.sh
 ```
 
 The app projects are generated with XcodeGen:
@@ -46,6 +54,10 @@ xcodegen
 xcodebuild -project QuoinIOS.xcodeproj -scheme QuoinIOS \
   -destination 'generic/platform=iOS Simulator' build
 ```
+
+Generated `.xcodeproj` bundles are ignored and should not be committed. Treat
+`App/macOS/project.yml` and `App/iOS/project.yml` as the source of truth; CI
+regenerates projects before app builds.
 
 ## Branch and Worktree Workflow
 
@@ -99,17 +111,35 @@ Rendering changes usually need `Tests/QuoinRenderTests`, fixture updates, or
 both. Pathological input belongs in torture tests, and performance-sensitive
 work should preserve the PRD budgets enforced by `PerformanceTests`.
 
-Renderer fixture modules live under `Fixtures/renderer/` and feed conformance
-and digest snapshots. Regenerate snapshots only for intentional behavior
-changes:
+Fixture roles are deliberately separate:
+
+- `Fixtures/renderer/` is a conformance contract. It feeds parser metrics,
+  renderer digest snapshots, and non-degenerate diagram layout checks.
+- `Fixtures/gallery-*.md`, `Fixtures/showcase.md`, `Fixtures/engines.md`, and
+  `Fixtures/structure.md` are screenshot and dogfooding material for the app.
+- Torture or pathological coverage belongs in focused tests or renderer
+  modules whose expected metrics are committed with the change.
+- Future user-facing samples for first-run or Help flows should live outside
+  conformance fixtures so onboarding copy does not churn golden snapshots.
+
+Regenerate snapshots only for intentional behavior or fixture contract changes:
 
 ```sh
 QUOIN_UPDATE_SNAPSHOTS=1 swift test
 ```
 
-Screenshot automation uses the macOS app UI tests and publishes PNGs from CI.
-Use screenshots for layout-sensitive UI changes, especially colors, rules,
-spacing, decorations, and rendered math or diagrams.
+Call out snapshot updates in the PR body and explain whether the change is a
+parser/source preservation change, a rendering projection change, or a fixture
+coverage change.
+
+Screenshot automation copies the top-level Markdown files in `Fixtures/` into
+`/tmp/quoin-fixtures`, captures app PNGs into `/tmp/quoin-shots`, uploads them
+as a CI artifact, and publishes successful main-branch screenshots to
+`ci-screenshots`. Screenshot capture is advisory in CI: failures should be
+investigated, but they do not block non-UI changes by default. For
+layout-sensitive UI changes, especially colors, rules, spacing, decorations,
+and rendered math or diagrams, review screenshots as part of the PR and treat
+unexpected visual deltas as blocking until explained.
 
 ## Issue and PR Hygiene
 
