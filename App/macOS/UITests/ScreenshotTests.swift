@@ -30,14 +30,14 @@ final class ScreenshotTests: XCTestCase {
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10), "main window should appear")
-        capture(name: "01-library")
+        capture(name: "01-library", window: window)
 
         // Open the showcase document from the sidebar.
         let row = app.staticTexts["showcase"]
         if row.waitForExistence(timeout: 5) {
             row.click()
             Thread.sleep(forTimeInterval: 2)
-            capture(name: "02-document")
+            capture(name: "02-document", window: window)
 
             // The engines fixture leads with math + diagrams, so the
             // interesting content is in the first viewport — no synthetic
@@ -46,7 +46,7 @@ final class ScreenshotTests: XCTestCase {
             if engines.waitForExistence(timeout: 3) {
                 engines.click()
                 Thread.sleep(forTimeInterval: 2)
-                capture(name: "03-native-engines")
+                capture(name: "03-native-engines", window: window)
             }
 
             // Structure fixture: state, class, and ER diagrams.
@@ -54,7 +54,7 @@ final class ScreenshotTests: XCTestCase {
             if structure.waitForExistence(timeout: 3) {
                 structure.click()
                 Thread.sleep(forTimeInterval: 2)
-                capture(name: "04-structure-diagrams")
+                capture(name: "04-structure-diagrams", window: window)
             }
 
             // Syntax reveal: click into the document body.
@@ -62,7 +62,7 @@ final class ScreenshotTests: XCTestCase {
             if textView.exists {
                 textView.click()
                 Thread.sleep(forTimeInterval: 1.5)
-                capture(name: "07-syntax-reveal")
+                capture(name: "07-syntax-reveal", window: window)
             }
         }
         app.terminate()
@@ -92,7 +92,7 @@ final class ScreenshotTests: XCTestCase {
             let window = app.windows.firstMatch
             XCTAssertTrue(window.waitForExistence(timeout: 10))
             Thread.sleep(forTimeInterval: 3.5)
-            capture(name: entry.shot)
+            capture(name: entry.shot, window: window)
             app.terminate()
         }
     }
@@ -116,13 +116,13 @@ final class ScreenshotTests: XCTestCase {
         if row.waitForExistence(timeout: 5) {
             row.click()
             Thread.sleep(forTimeInterval: 2)
-            capture(name: "05-dark-document")
+            capture(name: "05-dark-document", window: window)
         }
         let engines = app.staticTexts["engines"]
         if engines.waitForExistence(timeout: 3) {
             engines.click()
             Thread.sleep(forTimeInterval: 2)
-            capture(name: "06-dark-engines")
+            capture(name: "06-dark-engines", window: window)
         }
         app.terminate()
     }

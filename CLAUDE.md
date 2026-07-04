@@ -13,6 +13,9 @@ Swift/SwiftUI + TextKit 2, zero JavaScript at runtime, local-only.
    conflicts with the handoff, the handoff wins; note the conflict.
 3. `docs/PRD.html` — original viewer-scoped PRD, superseded by the handoff
    for scope but still valid for performance budgets and privacy stance.
+4. `docs/architecture.md` — contributor-level machinery map (data flow,
+   editing model, math/diagram engines, invariants). `README.md` carries
+   the public support matrix; keep both in sync with real capabilities.
 
 ## Non-negotiable architecture rules (from the handoff)
 
@@ -52,7 +55,9 @@ justification in the TRD first; the default answer is no.
   attributed string. Every block's range is tagged with
   `QuoinAttribute.blockID`; block-level chrome is tagged with
   `QuoinAttribute.blockDecoration` (a `BlockDecoration` value).
-- `QuoinTextView` (in `MarkdownReaderView.swift`) is the NSTextView
+- `QuoinTextView` (its own file; the reader view is split across
+  `MarkdownReaderView.swift` / `ReaderCoordinator.swift` /
+  `QuoinTextView.swift`) is the NSTextView
   subclass that draws those decorations behind the text in
   `drawBackground(in:)`, using TextKit 2 fragment frames so shapes track
   reflow. Code canvases, callout boxes, quote rules, diagram frames, table
