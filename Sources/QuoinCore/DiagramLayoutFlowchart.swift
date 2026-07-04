@@ -10,81 +10,63 @@ extension DiagramLayoutEngine {
 
     // MARK: Flowchart (layered / Sugiyama-style)
 
+    private static let flowchartMargin: CGFloat = 12
+    private static let flowchartLayerGap: CGFloat = 44
+    private static let flowchartNodeGap: CGFloat = 26
+
     public static func layout(_ chart: Flowchart, measure: DiagramTextMeasurer) -> FlowchartLayout {
         let horizontal = chart.direction == .leftRight || chart.direction == .rightLeft
 
-        // 1. Longest-path layering. Back edges (cycles — a state machine's
-        // "retry" loop) are excluded so they don't push their target deeper;
-        // they still draw, just against the flow.
-        var adjacency: [String: [Int]] = [:]
-        for (index, edge) in chart.edges.enumerated() {
-            adjacency[edge.from, default: []].append(index)
-        }
-        var backEdges = Set<Int>()
-        var visited = Set<String>()
-        var onStack = Set<String>()
-        func markBackEdges(from id: String) {
-            visited.insert(id)
-            onStack.insert(id)
-            for index in adjacency[id] ?? [] {
-                let target = chart.edges[index].to
-                if onStack.contains(target) {
-                    backEdges.insert(index)
-                } else if !visited.contains(target) {
-                    markBackEdges(from: target)
-                }
-            }
-            onStack.remove(id)
-        }
-        for node in chart.nodes where !visited.contains(node.id) {
-            markBackEdges(from: node.id)
-        }
+        // 1. Break cycles, then layer and order the DAG. Back edges (a state
+        // machine's "retry" loop) are excluded from layering so they don't
+        // push their target deeper, but they still influence sibling order and
+        // still draw, against the flow.
+        let allEdges = chart.edges.map { ($0.from, $0.to) }
+        let backEdges = backEdgeIndices(ids: chart.nodes.map(\.id), edges: allEdges)
+        let forwardEdges = chart.edges.enumerated()
+            .filter { !backEdges.contains($0.offset) }
+            .map { ($0.element.from, $0.element.to) }
+        let layers = orderedLayers(
+            ids: chart.nodes.map(\.id),
+            layeringEdges: forwardEdges,
+            barycenterEdges: allEdges
+        )
 
-        var layerOf: [String: Int] = [:]
-        for node in chart.nodes { layerOf[node.id] = 0 }
-        let maxPasses = chart.nodes.count + 1
-        for _ in 0..<maxPasses {
-            var changed = false
-            for (index, edge) in chart.edges.enumerated() where !backEdges.contains(index) {
-                guard let from = layerOf[edge.from], let to = layerOf[edge.to] else { continue }
-                if to < from + 1 {
-                    layerOf[edge.to] = from + 1
-                    changed = true
-                }
-            }
-            if !changed { break }
-        }
+        // 2. Size nodes from labels; 3. place layers along the main axis.
+        let sizes = flowchartNodeSizes(chart.nodes, measure: measure)
+        let placement = placeFlowchartFrames(layers: layers, sizes: sizes, horizontal: horizontal)
 
-        var layers: [[Flowchart.Node]] = []
-        let maxLayer = layerOf.values.max() ?? 0
-        for index in 0...maxLayer {
-            layers.append(chart.nodes.filter { layerOf[$0.id] == index })
-        }
-        layers.removeAll(where: \.isEmpty)
+        // 4. Route edges around the placed nodes.
+        let (placedEdges, crossLimit) = routeFlowchartEdges(
+            chart: chart,
+            frames: placement.frames,
+            backEdges: backEdges,
+            horizontal: horizontal,
+            crossExtent: placement.crossExtent
+        )
 
-        // 2. Reduce crossings: two barycenter sweeps over predecessors.
-        var position: [String: Int] = [:]
-        func recordPositions() {
-            for layer in layers {
-                for (i, node) in layer.enumerated() { position[node.id] = i }
-            }
-        }
-        recordPositions()
-        for _ in 0..<2 {
-            for index in 1..<max(layers.count, 1) {
-                layers[index].sort { a, b in
-                    barycenter(of: a.id, edges: chart.edges, position: position)
-                        < barycenter(of: b.id, edges: chart.edges, position: position)
-                }
-                recordPositions()
-            }
-        }
+        let contentCross = crossLimit + flowchartMargin
+        let size = horizontal
+            ? CGSize(width: placement.mainContentEnd, height: contentCross)
+            : CGSize(width: contentCross, height: placement.mainContentEnd)
 
-        // 3. Node sizes from labels.
+        let placedNodes = chart.nodes.compactMap { node -> FlowchartLayout.PlacedNode? in
+            guard let frame = placement.frames[node.id] else { return nil }
+            return FlowchartLayout.PlacedNode(id: node.id, label: node.label, shape: node.shape, frame: frame)
+        }
+        return FlowchartLayout(size: size, nodes: placedNodes, edges: placedEdges)
+    }
+
+    /// Node box sizes from their labels, with per-shape adjustments
+    /// (diamonds widen, circles square up, state terminals are fixed dots).
+    private static func flowchartNodeSizes(
+        _ nodes: [Flowchart.Node],
+        measure: DiagramTextMeasurer
+    ) -> [String: CGSize] {
         let paddingX: CGFloat = 14
         let paddingY: CGFloat = 9
         var sizes: [String: CGSize] = [:]
-        for node in chart.nodes {
+        for node in nodes {
             let text = measure(node.label, nodeFontSize)
             var size = CGSize(width: text.width + paddingX * 2, height: text.height + paddingY * 2)
             switch node.shape {
@@ -105,11 +87,21 @@ extension DiagramLayoutEngine {
             }
             sizes[node.id] = size
         }
+        return sizes
+    }
 
-        // 4. Coordinates: layers along the main axis, centered on the cross axis.
-        let layerGap: CGFloat = 44
-        let nodeGap: CGFloat = 26
-        let margin: CGFloat = 12
+    /// Places the ordered layers along the main axis (down for TD, across for
+    /// LR), centering each layer on the cross axis. `mainContentEnd` is the
+    /// final main-axis dimension (trailing layer gap trimmed, margin added);
+    /// `crossExtent` is the widest layer, before back-edge lanes extend it.
+    private static func placeFlowchartFrames(
+        layers: [[String]],
+        sizes: [String: CGSize],
+        horizontal: Bool
+    ) -> (frames: [String: CGRect], mainContentEnd: CGFloat, crossExtent: CGFloat) {
+        let layerGap = flowchartLayerGap
+        let nodeGap = flowchartNodeGap
+        let margin = flowchartMargin
 
         var frames: [String: CGRect] = [:]
         var mainOffset = margin
@@ -117,18 +109,18 @@ extension DiagramLayoutEngine {
 
         var layerCrossSizes: [CGFloat] = []
         for layer in layers {
-            let total = layer.reduce(CGFloat(0)) { sum, node in
-                sum + (horizontal ? sizes[node.id]!.height : sizes[node.id]!.width)
+            let total = layer.reduce(CGFloat(0)) { sum, id in
+                sum + (horizontal ? sizes[id]!.height : sizes[id]!.width)
             } + CGFloat(max(layer.count - 1, 0)) * nodeGap
             layerCrossSizes.append(total)
             crossExtent = max(crossExtent, total)
         }
 
         for (layerIndex, layer) in layers.enumerated() {
-            let mainSize = layer.map { horizontal ? sizes[$0.id]!.width : sizes[$0.id]!.height }.max() ?? 0
+            let mainSize = layer.map { horizontal ? sizes[$0]!.width : sizes[$0]!.height }.max() ?? 0
             var crossOffset = margin + (crossExtent - layerCrossSizes[layerIndex]) / 2
-            for node in layer {
-                let size = sizes[node.id]!
+            for id in layer {
+                let size = sizes[id]!
                 let frame: CGRect
                 if horizontal {
                     frame = CGRect(
@@ -145,17 +137,30 @@ extension DiagramLayoutEngine {
                     )
                     crossOffset += size.width + nodeGap
                 }
-                frames[node.id] = frame
+                frames[id] = frame
             }
             mainOffset += mainSize + layerGap
         }
 
-        // 5. Edges. Forward edges attach at points distributed across each
-        // node's face — fanned out by the other endpoint's cross position so
-        // sibling edges never share a stub — and projected onto the node's
-        // actual outline (diamonds/circles) so they don't float off a
-        // bounding-box corner. Back edges (cycles) route around the node band
-        // in a private lane so they never overwrite the forward flow.
+        return (frames, mainOffset - layerGap + margin, crossExtent)
+    }
+
+    /// Routes each edge as a polyline. Forward edges attach at points
+    /// distributed across each node's face — fanned out by the other
+    /// endpoint's cross position so sibling edges never share a stub — and
+    /// projected onto the node's actual outline (diamonds/circles) so they
+    /// don't float off a bounding-box corner. Back edges (cycles) route around
+    /// the node band in a private lane so they never overwrite the forward
+    /// flow; that lane can push the cross dimension out, so the grown
+    /// `crossLimit` is returned alongside the edges.
+    private static func routeFlowchartEdges(
+        chart: Flowchart,
+        frames: [String: CGRect],
+        backEdges: Set<Int>,
+        horizontal: Bool,
+        crossExtent: CGFloat
+    ) -> (edges: [FlowchartLayout.PlacedEdge], crossLimit: CGFloat) {
+        let margin = flowchartMargin
         let shapeOf = Dictionary(uniqueKeysWithValues: chart.nodes.map { ($0.id, $0.shape) })
 
         func crossCenter(_ id: String) -> CGFloat {
@@ -270,23 +275,7 @@ extension DiagramLayoutEngine {
             ))
         }
 
-        let contentMain = mainOffset - layerGap + margin
-        let contentCross = crossLimit + margin
-        let size = horizontal
-            ? CGSize(width: contentMain, height: contentCross)
-            : CGSize(width: contentCross, height: contentMain)
-
-        let placedNodes = chart.nodes.compactMap { node -> FlowchartLayout.PlacedNode? in
-            guard let frame = frames[node.id] else { return nil }
-            return FlowchartLayout.PlacedNode(id: node.id, label: node.label, shape: node.shape, frame: frame)
-        }
-        return FlowchartLayout(size: size, nodes: placedNodes, edges: placedEdges)
-    }
-
-    private static func barycenter(of id: String, edges: [Flowchart.Edge], position: [String: Int]) -> Double {
-        let predecessors = edges.filter { $0.to == id }.compactMap { position[$0.from] }
-        guard !predecessors.isEmpty else { return Double(position[id] ?? 0) }
-        return Double(predecessors.reduce(0, +)) / Double(predecessors.count)
+        return (placedEdges, crossLimit)
     }
 
     // MARK: Sequence

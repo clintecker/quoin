@@ -215,25 +215,26 @@ public enum DiagramLayoutEngine {
         return back
     }
 
-    /// Longest-path layering + barycenter ordering for arbitrary sized
-    /// boxes, top-down. Shared by the class, ER, and state layouts. Cycles
-    /// are made acyclic for layering by ignoring DFS back edges.
-    static func layeredPlacement(
+    /// Longest-path layering followed by two barycenter-ordering sweeps,
+    /// returning ordered layers of ids. Coordinate assignment is left to the
+    /// caller because the axis and per-layer alignment differ per diagram
+    /// (top-down boxes vs. the direction-aware flowchart). Shared by
+    /// `layeredPlacement` and the flowchart engine.
+    ///
+    /// `layeringEdges` must already have cycle back edges removed so layers
+    /// don't drift downward without bound. `barycenterEdges` drives cross-axis
+    /// ordering and defaults to `layeringEdges`; the flowchart passes the full
+    /// edge set here so a retry loop still influences sibling order.
+    static func orderedLayers(
         ids: [String],
-        sizes: [String: CGSize],
-        edges allEdges: [(String, String)],
-        layerGap: CGFloat,
-        nodeGap: CGFloat,
-        margin: CGFloat
-    ) -> Placement {
-        let backEdges = backEdgeIndices(ids: ids, edges: allEdges)
-        let edges = allEdges.enumerated().filter { !backEdges.contains($0.offset) }.map(\.element)
-
+        layeringEdges: [(String, String)],
+        barycenterEdges: [(String, String)]? = nil
+    ) -> [[String]] {
         var layerOf: [String: Int] = [:]
         for id in ids { layerOf[id] = 0 }
         for _ in 0..<(ids.count + 1) {
             var changed = false
-            for (from, to) in edges {
+            for (from, to) in layeringEdges {
                 guard let a = layerOf[from], let b = layerOf[to] else { continue }
                 if b < a + 1 { layerOf[to] = a + 1; changed = true }
             }
@@ -247,25 +248,47 @@ public enum DiagramLayoutEngine {
         }
         layers.removeAll(where: \.isEmpty)
 
+        // Predecessors precomputed once so the sort comparator is O(1), not
+        // an O(E) filter per comparison.
+        var predecessors: [String: [String]] = [:]
+        for (from, to) in barycenterEdges ?? layeringEdges {
+            predecessors[to, default: []].append(from)
+        }
         var position: [String: Int] = [:]
         func recordPositions() {
             for layer in layers {
                 for (i, id) in layer.enumerated() { position[id] = i }
             }
         }
+        func barycenter(_ id: String) -> Double {
+            let ps = (predecessors[id] ?? []).compactMap { position[$0] }
+            return ps.isEmpty ? Double(position[id] ?? 0)
+                              : Double(ps.reduce(0, +)) / Double(ps.count)
+        }
         recordPositions()
         for _ in 0..<2 {
             for index in 1..<max(layers.count, 1) {
-                layers[index].sort { a, b in
-                    let pa = edges.filter { $0.1 == a }.compactMap { position[$0.0] }
-                    let pb = edges.filter { $0.1 == b }.compactMap { position[$0.0] }
-                    let ba = pa.isEmpty ? Double(position[a] ?? 0) : Double(pa.reduce(0, +)) / Double(pa.count)
-                    let bb = pb.isEmpty ? Double(position[b] ?? 0) : Double(pb.reduce(0, +)) / Double(pb.count)
-                    return ba < bb
-                }
+                layers[index].sort { barycenter($0) < barycenter($1) }
                 recordPositions()
             }
         }
+        return layers
+    }
+
+    /// Longest-path layering + barycenter ordering for arbitrary sized
+    /// boxes, top-down. Shared by the class, ER, and state layouts. Cycles
+    /// are made acyclic for layering by ignoring DFS back edges.
+    static func layeredPlacement(
+        ids: [String],
+        sizes: [String: CGSize],
+        edges allEdges: [(String, String)],
+        layerGap: CGFloat,
+        nodeGap: CGFloat,
+        margin: CGFloat
+    ) -> Placement {
+        let backEdges = backEdgeIndices(ids: ids, edges: allEdges)
+        let edges = allEdges.enumerated().filter { !backEdges.contains($0.offset) }.map(\.element)
+        let layers = orderedLayers(ids: ids, layeringEdges: edges)
 
         var frames: [String: CGRect] = [:]
         var y = margin
