@@ -282,19 +282,10 @@ extension DiagramLayoutEngine {
 
         // Projects a cross coordinate onto a node's outline on the chosen face.
         // `isSource` marks the edge's tail (the node it leaves) vs. its head.
+        // Decisions are handled by `diamondPort`, never here.
         func attach(_ id: String, cross: CGFloat, rightOrBottom: Bool, isSource: Bool) -> CGPoint {
             let f = frames[id]!
             let shape = shapeOf[id] ?? .rectangle
-            // A decision meets an *incoming* edge at its vertex, so the arrowhead
-            // lands cleanly on the point with the alignment jog in the layer gap.
-            // *Outgoing* branches keep the slanted-face projection below, so
-            // "Yes"/"No" fan out by their channel instead of stacking on one
-            // vertex.
-            if shape == .diamond, !isSource {
-                return horizontal
-                    ? CGPoint(x: rightOrBottom ? f.maxX : f.minX, y: f.midY)
-                    : CGPoint(x: f.midX, y: rightOrBottom ? f.maxY : f.minY)
-            }
             if horizontal {
                 // Keep the attach point off the very corners of a box so an edge
                 // whose channel runs past the box edge is pulled onto the face
@@ -304,9 +295,6 @@ extension DiagramLayoutEngine {
                 let hh = max(f.height / 2, 0.001)
                 var x = rightOrBottom ? f.maxX : f.minX
                 switch shape {
-                case .diamond:
-                    let dx = (f.width / 2) * (1 - min(abs(y - f.midY) / hh, 1))
-                    x = rightOrBottom ? f.midX + dx : f.midX - dx
                 case .circle, .stateStart, .stateEnd:
                     let dx = (f.width / 2) * sqrt(max(0, 1 - pow((y - f.midY) / hh, 2)))
                     x = rightOrBottom ? f.midX + dx : f.midX - dx
@@ -319,15 +307,53 @@ extension DiagramLayoutEngine {
                 let hw = max(f.width / 2, 0.001)
                 var y = rightOrBottom ? f.maxY : f.minY
                 switch shape {
-                case .diamond:
-                    let dy = (f.height / 2) * (1 - min(abs(x - f.midX) / hw, 1))
-                    y = rightOrBottom ? f.midY + dy : f.midY - dy
                 case .circle, .stateStart, .stateEnd:
                     let dy = (f.height / 2) * sqrt(max(0, 1 - pow((x - f.midX) / hw, 2)))
                     y = rightOrBottom ? f.midY + dy : f.midY - dy
                 default: break
                 }
                 return CGPoint(x: x, y: y)
+            }
+        }
+
+        // A decision attaches at the vertex facing its neighbor and leaves/enters
+        // heading straight out of that point — the flowchart convention.
+        //
+        // An *incoming* edge enters on the main-axis face (top for TD, left for
+        // LR; the opposite for a back edge), so flow arrives "into the top" and
+        // the alignment jog happens in the layer gap — this reserves the side
+        // vertices for the branches. An *outgoing* branch whose neighbor sits
+        // clearly to a side (beyond ~15% of the half-width) leaves from the
+        // west/east vertex with a short stub carrying it out before vertical
+        // routing resumes; otherwise it leaves the south/north vertex.
+        func diamondPort(_ f: CGRect, toward next: CGPoint, isSource: Bool) -> (vertex: CGPoint, stub: CGPoint?) {
+            if !isSource {
+                return horizontal
+                    ? (CGPoint(x: next.x <= f.midX ? f.minX : f.maxX, y: f.midY), nil)
+                    : (CGPoint(x: f.midX, y: next.y <= f.midY ? f.minY : f.maxY), nil)
+            }
+            if horizontal {
+                let eps = f.height * 0.15
+                let dy = next.y - f.midY
+                if dy < -eps {
+                    let v = CGPoint(x: f.midX, y: f.minY)
+                    return (v, next.y < v.y - 1 ? CGPoint(x: v.x, y: next.y) : nil)
+                } else if dy > eps {
+                    let v = CGPoint(x: f.midX, y: f.maxY)
+                    return (v, next.y > v.y + 1 ? CGPoint(x: v.x, y: next.y) : nil)
+                }
+                return (CGPoint(x: next.x >= f.midX ? f.maxX : f.minX, y: f.midY), nil)
+            } else {
+                let eps = f.width * 0.15
+                let dx = next.x - f.midX
+                if dx < -eps {
+                    let v = CGPoint(x: f.minX, y: f.midY)
+                    return (v, next.x < v.x - 1 ? CGPoint(x: next.x, y: v.y) : nil)
+                } else if dx > eps {
+                    let v = CGPoint(x: f.maxX, y: f.midY)
+                    return (v, next.x > v.x + 1 ? CGPoint(x: next.x, y: v.y) : nil)
+                }
+                return (CGPoint(x: f.midX, y: next.y >= f.midY ? f.maxY : f.minY), nil)
             }
         }
 
@@ -352,10 +378,31 @@ extension DiagramLayoutEngine {
             let lastPrev = dummyCenters.last ?? CGPoint(x: fromFrame.midX, y: fromFrame.midY)
             let exitBottomRight = horizontal ? (firstNext.x >= fromFrame.midX) : (firstNext.y >= fromFrame.midY)
             let enterBottomRight = horizontal ? (lastPrev.x > toFrame.midX) : (lastPrev.y > toFrame.midY)
-            let start = attach(chain[0], cross: horizontal ? firstNext.y : firstNext.x, rightOrBottom: exitBottomRight, isSource: true)
-            let end = attach(chain[chain.count - 1], cross: horizontal ? lastPrev.y : lastPrev.x, rightOrBottom: enterBottomRight, isSource: false)
 
-            let points = routePolyline([start] + dummyCenters + [end], horizontal: horizontal)
+            // Head (leaves the source) and tail (enters the target). A decision
+            // uses vertex ports; every other shape uses a face projection.
+            let head: [CGPoint]
+            let start: CGPoint
+            if shapeOf[chain[0]] == .diamond {
+                let (v, stub) = diamondPort(fromFrame, toward: firstNext, isSource: true)
+                start = v
+                head = stub.map { [v, $0] } ?? [v]
+            } else {
+                start = attach(chain[0], cross: horizontal ? firstNext.y : firstNext.x, rightOrBottom: exitBottomRight, isSource: true)
+                head = [start]
+            }
+            let tail: [CGPoint]
+            let end: CGPoint
+            if shapeOf[chain[chain.count - 1]] == .diamond {
+                let (v, stub) = diamondPort(toFrame, toward: lastPrev, isSource: false)
+                end = v
+                tail = stub.map { [$0, v] } ?? [v]
+            } else {
+                end = attach(chain[chain.count - 1], cross: horizontal ? lastPrev.y : lastPrev.x, rightOrBottom: enterBottomRight, isSource: false)
+                tail = [end]
+            }
+
+            let points = routePolyline(head + dummyCenters + tail, horizontal: horizontal)
             for p in points { crossLimit = max(crossLimit, horizontal ? p.y : p.x) }
             placedEdges.append(FlowchartLayout.PlacedEdge(
                 start: start, end: end, points: points,
