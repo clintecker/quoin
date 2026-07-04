@@ -421,6 +421,13 @@ enum DiagramRenderer {
             let iy = max(0, min(r1.maxY, r2.maxY) - max(r1.minY, r2.minY))
             return ix * iy
         }
+        // Reserve the marker/arrowhead zone near each endpoint so a label's
+        // opaque pad can't cover a crow's-foot, tick, UML marker, or arrowhead
+        // (all of which live within ~18pt of a box border).
+        var obstacles = obstacles
+        for end in [points.first, points.last].compactMap({ $0 }) {
+            obstacles.append(CGRect(x: end.x - 12, y: end.y - 12, width: 24, height: 24))
+        }
         // Sample along the edge's arc length, not just at the midpoint, so two
         // antiparallel edges between the same box pair can slide their labels
         // apart along their lines instead of stacking into one phrase. Each

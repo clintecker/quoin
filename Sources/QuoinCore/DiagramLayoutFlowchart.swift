@@ -281,23 +281,32 @@ extension DiagramLayoutEngine {
         let shapeOf = Dictionary(uniqueKeysWithValues: chart.nodes.map { ($0.id, $0.shape) })
 
         // Projects a cross coordinate onto a node's outline on the chosen face.
-        func attach(_ id: String, cross: CGFloat, rightOrBottom: Bool) -> CGPoint {
+        // `isSource` marks the edge's tail (the node it leaves) vs. its head.
+        func attach(_ id: String, cross: CGFloat, rightOrBottom: Bool, isSource: Bool) -> CGPoint {
             let f = frames[id]!
             let shape = shapeOf[id] ?? .rectangle
-            // A decision meets its edges at a vertex, not a slanted face: enter
-            // at the top/bottom point (TD) or the left/right point (LR), with
-            // the cross-axis alignment happening in the layer gap. Attaching to
-            // a slant leaves the arrowhead stuck on the diamond's side.
-            if shape == .diamond {
+            // A decision meets an *incoming* edge at its vertex, so the arrowhead
+            // lands cleanly on the point with the alignment jog in the layer gap.
+            // *Outgoing* branches keep the slanted-face projection below, so
+            // "Yes"/"No" fan out by their channel instead of stacking on one
+            // vertex.
+            if shape == .diamond, !isSource {
                 return horizontal
                     ? CGPoint(x: rightOrBottom ? f.maxX : f.minX, y: f.midY)
                     : CGPoint(x: f.midX, y: rightOrBottom ? f.maxY : f.minY)
             }
             if horizontal {
-                let y = min(max(cross, f.minY), f.maxY)
+                // Keep the attach point off the very corners of a box so an edge
+                // whose channel runs past the box edge is pulled onto the face
+                // rather than pinned to a corner.
+                let inset = min(f.height * 0.22, f.height / 2)
+                let y = min(max(cross, f.minY + inset), f.maxY - inset)
                 let hh = max(f.height / 2, 0.001)
                 var x = rightOrBottom ? f.maxX : f.minX
                 switch shape {
+                case .diamond:
+                    let dx = (f.width / 2) * (1 - min(abs(y - f.midY) / hh, 1))
+                    x = rightOrBottom ? f.midX + dx : f.midX - dx
                 case .circle, .stateStart, .stateEnd:
                     let dx = (f.width / 2) * sqrt(max(0, 1 - pow((y - f.midY) / hh, 2)))
                     x = rightOrBottom ? f.midX + dx : f.midX - dx
@@ -305,10 +314,14 @@ extension DiagramLayoutEngine {
                 }
                 return CGPoint(x: x, y: y)
             } else {
-                let x = min(max(cross, f.minX), f.maxX)
+                let inset = min(f.width * 0.22, f.width / 2)
+                let x = min(max(cross, f.minX + inset), f.maxX - inset)
                 let hw = max(f.width / 2, 0.001)
                 var y = rightOrBottom ? f.maxY : f.minY
                 switch shape {
+                case .diamond:
+                    let dy = (f.height / 2) * (1 - min(abs(x - f.midX) / hw, 1))
+                    y = rightOrBottom ? f.midY + dy : f.midY - dy
                 case .circle, .stateStart, .stateEnd:
                     let dy = (f.height / 2) * sqrt(max(0, 1 - pow((x - f.midX) / hw, 2)))
                     y = rightOrBottom ? f.midY + dy : f.midY - dy
@@ -339,8 +352,8 @@ extension DiagramLayoutEngine {
             let lastPrev = dummyCenters.last ?? CGPoint(x: fromFrame.midX, y: fromFrame.midY)
             let exitBottomRight = horizontal ? (firstNext.x >= fromFrame.midX) : (firstNext.y >= fromFrame.midY)
             let enterBottomRight = horizontal ? (lastPrev.x > toFrame.midX) : (lastPrev.y > toFrame.midY)
-            let start = attach(chain[0], cross: horizontal ? firstNext.y : firstNext.x, rightOrBottom: exitBottomRight)
-            let end = attach(chain[chain.count - 1], cross: horizontal ? lastPrev.y : lastPrev.x, rightOrBottom: enterBottomRight)
+            let start = attach(chain[0], cross: horizontal ? firstNext.y : firstNext.x, rightOrBottom: exitBottomRight, isSource: true)
+            let end = attach(chain[chain.count - 1], cross: horizontal ? lastPrev.y : lastPrev.x, rightOrBottom: enterBottomRight, isSource: false)
 
             let points = routePolyline([start] + dummyCenters + [end], horizontal: horizontal)
             for p in points { crossLimit = max(crossLimit, horizontal ? p.y : p.x) }
