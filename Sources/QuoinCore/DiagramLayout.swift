@@ -270,30 +270,46 @@ public enum DiagramLayoutEngine {
         layeringEdges: [(String, String)],
         barycenterEdges: [(String, String)]? = nil
     ) -> [[String]] {
+        let layerOf = assignLayers(ids: ids, edges: layeringEdges)
+        let maxLayer = layerOf.values.max() ?? 0
+        var layers: [[String]] = []
+        for index in 0...maxLayer {
+            layers.append(ids.filter { layerOf[$0] == index })
+        }
+        return barycenterOrder(layers: layers, edges: barycenterEdges ?? layeringEdges)
+    }
+
+    /// Longest-path layer assignment: every node starts at layer 0 and each
+    /// edge pushes its target at least one layer below its source. `edges`
+    /// must be acyclic (cycle back edges removed) so it terminates. Split out
+    /// of `orderedLayers` so the flowchart can insert dummy nodes for
+    /// multi-layer edges between assignment and ordering.
+    static func assignLayers(ids: [String], edges: [(String, String)]) -> [String: Int] {
         var layerOf: [String: Int] = [:]
         for id in ids { layerOf[id] = 0 }
         for _ in 0..<(ids.count + 1) {
             var changed = false
-            for (from, to) in layeringEdges {
+            for (from, to) in edges {
                 guard let a = layerOf[from], let b = layerOf[to] else { continue }
                 if b < a + 1 { layerOf[to] = a + 1; changed = true }
             }
             if !changed { break }
         }
+        return layerOf
+    }
 
-        var layers: [[String]] = []
-        let maxLayer = layerOf.values.max() ?? 0
-        for index in 0...maxLayer {
-            layers.append(ids.filter { layerOf[$0] == index })
-        }
+    /// Barycenter crossing-minimization: repeatedly reorder each layer by the
+    /// mean position of each node's predecessors. Empty layers are dropped.
+    static func barycenterOrder(
+        layers: [[String]], edges: [(String, String)], sweeps: Int = 2
+    ) -> [[String]] {
+        var layers = layers
         layers.removeAll(where: \.isEmpty)
 
         // Predecessors precomputed once so the sort comparator is O(1), not
         // an O(E) filter per comparison.
         var predecessors: [String: [String]] = [:]
-        for (from, to) in barycenterEdges ?? layeringEdges {
-            predecessors[to, default: []].append(from)
-        }
+        for (from, to) in edges { predecessors[to, default: []].append(from) }
         var position: [String: Int] = [:]
         func recordPositions() {
             for layer in layers {
@@ -306,7 +322,7 @@ public enum DiagramLayoutEngine {
                               : Double(ps.reduce(0, +)) / Double(ps.count)
         }
         recordPositions()
-        for _ in 0..<2 {
+        for _ in 0..<sweeps {
             for index in 1..<max(layers.count, 1) {
                 layers[index].sort { barycenter($0) < barycenter($1) }
                 recordPositions()

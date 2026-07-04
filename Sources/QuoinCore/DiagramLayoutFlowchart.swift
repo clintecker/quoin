@@ -13,41 +13,69 @@ extension DiagramLayoutEngine {
     private static let flowchartMargin: CGFloat = 12
     private static let flowchartLayerGap: CGFloat = 44
     private static let flowchartNodeGap: CGFloat = 26
+    /// Cross-axis breadth a dummy node reserves — a narrow channel a long edge
+    /// runs through, between real nodes.
+    private static let dummyBreadth: CGFloat = 16
 
     public static func layout(_ chart: Flowchart, measure: DiagramTextMeasurer) -> FlowchartLayout {
         let horizontal = chart.direction == .leftRight || chart.direction == .rightLeft
 
-        // 1. Break cycles, then layer and order the DAG. Back edges (a state
-        // machine's "retry" loop) are excluded from layering so they don't
-        // push their target deeper, but they still influence sibling order and
-        // still draw, against the flow.
+        let ids = chart.nodes.map(\.id)
         let allEdges = chart.edges.map { ($0.from, $0.to) }
-        let backEdges = backEdgeIndices(ids: chart.nodes.map(\.id), edges: allEdges)
+
+        // 1. Break cycles, then assign layers on the acyclic forward edges.
+        let backEdges = backEdgeIndices(ids: ids, edges: allEdges)
         let forwardEdges = chart.edges.enumerated()
             .filter { !backEdges.contains($0.offset) }
             .map { ($0.element.from, $0.element.to) }
-        let layers = orderedLayers(
-            ids: chart.nodes.map(\.id),
-            layeringEdges: forwardEdges,
-            barycenterEdges: allEdges
+        let layerOf = assignLayers(ids: ids, edges: forwardEdges)
+        let layerCount = (layerOf.values.max() ?? 0) + 1
+
+        // 2. Insert dummy nodes for every edge spanning more than one layer
+        // (forward or back). Dummies join their layer and reserve channel space
+        // in ordering + placement, so a long edge routes *between* the nodes it
+        // crosses rather than under them (Sugiyama/dagre-style routing). Each
+        // edge's waypoint chain [u, dummies…, v] drives its route.
+        var layers: [[String]] = Array(repeating: [], count: layerCount)
+        for id in ids { layers[layerOf[id]!].append(id) }
+        var sizes = flowchartNodeSizes(chart.nodes, measure: measure)
+        var chains: [[String]] = []
+        var segmentEdges: [(String, String)] = []
+        for (index, edge) in chart.edges.enumerated() {
+            guard let lu = layerOf[edge.from], let lv = layerOf[edge.to] else { chains.append([]); continue }
+            let lo = min(lu, lv), hi = max(lu, lv)
+            if hi - lo <= 1 {
+                chains.append([edge.from, edge.to])
+                segmentEdges.append((edge.from, edge.to))
+                continue
+            }
+            var midByLayer: [(layer: Int, id: String)] = []
+            for layer in (lo + 1)...(hi - 1) {
+                let dummy = "\u{a7}\(index).\(layer)"
+                layers[layer].append(dummy)
+                sizes[dummy] = CGSize(width: dummyBreadth, height: 1)
+                midByLayer.append((layer, dummy))
+            }
+            let mids = (lu < lv ? midByLayer : midByLayer.reversed()).map(\.id)
+            let chain = [edge.from] + mids + [edge.to]
+            chains.append(chain)
+            for k in 0..<(chain.count - 1) { segmentEdges.append((chain[k], chain[k + 1])) }
+        }
+
+        // 3. Order every layer (real + dummy) by barycenter; 4. assign
+        // coordinates (dummies take a narrow channel between real nodes).
+        let ordered = barycenterOrder(layers: layers, edges: segmentEdges)
+        let placement = placeFlowchartFrames(layers: ordered, sizes: sizes, horizontal: horizontal)
+
+        // 5. Route each edge through its chain's waypoints.
+        let (placedEdges, crossLimit) = routeChains(
+            chart: chart, chains: chains, frames: placement.frames,
+            horizontal: horizontal, crossExtent: placement.crossExtent
         )
 
-        // 2. Size nodes from labels; 3. place layers along the main axis.
-        let sizes = flowchartNodeSizes(chart.nodes, measure: measure)
-        let placement = placeFlowchartFrames(layers: layers, sizes: sizes, horizontal: horizontal)
-
-        // 4. Route edges around the placed nodes.
-        let (placedEdges, crossLimit) = routeFlowchartEdges(
-            chart: chart,
-            frames: placement.frames,
-            backEdges: backEdges,
-            horizontal: horizontal,
-            crossExtent: placement.crossExtent
-        )
-
-        // 5. Place edge labels clear of node boxes and each other.
+        // 6. Place edge labels clear of node boxes and each other.
         let labeledEdges = placeEdgeLabels(
-            placedEdges, nodeFrames: Array(placement.frames.values), measure: measure
+            placedEdges, nodeFrames: chart.nodes.compactMap { placement.frames[$0.id] }, measure: measure
         )
 
         let contentCross = crossLimit + flowchartMargin
@@ -226,55 +254,32 @@ extension DiagramLayoutEngine {
     /// the node band in a private lane so they never overwrite the forward
     /// flow; that lane can push the cross dimension out, so the grown
     /// `crossLimit` is returned alongside the edges.
-    private static func routeFlowchartEdges(
+    /// Routes every edge through its dummy-node waypoint chain. The exit/enter
+    /// faces and direction come from the chain's geometry, so forward edges
+    /// leave the bottom and enter the top while back edges go the other way;
+    /// intermediate dummy centers become the bend points. Because the dummies
+    /// reserved channel space in placement, the resulting polyline runs
+    /// between the nodes it crosses rather than under them.
+    private static func routeChains(
         chart: Flowchart,
+        chains: [[String]],
         frames: [String: CGRect],
-        backEdges: Set<Int>,
         horizontal: Bool,
         crossExtent: CGFloat
     ) -> (edges: [FlowchartLayout.PlacedEdge], crossLimit: CGFloat) {
-        let margin = flowchartMargin
         let shapeOf = Dictionary(uniqueKeysWithValues: chart.nodes.map { ($0.id, $0.shape) })
 
-        func crossCenter(_ id: String) -> CGFloat {
-            horizontal ? frames[id]!.midY : frames[id]!.midX
-        }
-        var forwardOut: [String: [Int]] = [:]
-        var forwardIn: [String: [Int]] = [:]
-        for (index, edge) in chart.edges.enumerated() where !backEdges.contains(index) {
-            guard frames[edge.from] != nil, frames[edge.to] != nil else { continue }
-            forwardOut[edge.from, default: []].append(index)
-            forwardIn[edge.to, default: []].append(index)
-        }
-        for (node, indices) in forwardOut {
-            forwardOut[node] = indices.sorted { crossCenter(chart.edges[$0].to) < crossCenter(chart.edges[$1].to) }
-        }
-        for (node, indices) in forwardIn {
-            forwardIn[node] = indices.sorted { crossCenter(chart.edges[$0].from) < crossCenter(chart.edges[$1].from) }
-        }
-        // Cross-axis coordinate where edge `index` sits on `nodeID`'s face:
-        // one edge → centered; N edges → spread across the middle 64%.
-        func faceCross(_ nodeID: String, group: [Int]?, index: Int) -> CGFloat {
-            let frame = frames[nodeID]!
-            let lo = horizontal ? frame.minY : frame.minX
-            let span = horizontal ? frame.height : frame.width
-            guard let group, group.count > 1, let pos = group.firstIndex(of: index) else {
-                return horizontal ? frame.midY : frame.midX
-            }
-            let inset = span * 0.18
-            return lo + inset + (span - inset * 2) * CGFloat(pos) / CGFloat(group.count - 1)
-        }
-        // Projects a face-cross coordinate onto the node's outline.
-        func attachPoint(_ id: String, cross: CGFloat, rightOrBottom: Bool) -> CGPoint {
+        // Projects a cross coordinate onto a node's outline on the chosen face.
+        func attach(_ id: String, cross: CGFloat, rightOrBottom: Bool) -> CGPoint {
             let f = frames[id]!
             let shape = shapeOf[id] ?? .rectangle
             if horizontal {
                 let y = min(max(cross, f.minY), f.maxY)
-                let hw = f.width / 2, hh = max(f.height / 2, 0.001)
+                let hh = max(f.height / 2, 0.001)
                 var x = rightOrBottom ? f.maxX : f.minX
                 switch shape {
                 case .diamond:
-                    let dx = hw * (1 - min(abs(y - f.midY) / hh, 1))
+                    let dx = (f.width / 2) * (1 - min(abs(y - f.midY) / hh, 1))
                     x = rightOrBottom ? f.midX + dx : f.midX - dx
                 case .circle, .stateStart, .stateEnd:
                     let dx = (f.width / 2) * sqrt(max(0, 1 - pow((y - f.midY) / hh, 2)))
@@ -284,11 +289,11 @@ extension DiagramLayoutEngine {
                 return CGPoint(x: x, y: y)
             } else {
                 let x = min(max(cross, f.minX), f.maxX)
-                let hw = max(f.width / 2, 0.001), hh = f.height / 2
+                let hw = max(f.width / 2, 0.001)
                 var y = rightOrBottom ? f.maxY : f.minY
                 switch shape {
                 case .diamond:
-                    let dy = hh * (1 - min(abs(x - f.midX) / hw, 1))
+                    let dy = (f.height / 2) * (1 - min(abs(x - f.midX) / hw, 1))
                     y = rightOrBottom ? f.midY + dy : f.midY - dy
                 case .circle, .stateStart, .stateEnd:
                     let dy = (f.height / 2) * sqrt(max(0, 1 - pow((x - f.midX) / hw, 2)))
@@ -300,110 +305,79 @@ extension DiagramLayoutEngine {
         }
 
         var placedEdges: [FlowchartLayout.PlacedEdge] = []
-        let bandMaxCross = frames.values.map { horizontal ? $0.maxY : $0.maxX }.max() ?? 0
-        var crossLimit = margin + crossExtent
-        var backLane = 0
+        var crossLimit = flowchartMargin + crossExtent
+        for f in frames.values { crossLimit = max(crossLimit, horizontal ? f.maxY : f.maxX) }
 
         for (index, edge) in chart.edges.enumerated() {
-            guard let from = frames[edge.from], let to = frames[edge.to] else { continue }
-            let start: CGPoint
-            let end: CGPoint
-            let points: [CGPoint]
-
-            if backEdges.contains(index) {
-                // Loop out past the band's far cross edge in a private lane.
-                let lane = bandMaxCross + 16 + CGFloat(backLane) * 12
-                backLane += 1
-                crossLimit = max(crossLimit, lane)
-                if horizontal {
-                    start = CGPoint(x: from.midX, y: from.maxY)
-                    end = CGPoint(x: to.midX, y: to.maxY)
-                    points = [start, CGPoint(x: from.midX, y: lane), CGPoint(x: to.midX, y: lane), end]
-                } else {
-                    start = CGPoint(x: from.maxX, y: from.midY)
-                    end = CGPoint(x: to.maxX, y: to.midY)
-                    points = [start, CGPoint(x: lane, y: from.midY), CGPoint(x: lane, y: to.midY), end]
-                }
-            } else {
-                let outCross = faceCross(edge.from, group: forwardOut[edge.from], index: index)
-                let inCross = faceCross(edge.to, group: forwardIn[edge.to], index: index)
-                start = attachPoint(edge.from, cross: outCross, rightOrBottom: true)
-                end = attachPoint(edge.to, cross: inCross, rightOrBottom: false)
-                if !horizontal,
-                   let routed = channelRoute(start: start, end: end, from: from, to: to, frames: frames) {
-                    // A multi-layer edge that would pass under intervening nodes
-                    // is diverted through a clear vertical channel.
-                    points = routed
-                } else {
-                    let jog = horizontal ? abs(start.y - end.y) : abs(start.x - end.x)
-                    if jog > 0.5 {
-                        if horizontal {
-                            let midX = (start.x + end.x) / 2
-                            points = [start, CGPoint(x: midX, y: start.y), CGPoint(x: midX, y: end.y), end]
-                        } else {
-                            let midY = (start.y + end.y) / 2
-                            points = [start, CGPoint(x: start.x, y: midY), CGPoint(x: end.x, y: midY), end]
-                        }
-                    } else {
-                        points = [start, end]
-                    }
-                }
+            let chain = index < chains.count ? chains[index] : []
+            guard chain.count >= 2,
+                  let fromFrame = frames[chain[0]], let toFrame = frames[chain[chain.count - 1]] else {
+                let p = CGPoint.zero
+                placedEdges.append(FlowchartLayout.PlacedEdge(
+                    start: p, end: p, points: [p, p],
+                    label: edge.label, dashed: edge.dashed, hasArrow: edge.hasArrow))
+                continue
             }
-            placedEdges.append(FlowchartLayout.PlacedEdge(
-                start: start, end: end, points: points, label: edge.label,
-                dashed: edge.dashed, hasArrow: edge.hasArrow
-            ))
-        }
+            let dummyCenters = chain[1..<(chain.count - 1)].compactMap { id -> CGPoint? in
+                frames[id].map { CGPoint(x: $0.midX, y: $0.midY) }
+            }
+            let firstNext = dummyCenters.first ?? CGPoint(x: toFrame.midX, y: toFrame.midY)
+            let lastPrev = dummyCenters.last ?? CGPoint(x: fromFrame.midX, y: fromFrame.midY)
+            let exitBottomRight = horizontal ? (firstNext.x >= fromFrame.midX) : (firstNext.y >= fromFrame.midY)
+            let enterBottomRight = horizontal ? (lastPrev.x > toFrame.midX) : (lastPrev.y > toFrame.midY)
+            let start = attach(chain[0], cross: horizontal ? firstNext.y : firstNext.x, rightOrBottom: exitBottomRight)
+            let end = attach(chain[chain.count - 1], cross: horizontal ? lastPrev.y : lastPrev.x, rightOrBottom: enterBottomRight)
 
+            let points = routePolyline([start] + dummyCenters + [end], horizontal: horizontal)
+            for p in points { crossLimit = max(crossLimit, horizontal ? p.y : p.x) }
+            placedEdges.append(FlowchartLayout.PlacedEdge(
+                start: start, end: end, points: points,
+                label: edge.label, dashed: edge.dashed, hasArrow: edge.hasArrow))
+        }
         return (placedEdges, crossLimit)
     }
 
-    /// Routes a top-down forward edge that spans intervening layers so it
-    /// doesn't pass *under* the nodes between its endpoints. Drops into the gap
-    /// below the source, slides sideways to a vertical channel whose x is clear
-    /// of every intervening node, runs down that channel, then crosses into the
-    /// target. Returns nil when the straight column is already clear (adjacent
-    /// layers, or an unobstructed x), so simple edges keep their direct route.
-    private static func channelRoute(
-        start: CGPoint, end: CGPoint, from: CGRect, to: CGRect, frames: [String: CGRect]
-    ) -> [CGPoint]? {
-        guard end.y - start.y > 1 else { return nil }
-        // Nodes wholly between `from`'s bottom and `to`'s top — the layers the
-        // edge must clear.
-        let blockers = frames.values.filter { $0.minY >= from.maxY - 1 && $0.maxY <= to.minY + 1 }
-        guard !blockers.isEmpty else { return nil }
-
-        let pad: CGFloat = 8
-        func crosses(_ x: CGFloat) -> Bool {
-            blockers.contains { $0.minX - pad <= x && x <= $0.maxX + pad }
-        }
-        // A clear straight column needs no diversion.
-        if abs(start.x - end.x) < 0.5, !crosses(start.x) { return nil }
-
-        // Prefer the target's column, then the source's, then the nearest clear
-        // gap beside a blocker.
-        var channelX = end.x
-        if crosses(channelX) {
-            if !crosses(start.x) {
-                channelX = start.x
-            } else {
-                let candidates = blockers.flatMap { [$0.minX - pad - 4, $0.maxX + pad + 4] }
-                channelX = candidates.sorted { abs($0 - end.x) < abs($1 - end.x) }
-                    .first(where: { !crosses($0) }) ?? start.x
+    /// Connects waypoints with an orthogonal polyline. For a top-down chart the
+    /// vertical runs sit at each waypoint's x (the reserved dummy channels) and
+    /// the horizontal jogs happen at the midpoint between consecutive waypoints
+    /// — i.e. in the gaps between layers, never across a node's row. Collinear
+    /// runs are merged so straight edges stay two-point.
+    private static func routePolyline(_ waypoints: [CGPoint], horizontal: Bool) -> [CGPoint] {
+        guard waypoints.count >= 2 else { return waypoints }
+        var pts: [CGPoint] = [waypoints[0]]
+        for i in 0..<(waypoints.count - 1) {
+            let a = waypoints[i], b = waypoints[i + 1]
+            if horizontal {
+                if abs(a.y - b.y) > 0.5 {
+                    let midX = (a.x + b.x) / 2
+                    pts.append(CGPoint(x: midX, y: a.y))
+                    pts.append(CGPoint(x: midX, y: b.y))
+                }
+            } else if abs(a.x - b.x) > 0.5 {
+                let midY = (a.y + b.y) / 2
+                pts.append(CGPoint(x: a.x, y: midY))
+                pts.append(CGPoint(x: b.x, y: midY))
             }
         }
-        if abs(channelX - start.x) < 0.5, abs(channelX - end.x) < 0.5 { return nil }
+        pts.append(waypoints[waypoints.count - 1])
+        return simplifyCollinear(pts)
+    }
 
-        let exitY = start.y + pad + 4
-        let enterY = end.y - pad - 4
-        return [
-            start,
-            CGPoint(x: start.x, y: exitY),
-            CGPoint(x: channelX, y: exitY),
-            CGPoint(x: channelX, y: enterY),
-            CGPoint(x: end.x, y: enterY),
-            end,
-        ]
+    /// Drops points that lie on a straight run with their neighbours, and exact
+    /// duplicates, so a polyline carries only its real bends.
+    private static func simplifyCollinear(_ pts: [CGPoint]) -> [CGPoint] {
+        guard pts.count > 2 else { return pts }
+        var out: [CGPoint] = [pts[0]]
+        for i in 1..<(pts.count - 1) {
+            let a = out.last!, b = pts[i], c = pts[i + 1]
+            if abs(a.x - b.x) < 0.5, abs(a.y - b.y) < 0.5 { continue }         // duplicate
+            let straightH = abs(a.y - b.y) < 0.5 && abs(b.y - c.y) < 0.5
+            let straightV = abs(a.x - b.x) < 0.5 && abs(b.x - c.x) < 0.5
+            if straightH || straightV { continue }                            // collinear
+            out.append(b)
+        }
+        out.append(pts[pts.count - 1])
+        return out
     }
 
     // MARK: Sequence
