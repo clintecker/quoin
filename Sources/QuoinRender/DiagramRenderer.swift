@@ -206,9 +206,8 @@ enum DiagramRenderer {
             case .diamond:
                 path = diamondPath(node.frame)
             }
-            context.addPath(path)
-            context.drawPath(using: .fillStroke)
             context.restoreGState()
+            fillStrokeShape(path, fill: fill, stroke: stroke, in: context)
 
             drawText(node.label, center: CGPoint(x: node.frame.midX, y: node.frame.midY),
                      size: 12, weight: .medium, color: theme.ink, in: context)
@@ -287,17 +286,40 @@ enum DiagramRenderer {
         drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
     }
 
-    /// Filled + hairline-stroked rounded rectangle — the shared node/box body.
-    private static func fillStrokeBox(
-        _ frame: CGRect, radius: CGFloat, fill: PlatformColor, stroke: PlatformColor, in context: CGContext
+    /// Fills a node/box shape with a soft drop shadow, then strokes its border
+    /// crisp on top. The shadow gives every diagram shape — rectangle, diamond,
+    /// stadium, circle — a little depth so a diagram reads as floating cards
+    /// rather than flat outlines, while the shadow-free stroke keeps the border
+    /// sharp. All box diagrams share this so shapes stay visually consistent.
+    private static func fillStrokeShape(
+        _ path: CGPath, fill: PlatformColor, stroke: PlatformColor,
+        shadow: Bool = true, in context: CGContext
     ) {
         context.saveGState()
+        if shadow {
+            context.setShadow(offset: CGSize(width: 0, height: -1.5), blur: 4,
+                              color: PlatformColor.black.withAlphaComponent(0.12).cgColor)
+        }
         context.setFillColor(resolvedCGColor(fill))
+        context.addPath(path)
+        context.fillPath()
+        context.restoreGState()
+
+        context.saveGState()
         context.setStrokeColor(resolvedCGColor(stroke))
         context.setLineWidth(1)
-        context.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
-        context.drawPath(using: .fillStroke)
+        context.addPath(path)
+        context.strokePath()
         context.restoreGState()
+    }
+
+    /// Convenience for the common rounded-rectangle body.
+    private static func fillStrokeBox(
+        _ frame: CGRect, radius: CGFloat, fill: PlatformColor, stroke: PlatformColor,
+        shadow: Bool = true, in context: CGContext
+    ) {
+        fillStrokeShape(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil),
+                        fill: fill, stroke: stroke, shadow: shadow, in: context)
     }
 
     /// State-machine start terminal: a solid filled dot.
@@ -810,25 +832,23 @@ enum DiagramRenderer {
             let center = point(out: 13, side: 0)
             context.addEllipse(in: CGRect(x: center.x - 3.5, y: center.y - 3.5, width: 7, height: 7))
         case .oneOrMore:
-            // Crow's foot at the box plus a tick behind it.
-            context.move(to: point(out: 8, side: 0))
-            context.addLine(to: point(out: 0, side: 6))
-            context.move(to: point(out: 8, side: 0))
-            context.addLine(to: point(out: 0, side: 0))
-            context.move(to: point(out: 8, side: 0))
-            context.addLine(to: point(out: 0, side: -6))
-            context.move(to: point(out: 12, side: 5))
-            context.addLine(to: point(out: 12, side: -5))
+            // Crow's foot: three prongs fanning from an apex up the line down
+            // to the box edge (lifted 2pt off the border so it reads as an
+            // open foot, not a closed triangle), plus a "one" tick behind it.
+            for side in [CGFloat(6.5), 0, -6.5] {
+                context.move(to: point(out: 14, side: 0))
+                context.addLine(to: point(out: 2, side: side))
+            }
+            context.move(to: point(out: 17, side: 5))
+            context.addLine(to: point(out: 17, side: -5))
         case .zeroOrMore:
-            context.move(to: point(out: 8, side: 0))
-            context.addLine(to: point(out: 0, side: 6))
-            context.move(to: point(out: 8, side: 0))
-            context.addLine(to: point(out: 0, side: 0))
-            context.move(to: point(out: 8, side: 0))
-            context.addLine(to: point(out: 0, side: -6))
+            for side in [CGFloat(6.5), 0, -6.5] {
+                context.move(to: point(out: 14, side: 0))
+                context.addLine(to: point(out: 2, side: side))
+            }
             context.strokePath()
             context.beginPath()
-            let center = point(out: 12 + 3.5, side: 0)
+            let center = point(out: 20, side: 0)
             context.addEllipse(in: CGRect(x: center.x - 3.5, y: center.y - 3.5, width: 7, height: 7))
         }
         context.strokePath()
