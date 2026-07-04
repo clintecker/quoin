@@ -365,13 +365,7 @@ public struct AttributedRenderer {
         }
 
         // Bottom padding inside the canvas: the last code paragraph carries it.
-        let text = body.string as NSString
-        if text.length > 0 {
-            let lastLine = text.lineRange(for: NSRange(location: text.length - 1, length: 0))
-            let padded = style.mutableCopy() as! NSMutableParagraphStyle
-            padded.paragraphSpacing = 8
-            body.addAttribute(.paragraphStyle, value: padded, range: lastLine)
-        }
+        padLastLine(in: body, spacing: 8)
         // Marker: this run is the code body, 1:1 with the block's source
         // content. render(block:) resolves it to the real source offset so a
         // click can land the caret precisely when the block flips to source.
@@ -448,14 +442,7 @@ public struct AttributedRenderer {
             output.addAttribute(.paragraphStyle, value: style, range: range)
         }
         // Bottom padding inside the box: the last paragraph carries it.
-        if output.length > 0 {
-            let text = output.string as NSString
-            let lastLine = text.lineRange(for: NSRange(location: text.length - 1, length: 0))
-            if let style = (output.attribute(.paragraphStyle, at: lastLine.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle {
-                style.paragraphSpacing = 8
-                output.addAttribute(.paragraphStyle, value: style, range: lastLine)
-            }
-        }
+        padLastLine(in: output, spacing: 8)
         // Rounded 4% tint + 15% border in the semantic color, drawn as a
         // block decoration by the reader view.
         output.addAttribute(
@@ -501,14 +488,11 @@ public struct AttributedRenderer {
             return output
         }
 
-        let output = NSMutableAttributedString(attributedString: renderCodeBlock(language: "mermaid", code: source))
-        output.addAttribute(QuoinAttribute.diagramSource, value: source, range: NSRange(location: 0, length: output.length))
-
-        var caption = bodyAttributes()
-        caption[.font] = theme.captionFont()
-        caption[.foregroundColor] = theme.secondaryTextColor
-        output.append(NSAttributedString(string: "\nmermaid · this diagram type isn't natively rendered yet", attributes: caption))
-        return output
+        return renderSourceCard(
+            language: "mermaid", code: source,
+            sourceKey: QuoinAttribute.diagramSource, source: source,
+            caption: "mermaid · this diagram type isn't natively rendered yet"
+        )
     }
 
     private func renderMathBlockFallback(latex: String) -> NSAttributedString {
@@ -532,12 +516,32 @@ public struct AttributedRenderer {
         // Unsupported LaTeX: the same tidy source-card treatment as an
         // unrenderable mermaid diagram — a dark canvas with a caption — so
         // degradation reads as intentional, never as a broken half-render.
-        let output = NSMutableAttributedString(attributedString: renderCodeBlock(language: "latex", code: latex))
-        output.addAttribute(QuoinAttribute.mathSource, value: latex, range: NSRange(location: 0, length: output.length))
-        var caption = bodyAttributes()
-        caption[.font] = theme.captionFont()
-        caption[.foregroundColor] = theme.secondaryTextColor
-        output.append(NSAttributedString(string: "\nmath · this LaTeX isn't natively typeset yet", attributes: caption))
+        return renderSourceCard(
+            language: "latex", code: latex,
+            sourceKey: QuoinAttribute.mathSource, source: latex,
+            caption: "math · this LaTeX isn't natively typeset yet"
+        )
+    }
+
+    /// The shared fallback for content we can't render natively (an
+    /// unsupported mermaid dialect or LaTeX): a code canvas of the raw source
+    /// tagged with its `sourceKey`, plus a muted caption explaining the
+    /// degradation. The tag covers only the card, not the caption — matching
+    /// how the native paths tag their runs — so a later engine can find and
+    /// replace exactly the source region.
+    private func renderSourceCard(
+        language: String,
+        code: String,
+        sourceKey: NSAttributedString.Key,
+        source: String,
+        caption: String
+    ) -> NSAttributedString {
+        let output = NSMutableAttributedString(attributedString: renderCodeBlock(language: language, code: code))
+        output.addAttribute(sourceKey, value: source, range: NSRange(location: 0, length: output.length))
+        var captionAttributes = bodyAttributes()
+        captionAttributes[.font] = theme.captionFont()
+        captionAttributes[.foregroundColor] = theme.secondaryTextColor
+        output.append(NSAttributedString(string: "\n" + caption, attributes: captionAttributes))
         return output
     }
 
@@ -955,6 +959,20 @@ public struct AttributedRenderer {
         style.lineHeightMultiple = theme.bodyLineHeightMultiple
         style.paragraphSpacing = theme.paragraphSpacing
         return style
+    }
+
+    /// Adds bottom padding inside a boxed block (code canvas, callout box) by
+    /// widening the last line's `paragraphSpacing`. Reads the last line's
+    /// effective paragraph style so it preserves the caller's line metrics and
+    /// indents; a no-op on an empty string or a line without a paragraph style.
+    private func padLastLine(in output: NSMutableAttributedString, spacing: CGFloat) {
+        let text = output.string as NSString
+        guard text.length > 0 else { return }
+        let lastLine = text.lineRange(for: NSRange(location: text.length - 1, length: 0))
+        guard let style = (output.attribute(.paragraphStyle, at: lastLine.location, effectiveRange: nil)
+            as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle else { return }
+        style.paragraphSpacing = spacing
+        output.addAttribute(.paragraphStyle, value: style, range: lastLine)
     }
 
     private func boldVariant(of font: PlatformFont) -> PlatformFont {
