@@ -144,10 +144,15 @@ time, statuses, milestones). Anything else returns nil → tidy source card.
 `DiagramLayoutEngine` (QuoinCore) is pure geometry with an injected text
 measurer, so it unit-tests without fonts:
 
-- **Flowcharts:** longest-path layering with DFS back-edge exclusion (cycles
-  must not drift nodes downward), barycenter ordering, fan-out attachment
-  points projected onto node outlines, back-edges routed around the band in
-  private lanes.
+- **Flowcharts:** Sugiyama layered drawing — longest-path layering with DFS
+  back-edge exclusion (cycles must not drift nodes downward), then **dummy
+  nodes** for every edge spanning more than one layer (Graphviz/dagre-style):
+  they join their layer and reserve a channel in barycenter ordering +
+  coordinate assignment, so long and back edges route *between* the nodes they
+  cross, not under them. Each edge is routed through its dummy-chain waypoints
+  (vertical runs in the channels, horizontal jogs confined to inter-layer
+  gaps); attachment points project onto node outlines. Edge labels are placed
+  by a collision-scoring pass so they don't overprint boxes.
 - **Box diagrams (class/ER/state):** shared `layeredPlacement` +
   `routeBoxEdges` — per-face attachment slots sorted by the opposite
   endpoint's cross coordinate, orthogonal elbows with rounded corners.
