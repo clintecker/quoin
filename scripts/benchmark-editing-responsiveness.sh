@@ -32,14 +32,18 @@ SWIFT
 
 cat > "$workspace/Sources/QuoinEditBench/main.swift" <<'SWIFT'
 import Foundation
+import Darwin
 import QuoinCore
 import QuoinRender
+
+var timings: [String: Double] = [:]
 
 @discardableResult
 func measure<T>(_ label: String, _ work: () throws -> T) rethrows -> T {
     let start = DispatchTime.now().uptimeNanoseconds
     let value = try work()
     let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000.0
+    timings[label] = elapsed
     print("\(label): \(String(format: "%.2f", elapsed)) ms")
     return value
 }
@@ -119,6 +123,37 @@ measure("render.fullStringDiffScan") {
         suffix += 1
     }
     return prefix + suffix
+}
+
+let localThresholds: [(label: String, maxMilliseconds: Double)] = [
+    ("source.applyEdit", 20),
+    ("parse.initial", 750),
+    ("render.cold", 250),
+    ("parse.middleInsert", 750),
+    ("render.middleInsert.warmCache", 200),
+    ("render.fullStringDiffScan", 40),
+]
+
+if ProcessInfo.processInfo.environment["QUOIN_BENCH_ENFORCE"] == "1" {
+    let failures = localThresholds.compactMap { threshold -> String? in
+        guard let elapsed = timings[threshold.label] else {
+            return "\(threshold.label): missing timing"
+        }
+        guard elapsed <= threshold.maxMilliseconds else {
+            return "\(threshold.label): \(String(format: "%.2f", elapsed)) ms > \(String(format: "%.2f", threshold.maxMilliseconds)) ms"
+        }
+        return nil
+    }
+    if !failures.isEmpty {
+        fputs("Local benchmark threshold failures:\n", stderr)
+        for failure in failures {
+            fputs("- \(failure)\n", stderr)
+        }
+        exit(1)
+    }
+    print("local_thresholds: pass")
+} else {
+    print("local_thresholds: not enforced (set QUOIN_BENCH_ENFORCE=1)")
 }
 SWIFT
 
