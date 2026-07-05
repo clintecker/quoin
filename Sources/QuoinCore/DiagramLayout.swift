@@ -224,6 +224,9 @@ public enum DiagramLayoutEngine {
 
     public static let nodeFontSize: Double = 12
     public static let labelFontSize: Double = 10.5
+    /// Minimum separation between a pair of antiparallel box-diagram edges, and
+    /// the floor `separateRuns` enforces between any two coincident box runs.
+    static let boxAntiparallelSep: CGFloat = 20
 
     // MARK: Shared box placement
 
@@ -416,11 +419,14 @@ public enum DiagramLayoutEngine {
             if dummyCenters.isEmpty, overlapLo <= overlapHi {
                 var x = min(max((fromFrame.midX + toFrame.midX) / 2, overlapLo), overlapHi)
                 let down = toFrame.midY >= fromFrame.midY
-                // If a reverse edge exists between the same pair, shift the two
-                // to opposite sides of the shared column so they read as two
-                // distinct parallel lines (e.g. state "connect" / "fail").
+                // If a reverse edge exists between the same pair, place the two
+                // as a centred block a full separation apart (not an independent
+                // ±offset, which the overlap clamp then compresses), so they read
+                // as two clear parallel lines (e.g. state "connect"/"fail").
                 if directedPairs.contains(chain[chain.count - 1] + "\u{1}" + chain[0]) {
-                    x = min(max(x + (down ? 7 : -7), overlapLo), overlapHi)
+                    let half = min(boxAntiparallelSep / 2, (overlapHi - overlapLo) / 2)
+                    let center = min(max(x, overlapLo + half), overlapHi - half)
+                    x = center + (down ? half : -half)
                 }
                 let start = CGPoint(x: x, y: down ? fromFrame.maxY : fromFrame.minY)
                 let end = CGPoint(x: x, y: down ? toFrame.minY : toFrame.maxY)
@@ -440,7 +446,14 @@ public enum DiagramLayoutEngine {
             routes.append(points)
         }
 
-        let size = CGSize(width: max(crossExtent, maxX - margin) + margin * 2, height: y - layerGap + margin)
+        // Same guarantee the flowchart router gives: no two edges' runs may
+        // coincide on one track. Catches long/back-edge channels that land on a
+        // box column (the antiparallel block above only covers adjacent pairs).
+        separateRuns(&routes, horizontal: false, minSep: boxAntiparallelSep)
+
+        var routeMaxX = crossExtent + margin
+        for pts in routes { for p in pts { routeMaxX = max(routeMaxX, p.x) } }
+        let size = CGSize(width: max(crossExtent, routeMaxX - margin) + margin * 2, height: y - layerGap + margin)
         return (frames, size, routes)
     }
 
