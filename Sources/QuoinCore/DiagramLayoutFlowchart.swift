@@ -357,52 +357,121 @@ extension DiagramLayoutEngine {
             }
         }
 
+        // Per-edge geometry, computed once so a port-distribution pass can run
+        // between geometry and routing.
+        struct EdgeGeo {
+            var valid = false
+            var chain: [String] = []
+            var dummyCenters: [CGPoint] = []
+            var fromFrame = CGRect.zero
+            var toFrame = CGRect.zero
+            var firstNext = CGPoint.zero
+            var lastPrev = CGPoint.zero
+            var srcDiamond = false
+            var dstDiamond = false
+            var exitBottom = false
+            var enterBottom = false
+        }
+        var geos = [EdgeGeo](repeating: EdgeGeo(), count: chart.edges.count)
+
+        // A face port request: which edge-end wants to attach to a node face,
+        // and the cross coordinate it would naturally take (its channel).
+        var buckets: [String: [(edge: Int, isSource: Bool, wanted: CGFloat)]] = [:]
+        func faceKey(_ node: String, bottom: Bool) -> String { "\(node)|\(bottom)" }
+
+        for index in chart.edges.indices {
+            let chain = index < chains.count ? chains[index] : []
+            guard chain.count >= 2,
+                  let ff = frames[chain[0]], let tf = frames[chain[chain.count - 1]] else { continue }
+            var g = EdgeGeo()
+            g.valid = true; g.chain = chain; g.fromFrame = ff; g.toFrame = tf
+            g.dummyCenters = chain[1..<(chain.count - 1)].compactMap { id in
+                frames[id].map { CGPoint(x: $0.midX, y: $0.midY) }
+            }
+            g.firstNext = g.dummyCenters.first ?? CGPoint(x: tf.midX, y: tf.midY)
+            g.lastPrev = g.dummyCenters.last ?? CGPoint(x: ff.midX, y: ff.midY)
+            g.exitBottom = horizontal ? (g.firstNext.x >= ff.midX) : (g.firstNext.y >= ff.midY)
+            g.enterBottom = horizontal ? (g.lastPrev.x > tf.midX) : (g.lastPrev.y > tf.midY)
+            g.srcDiamond = shapeOf[chain[0]] == .diamond
+            g.dstDiamond = shapeOf[chain[chain.count - 1]] == .diamond
+            geos[index] = g
+            if !g.srcDiamond {
+                buckets[faceKey(chain[0], bottom: g.exitBottom), default: []]
+                    .append((index, true, horizontal ? g.firstNext.y : g.firstNext.x))
+            }
+            if !g.dstDiamond {
+                buckets[faceKey(chain[chain.count - 1], bottom: g.enterBottom), default: []]
+                    .append((index, false, horizontal ? g.lastPrev.y : g.lastPrev.x))
+            }
+        }
+
+        // Distribute each face's ports into distinct cross positions so several
+        // edges meeting one face (e.g. a node's incoming edge and an outgoing
+        // back edge) fan out instead of collapsing onto one line. A lone edge
+        // keeps its channel coordinate (stays straight); a crowd is centered and
+        // evenly spaced, ordered by channel so they don't cross.
+        var portCross: [String: CGFloat] = [:]   // "edge|isSource" -> cross
+        func portKey(_ edge: Int, _ isSource: Bool) -> String { "\(edge)|\(isSource)" }
+        for (key, ports) in buckets {
+            let node = String(key.split(separator: "|")[0])
+            let f = frames[node]!
+            let (lo, hi): (CGFloat, CGFloat) = horizontal
+                ? (f.minY + min(f.height * 0.22, f.height / 2), f.maxY - min(f.height * 0.22, f.height / 2))
+                : (f.minX + min(f.width * 0.22, f.width / 2), f.maxX - min(f.width * 0.22, f.width / 2))
+            let sorted = ports.sorted { $0.wanted < $1.wanted }
+            let n = sorted.count
+            if n == 1 {
+                portCross[portKey(sorted[0].edge, sorted[0].isSource)] = min(max(sorted[0].wanted, lo), hi)
+                continue
+            }
+            let gap = min(16, (hi - lo) / CGFloat(n))
+            let center = (lo + hi) / 2
+            let block = gap * CGFloat(n - 1)
+            for (i, p) in sorted.enumerated() {
+                portCross[portKey(p.edge, p.isSource)] = center - block / 2 + gap * CGFloat(i)
+            }
+        }
+
         var placedEdges: [FlowchartLayout.PlacedEdge] = []
         var crossLimit = flowchartMargin + crossExtent
         for f in frames.values { crossLimit = max(crossLimit, horizontal ? f.maxY : f.maxX) }
 
         for (index, edge) in chart.edges.enumerated() {
-            let chain = index < chains.count ? chains[index] : []
-            guard chain.count >= 2,
-                  let fromFrame = frames[chain[0]], let toFrame = frames[chain[chain.count - 1]] else {
+            let g = geos[index]
+            guard g.valid else {
                 let p = CGPoint.zero
                 placedEdges.append(FlowchartLayout.PlacedEdge(
                     start: p, end: p, points: [p, p],
                     label: edge.label, dashed: edge.dashed, hasArrow: edge.hasArrow))
                 continue
             }
-            let dummyCenters = chain[1..<(chain.count - 1)].compactMap { id -> CGPoint? in
-                frames[id].map { CGPoint(x: $0.midX, y: $0.midY) }
-            }
-            let firstNext = dummyCenters.first ?? CGPoint(x: toFrame.midX, y: toFrame.midY)
-            let lastPrev = dummyCenters.last ?? CGPoint(x: fromFrame.midX, y: fromFrame.midY)
-            let exitBottomRight = horizontal ? (firstNext.x >= fromFrame.midX) : (firstNext.y >= fromFrame.midY)
-            let enterBottomRight = horizontal ? (lastPrev.x > toFrame.midX) : (lastPrev.y > toFrame.midY)
 
             // Head (leaves the source) and tail (enters the target). A decision
-            // uses vertex ports; every other shape uses a face projection.
+            // uses vertex ports; every other shape uses its distributed face port.
             let head: [CGPoint]
             let start: CGPoint
-            if shapeOf[chain[0]] == .diamond {
-                let (v, stub) = diamondPort(fromFrame, toward: firstNext, isSource: true)
+            if g.srcDiamond {
+                let (v, stub) = diamondPort(g.fromFrame, toward: g.firstNext, isSource: true)
                 start = v
                 head = stub.map { [v, $0] } ?? [v]
             } else {
-                start = attach(chain[0], cross: horizontal ? firstNext.y : firstNext.x, rightOrBottom: exitBottomRight, isSource: true)
+                let cross = portCross[portKey(index, true)] ?? (horizontal ? g.firstNext.y : g.firstNext.x)
+                start = attach(g.chain[0], cross: cross, rightOrBottom: g.exitBottom, isSource: true)
                 head = [start]
             }
             let tail: [CGPoint]
             let end: CGPoint
-            if shapeOf[chain[chain.count - 1]] == .diamond {
-                let (v, stub) = diamondPort(toFrame, toward: lastPrev, isSource: false)
+            if g.dstDiamond {
+                let (v, stub) = diamondPort(g.toFrame, toward: g.lastPrev, isSource: false)
                 end = v
                 tail = stub.map { [$0, v] } ?? [v]
             } else {
-                end = attach(chain[chain.count - 1], cross: horizontal ? lastPrev.y : lastPrev.x, rightOrBottom: enterBottomRight, isSource: false)
+                let cross = portCross[portKey(index, false)] ?? (horizontal ? g.lastPrev.y : g.lastPrev.x)
+                end = attach(g.chain[g.chain.count - 1], cross: cross, rightOrBottom: g.enterBottom, isSource: false)
                 tail = [end]
             }
 
-            let points = routePolyline(head + dummyCenters + tail, horizontal: horizontal)
+            let points = routePolyline(head + g.dummyCenters + tail, horizontal: horizontal)
             for p in points { crossLimit = max(crossLimit, horizontal ? p.y : p.x) }
             placedEdges.append(FlowchartLayout.PlacedEdge(
                 start: start, end: end, points: points,
