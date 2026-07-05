@@ -16,6 +16,11 @@ extension DiagramLayoutEngine {
     /// Cross-axis breadth a dummy node reserves — a narrow channel a long edge
     /// runs through, between real nodes.
     private static let dummyBreadth: CGFloat = 16
+    /// Minimum separation between two edges fanned onto the same node face —
+    /// 2×corner-radius (5) + arrowhead half-width (~7) + clearance.
+    private static let flowchartPortSep: CGFloat = 20
+    /// Track spacing for concurrent edge jogs crossing the same layer gap.
+    private static let flowchartJogTrack: CGFloat = 10
 
     public static func layout(_ chart: Flowchart, measure: DiagramTextMeasurer) -> FlowchartLayout {
         let horizontal = chart.direction == .leftRight || chart.direction == .rightLeft
@@ -424,11 +429,33 @@ extension DiagramLayoutEngine {
                 portCross[portKey(sorted[0].edge, sorted[0].isSource)] = min(max(sorted[0].wanted, lo), hi)
                 continue
             }
-            let gap = min(16, (hi - lo) / CGFloat(n))
+            // Separation floor derived from what a bend + arrowhead occupy: two
+            // rounded elbows (radius 5 each) plus the ~7pt arrowhead half-width
+            // plus clearance, so fanned ports don't pinch into a tuning-fork.
+            let gap = min(flowchartPortSep, (hi - lo) / CGFloat(n))
             let center = (lo + hi) / 2
             let block = gap * CGFloat(n - 1)
             for (i, p) in sorted.enumerated() {
                 portCross[portKey(p.edge, p.isSource)] = center - block / 2 + gap * CGFloat(i)
+            }
+        }
+
+        // Give each edge entering the same target a distinct jog track, ordered
+        // by its approach position, so their bend corners don't nest into one
+        // another (the "double corner" where two edges turn into one box).
+        var jogBias = [CGFloat](repeating: 0, count: chart.edges.count)
+        var targetGroups: [String: [Int]] = [:]
+        for index in chart.edges.indices where geos[index].valid {
+            targetGroups[geos[index].chain[geos[index].chain.count - 1], default: []].append(index)
+        }
+        for idxs in targetGroups.values where idxs.count > 1 {
+            let ordered = idxs.sorted {
+                (horizontal ? geos[$0].lastPrev.y : geos[$0].lastPrev.x)
+                    < (horizontal ? geos[$1].lastPrev.y : geos[$1].lastPrev.x)
+            }
+            let n = ordered.count
+            for (rank, idx) in ordered.enumerated() {
+                jogBias[idx] = (CGFloat(rank) - CGFloat(n - 1) / 2) * flowchartJogTrack
             }
         }
 
@@ -454,6 +481,20 @@ extension DiagramLayoutEngine {
                 let (v, stub) = diamondPort(g.fromFrame, toward: g.firstNext, isSource: true)
                 start = v
                 head = stub.map { [v, $0] } ?? [v]
+            } else if !g.exitBottom,
+                      (buckets[faceKey(g.chain[0], bottom: false)]?.count ?? 0) > 1 {
+                // An upward (back) edge would share the source's top/leading face
+                // with a downward edge and pinch into a tuning-fork. Leave from a
+                // SIDE face toward the target instead, then route up: the two
+                // never run parallel on one face.
+                let f = g.fromFrame
+                start = horizontal
+                    ? CGPoint(x: f.minX + f.width * 0.32, y: g.firstNext.y <= f.midY ? f.minY : f.maxY)
+                    : CGPoint(x: g.firstNext.x <= f.midX ? f.minX : f.maxX, y: f.minY + f.height * 0.32)
+                let elbow = horizontal
+                    ? CGPoint(x: start.x, y: g.firstNext.y)
+                    : CGPoint(x: g.firstNext.x, y: start.y)
+                head = [start, elbow]
             } else {
                 let cross = portCross[portKey(index, true)] ?? (horizontal ? g.firstNext.y : g.firstNext.x)
                 start = attach(g.chain[0], cross: cross, rightOrBottom: g.exitBottom, isSource: true)
@@ -471,7 +512,7 @@ extension DiagramLayoutEngine {
                 tail = [end]
             }
 
-            let points = routePolyline(head + g.dummyCenters + tail, horizontal: horizontal)
+            let points = routePolyline(head + g.dummyCenters + tail, horizontal: horizontal, jogBias: jogBias[index])
             for p in points { crossLimit = max(crossLimit, horizontal ? p.y : p.x) }
             placedEdges.append(FlowchartLayout.PlacedEdge(
                 start: start, end: end, points: points,
@@ -482,24 +523,27 @@ extension DiagramLayoutEngine {
 
     /// Connects waypoints with an orthogonal polyline. For a top-down chart the
     /// vertical runs sit at each waypoint's x (the reserved dummy channels) and
-    /// the horizontal jogs happen at the midpoint between consecutive waypoints
-    /// — i.e. in the gaps between layers, never across a node's row. Collinear
-    /// runs are merged so straight edges stay two-point.
-    static func routePolyline(_ waypoints: [CGPoint], horizontal: Bool) -> [CGPoint] {
+    /// the horizontal jogs happen between consecutive waypoints — i.e. in the
+    /// gaps between layers, never across a node's row. `jogBias` shifts each jog
+    /// off the gap midpoint (clamped to stay in the gap) so concurrent edges
+    /// crossing the same gap can take distinct tracks and their bend corners
+    /// don't nest. Collinear runs are merged so straight edges stay two-point.
+    static func routePolyline(_ waypoints: [CGPoint], horizontal: Bool, jogBias: CGFloat = 0) -> [CGPoint] {
         guard waypoints.count >= 2 else { return waypoints }
         var pts: [CGPoint] = [waypoints[0]]
         for i in 0..<(waypoints.count - 1) {
             let a = waypoints[i], b = waypoints[i + 1]
             if horizontal {
                 if abs(a.y - b.y) > 0.5 {
-                    let midX = (a.x + b.x) / 2
-                    pts.append(CGPoint(x: midX, y: a.y))
-                    pts.append(CGPoint(x: midX, y: b.y))
+                    let jx = min(max((a.x + b.x) / 2 + jogBias, min(a.x, b.x)), max(a.x, b.x))
+                    pts.append(CGPoint(x: jx, y: a.y))
+                    pts.append(CGPoint(x: jx, y: b.y))
                 }
             } else if abs(a.x - b.x) > 0.5 {
                 let midY = (a.y + b.y) / 2
-                pts.append(CGPoint(x: a.x, y: midY))
-                pts.append(CGPoint(x: b.x, y: midY))
+                let jy = min(max(midY + jogBias, min(a.y, b.y)), max(a.y, b.y))
+                pts.append(CGPoint(x: a.x, y: jy))
+                pts.append(CGPoint(x: b.x, y: jy))
             }
         }
         pts.append(waypoints[waypoints.count - 1])
