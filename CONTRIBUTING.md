@@ -156,5 +156,30 @@ Check tracker metadata with:
 bash scripts/check-issue-triage.sh
 ```
 
+The `main` branch is protected by the GitHub ruleset `Protect main`. It applies
+to `refs/heads/main` and requires pull requests, resolved review threads, an
+up-to-date branch, and the `swift test (macOS)` CI check before normal merges.
+It also blocks non-fast-forward updates and branch deletion.
+
+Repository auto-merge is enabled so protected pull requests can merge after the
+required checks pass without using emergency bypass privileges. Topic branches
+are deleted automatically after merge.
+
+The ruleset intentionally requires zero approving reviews for now. Quoin is a
+solo-maintainer private repository, so a hard external approval requirement
+would turn routine maintenance into a deadlock. The review rule still forces
+the pull-request path and keeps review threads resolved.
+
+Only Clint's GitHub user is configured as an emergency bypass actor. Use that
+bypass only for break-glass repository recovery, then follow up with a normal
+issue or pull request that explains what happened and confirms CI returned to
+green.
+
+Audit the live GitHub setting with:
+
+```sh
+bash scripts/check-main-protection.sh
+```
+
 Pull requests should link the issue they close, list tests run, call out UI
 screenshots when relevant, and confirm the dependency policy.
