@@ -362,6 +362,23 @@ extension DiagramLayoutEngine {
             }
         }
 
+        // The cross coordinate at which an edge descends out of its source — a
+        // decision's vertex/stub, or a plain box's face port clamped toward the
+        // next waypoint. Used to line the target port up with the actual run.
+        func sourceExitCross(srcDiamond: Bool, from f: CGRect, toward next: CGPoint) -> CGFloat {
+            if srcDiamond {
+                let (v, stub) = diamondPort(f, toward: next, isSource: true)
+                let p = stub ?? v
+                return horizontal ? p.y : p.x
+            }
+            if horizontal {
+                let inset = min(f.height * 0.22, f.height / 2)
+                return min(max(next.y, f.minY + inset), f.maxY - inset)
+            }
+            let inset = min(f.width * 0.22, f.width / 2)
+            return min(max(next.x, f.minX + inset), f.maxX - inset)
+        }
+
         // Per-edge geometry, computed once so a port-distribution pass can run
         // between geometry and routing.
         struct EdgeGeo {
@@ -405,8 +422,19 @@ extension DiagramLayoutEngine {
                     .append((index, true, horizontal ? g.firstNext.y : g.firstNext.x))
             }
             if !g.dstDiamond {
+                // The target port wants to sit where the edge actually descends,
+                // not under the source's centre. For a routed (dummy) edge that
+                // is the last dummy's channel; for an adjacent edge it's where
+                // the source exits — so the two ends line up into a straight run
+                // or a single clean bend instead of an S back to the source x.
+                let wanted: CGFloat
+                if g.dummyCenters.isEmpty {
+                    wanted = sourceExitCross(srcDiamond: g.srcDiamond, from: ff, toward: g.firstNext)
+                } else {
+                    wanted = horizontal ? g.lastPrev.y : g.lastPrev.x
+                }
                 buckets[faceKey(chain[chain.count - 1], bottom: g.enterBottom), default: []]
-                    .append((index, false, horizontal ? g.lastPrev.y : g.lastPrev.x))
+                    .append((index, false, wanted))
             }
         }
 
