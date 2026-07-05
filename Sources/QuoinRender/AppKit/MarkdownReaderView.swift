@@ -164,8 +164,15 @@ public struct MarkdownReaderView: NSViewRepresentable {
             // replacing the whole document. TextKit 2 then re-lays-out just
             // that region, so unchanged content keeps its exact layout and the
             // scroll offset never jumps.
-            let splicedRange = Coordinator.spliceChanges(in: storage, to: rendered.attributed)
-            (textView as? QuoinTextView)?.invalidateDecorations()
+            let splicedRange = QuoinPerformanceTrace.measure(
+                "render.textkit.splice",
+                metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length)"
+            ) {
+                Coordinator.spliceChanges(in: storage, to: rendered.attributed)
+            }
+            QuoinPerformanceTrace.measure("render.decorations.invalidate") {
+                (textView as? QuoinTextView)?.invalidateDecorations()
+            }
             coordinator.renderedGeneration = rendered.attributed
             coordinator.blockRanges = rendered.blockRanges
             // Re-anchor only on a full/large replacement (splice returned nil);
@@ -193,7 +200,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
             }
         }
 
-        coordinator.applySearch(query: searchQuery, activeOrdinal: activeMatchOrdinal)
+        QuoinPerformanceTrace.measure("render.search.apply", metadata: "query_empty=\(searchQuery.isEmpty)") {
+            coordinator.applySearch(query: searchQuery, activeOrdinal: activeMatchOrdinal)
+        }
 
         if let formatCommand, formatGeneration != coordinator.appliedFormatGeneration {
             coordinator.appliedFormatGeneration = formatGeneration
@@ -203,7 +212,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {
             coordinator.appliedScrollGeneration = scrollGeneration
             if let range = rendered.blockRanges[scrollTarget] {
-                coordinator.scrollBlockToTop(range, in: textView)
+                QuoinPerformanceTrace.measure("render.scroll.target") {
+                    coordinator.scrollBlockToTop(range, in: textView)
+                }
             }
         }
     }

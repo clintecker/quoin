@@ -24,6 +24,7 @@ extension MarkdownReaderView {
         var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
+        private var hasAppliedSearchHighlights = false
         private var lastReportedTopBlock: BlockID?
 
         /// Replaces only the changed span of `storage`, so a re-render doesn't
@@ -419,21 +420,32 @@ extension MarkdownReaderView {
                   let storage = contentStorage.textStorage
             else { return }
 
-            // Clear previous highlights across the whole document, not just
-            // the remembered match ranges: after an incremental splice those
-            // NSRanges are pre-edit coordinates, so clearing at the shifted
-            // locations would leave stale highlights behind. Search is the
-            // only user of rendering attributes, so a blanket clear is safe.
-            layoutManager.removeRenderingAttribute(.backgroundColor, for: contentStorage.documentRange)
-            matchRanges = []
-
             let trimmed = query.trimmingCharacters(in: .whitespaces)
             defer {
                 appliedQuery = query
                 appliedOrdinal = activeOrdinal
                 parent.onMatchCount(matchRanges.count)
             }
-            guard !trimmed.isEmpty else { return }
+            guard !trimmed.isEmpty else {
+                if hasAppliedSearchHighlights {
+                    layoutManager.removeRenderingAttribute(.backgroundColor, for: contentStorage.documentRange)
+                    hasAppliedSearchHighlights = false
+                }
+                matchRanges = []
+                return
+            }
+
+            // Clear previous highlights across the whole document, not just
+            // the remembered match ranges: after an incremental splice those
+            // NSRanges are pre-edit coordinates, so clearing at the shifted
+            // locations would leave stale highlights behind. Skip this entirely
+            // when search has not painted highlights; large-document edits with
+            // inactive search should not touch the whole TextKit document.
+            if hasAppliedSearchHighlights {
+                layoutManager.removeRenderingAttribute(.backgroundColor, for: contentStorage.documentRange)
+                hasAppliedSearchHighlights = false
+            }
+            matchRanges = []
 
             let haystack = storage.string as NSString
             var searchRange = NSRange(location: 0, length: haystack.length)
@@ -457,6 +469,7 @@ extension MarkdownReaderView {
                     : theme.searchHighlight.withAlphaComponent(0.35)
                 layoutManager.addRenderingAttribute(.backgroundColor, value: color, for: textRange)
             }
+            hasAppliedSearchHighlights = !matchRanges.isEmpty
 
             if activeOrdinal >= 0, activeOrdinal < matchRanges.count {
                 textView.scrollRangeToVisible(matchRanges[activeOrdinal])

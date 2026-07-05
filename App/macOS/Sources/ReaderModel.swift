@@ -142,13 +142,18 @@ final class ReaderModel {
     }
 
     private func rerender() {
-        rendered = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
-        outline = document.outline
-        stats = document.stats
-        slugToBlock = Dictionary(
-            document.outline.map { ($0.slug, $0.id) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        QuoinPerformanceTrace.measure(
+            "model.rerender",
+            metadata: "bytes=\(document.source.utf8.count) blocks=\(document.blocks.count) active=\(activeBlockID != nil)"
+        ) {
+            rendered = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
+            outline = document.outline
+            stats = document.stats
+            slugToBlock = Dictionary(
+                document.outline.map { ($0.slug, $0.id) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
     }
 
     // MARK: - Syntax reveal
@@ -192,8 +197,16 @@ final class ReaderModel {
         let edit = SourceEdit(range: absolute, replacement: replacement)
 
         Task {
-            guard let newDocument = try? await session.applyEdit(edit) else { return }
-            self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8)
+            let newDocument = try? await QuoinPerformanceTrace.measure(
+                "model.session.applyEdit",
+                metadata: "range_offset=\(absolute.offset) replacement_bytes=\(replacement.utf8.count)"
+            ) {
+                try await session.applyEdit(edit)
+            }
+            guard let newDocument else { return }
+            QuoinPerformanceTrace.measure("model.restoreCaret") {
+                self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8)
+            }
             self.scheduleH1Rename(for: newDocument)
         }
     }
@@ -316,7 +329,9 @@ final class ReaderModel {
         let edit = SourceEdit(range: ByteRange(offset: offset, length: 0), replacement: markdown)
         Task {
             guard let newDocument = try? await session.applyEdit(edit) else { return }
-            self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
+            QuoinPerformanceTrace.measure("model.restoreCaret.imageInsert") {
+                self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
+            }
         }
     }
 
