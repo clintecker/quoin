@@ -92,6 +92,19 @@ extension MarkdownReaderView {
             return spliceChanges(in: storage, to: newAttr)
         }
 
+        static func applyStoragePatch(
+            in storage: NSTextStorage,
+            patch: RenderStoragePatch
+        ) -> NSRange? {
+            guard patch.oldRange.location >= 0,
+                  NSMaxRange(patch.oldRange) <= storage.length
+            else { return nil }
+            storage.beginEditing()
+            storage.replaceCharacters(in: patch.oldRange, with: patch.replacement)
+            storage.endEditing()
+            return NSRange(location: patch.oldRange.location, length: patch.replacement.length)
+        }
+
         init(parent: MarkdownReaderView) {
             self.parent = parent
         }

@@ -156,7 +156,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
 
-        if coordinator.renderedGeneration !== rendered.attributed,
+        if (coordinator.renderedGeneration !== rendered.attributed || rendered.storagePatch != nil),
            let storage = textView.textContentStorage?.textStorage {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
             coordinator.suppressSelectionCallback = true
@@ -166,9 +166,14 @@ public struct MarkdownReaderView: NSViewRepresentable {
             // scroll offset never jumps.
             let splicedRange = QuoinPerformanceTrace.measure(
                 "render.textkit.splice",
-                metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length) hinted=\(rendered.spliceHint != nil)"
+                metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length) hinted=\(rendered.spliceHint != nil) patched=\(rendered.storagePatch != nil)"
             ) {
-                Coordinator.spliceChanges(in: storage, to: rendered.attributed, hint: rendered.spliceHint)
+                if let patch = rendered.storagePatch,
+                   let range = Coordinator.applyStoragePatch(in: storage, patch: patch) {
+                    range
+                } else {
+                    Coordinator.spliceChanges(in: storage, to: rendered.attributed, hint: rendered.spliceHint)
+                }
             }
             QuoinPerformanceTrace.measure("render.decorations.invalidate") {
                 (textView as? QuoinTextView)?.invalidateDecorations()

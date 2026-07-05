@@ -3,6 +3,14 @@ import SwiftUI
 import QuoinCore
 import QuoinRender
 
+private struct ActiveBlockRenderPatch {
+    let storagePatch: RenderStoragePatch
+    let blockRanges: [BlockID: NSRange]
+    let activeEditableRange: NSRange
+    let activeSourceText: String
+    let oldActiveBlockID: BlockID
+}
+
 /// Owns the `DocumentSession` for one window and republishes its snapshots
 /// as rendered output for SwiftUI — including the editor's syntax-reveal
 /// state (active block + caret), which lives here because it must survive
@@ -145,20 +153,33 @@ final class ReaderModel {
         }
     }
 
-    private func rerender(spliceHint: RenderSpliceHint? = nil) {
+    private func rerender(spliceHint: RenderSpliceHint? = nil, activeBlockPatch: ActiveBlockRenderPatch? = nil) {
         QuoinPerformanceTrace.measure(
             "model.rerender",
-            metadata: "bytes=\(document.source.utf8.count) blocks=\(document.blocks.count) active=\(activeBlockID != nil)"
+            metadata: "bytes=\(document.source.utf8.count) blocks=\(document.blocks.count) active=\(activeBlockID != nil) patched=\(activeBlockPatch != nil)"
         ) {
-            let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
-            rendered = RenderedDocument(
-                attributed: next.attributed,
-                blockRanges: next.blockRanges,
-                activeBlockID: next.activeBlockID,
-                activeEditableRange: next.activeEditableRange,
-                activeSourceText: next.activeSourceText,
-                spliceHint: spliceHint
-            )
+            if let patch = activeBlockPatch, let activeBlockID {
+                fragmentCache.removeValue(forKey: patch.oldActiveBlockID)
+                fragmentCache.removeValue(forKey: activeBlockID)
+                rendered = RenderedDocument(
+                    attributed: rendered.attributed,
+                    blockRanges: patch.blockRanges,
+                    activeBlockID: activeBlockID,
+                    activeEditableRange: patch.activeEditableRange,
+                    activeSourceText: patch.activeSourceText,
+                    storagePatch: patch.storagePatch
+                )
+            } else {
+                let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
+                rendered = RenderedDocument(
+                    attributed: next.attributed,
+                    blockRanges: next.blockRanges,
+                    activeBlockID: next.activeBlockID,
+                    activeEditableRange: next.activeEditableRange,
+                    activeSourceText: next.activeSourceText,
+                    spliceHint: spliceHint
+                )
+            }
             outline = document.outline
             stats = document.stats
             slugToBlock = Dictionary(
@@ -308,6 +329,9 @@ final class ReaderModel {
     /// block containing the caret (block identity changes with content, and
     /// an Enter can split one block into two), and restore the caret.
     private func restoreCaret(in newDocument: QuoinDocument, atUTF8Offset caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil) {
+        let oldDocument = document
+        let oldRendered = rendered
+        let oldActiveBlockID = activeBlockID
         document = newDocument
         if let caretUTF8 {
             let block = newDocument.blocks.last(where: { $0.range.offset <= caretUTF8 })
@@ -325,7 +349,104 @@ final class ReaderModel {
             caretInActiveBlock = nil
         }
         caretGeneration += 1
-        rerender(spliceHint: spliceHint)
+        let activeBlockPatch = makeActiveBlockRenderPatch(
+            oldDocument: oldDocument,
+            oldRendered: oldRendered,
+            oldActiveBlockID: oldActiveBlockID,
+            newDocument: newDocument,
+            requiresSimpleEditHint: spliceHint != nil
+        )
+        rerender(spliceHint: spliceHint, activeBlockPatch: activeBlockPatch)
+    }
+
+    private func makeActiveBlockRenderPatch(
+        oldDocument: QuoinDocument,
+        oldRendered: RenderedDocument,
+        oldActiveBlockID: BlockID?,
+        newDocument: QuoinDocument,
+        requiresSimpleEditHint: Bool
+    ) -> ActiveBlockRenderPatch? {
+        guard requiresSimpleEditHint,
+              oldDocument.footnotes.isEmpty,
+              newDocument.footnotes.isEmpty,
+              oldDocument.blocks.count == newDocument.blocks.count,
+              let oldActiveBlockID,
+              let activeBlockID,
+              let caretInActiveBlock,
+              let oldIndex = oldDocument.blocks.firstIndex(where: { $0.id == oldActiveBlockID }),
+              let newIndex = newDocument.blocks.firstIndex(where: { $0.id == activeBlockID }),
+              oldIndex == newIndex,
+              let oldEditableRange = oldRendered.activeEditableRange,
+              let oldBlockRange = oldRendered.blockRanges[oldActiveBlockID],
+              let newSlice = newDocument.source.substring(in: newDocument.blocks[newIndex].range),
+              separatorSignature(oldDocument.blocks[oldIndex].kind) == separatorSignature(newDocument.blocks[newIndex].kind),
+              isActiveBlockPatchable(oldDocument.blocks[oldIndex].kind),
+              isActiveBlockPatchable(newDocument.blocks[newIndex].kind)
+        else { return nil }
+
+        var ranges: [BlockID: NSRange] = [:]
+        let replacement = QuoinPerformanceTrace.measure(
+            "render.activeBlockPatch.fragment",
+            metadata: "block_utf8=\(newDocument.blocks[newIndex].range.length)"
+        ) {
+            renderer.renderEditableSourceFragment(newSlice, caretOffset: caretInActiveBlock)
+        }
+        let delta = replacement.length - oldEditableRange.length
+
+        for index in newDocument.blocks.indices {
+            let newBlock = newDocument.blocks[index]
+            let oldBlock = oldDocument.blocks[index]
+            if index == newIndex {
+                ranges[newBlock.id] = NSRange(
+                    location: oldBlockRange.location,
+                    length: oldBlockRange.length + delta
+                )
+            } else {
+                guard oldBlock.id == newBlock.id,
+                      let oldRange = oldRendered.blockRanges[oldBlock.id]
+                else { return nil }
+                let shift = index > newIndex ? delta : 0
+                ranges[newBlock.id] = NSRange(
+                    location: oldRange.location + shift,
+                    length: oldRange.length
+                )
+            }
+        }
+
+        return ActiveBlockRenderPatch(
+            storagePatch: RenderStoragePatch(oldRange: oldEditableRange, replacement: replacement),
+            blockRanges: ranges,
+            activeEditableRange: NSRange(location: oldEditableRange.location, length: replacement.length),
+            activeSourceText: newSlice,
+            oldActiveBlockID: oldActiveBlockID
+        )
+    }
+
+    private func isActiveBlockPatchable(_ kind: BlockKind) -> Bool {
+        switch kind {
+        case .tableOfContents, .list, .blockQuote, .callout:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private func separatorSignature(_ kind: BlockKind) -> (isCard: Bool, isHeading: Bool) {
+        let isHeading: Bool
+        if case .heading = kind {
+            isHeading = true
+        } else {
+            isHeading = false
+        }
+
+        let isCard: Bool
+        switch kind {
+        case .codeBlock, .mermaid, .table, .callout, .frontMatter, .htmlBlock:
+            isCard = true
+        default:
+            isCard = false
+        }
+        return (isCard, isHeading)
     }
 
     // MARK: - Image drop

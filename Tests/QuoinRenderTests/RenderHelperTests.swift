@@ -165,6 +165,24 @@ final class RenderHelperTests: XCTestCase {
         XCTAssertEqual(changed, NSRange(location: 3, length: 3))
     }
 
+    func testStoragePatchAppliesBoundedAttributedReplacement() {
+        let storage = NSTextStorage(string: "abcdef")
+        let replacement = NSAttributedString(string: "XYZ", attributes: [.foregroundColor: PlatformColor.systemRed])
+        let patch = RenderStoragePatch(
+            oldRange: NSRange(location: 3, length: 0),
+            replacement: replacement
+        )
+
+        let changed = MarkdownReaderView.Coordinator.applyStoragePatch(
+            in: storage,
+            patch: patch
+        )
+
+        XCTAssertEqual(storage.string, "abcXYZdef")
+        XCTAssertEqual(changed, NSRange(location: 3, length: 3))
+        XCTAssertNotNil(storage.attribute(.foregroundColor, at: 3, effectiveRange: nil))
+    }
+
     func testInvalidHintFallsBackToDiffSplice() {
         let storage = NSTextStorage(string: "abcdef")
         let replacement = NSAttributedString(string: "abQdef")
