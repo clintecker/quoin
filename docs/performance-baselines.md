@@ -15,6 +15,8 @@ measures:
 - initial full parse
 - cold render
 - byte-precise middle insert
+- parser strategy for that middle insert
+- incremental parse-after-edit when the edit qualifies for a safe fast path
 - full parse after that insert
 - warm-cache render after that insert
 - old/new rendered string diff scan
@@ -27,16 +29,22 @@ Current local baseline on `/Users/clint/Downloads/moby_dick.md`:
 | Lines | 5,402 |
 | Parsed blocks | 2,701 |
 | Headings | 137 |
-| `parse.initial` | 355.61 ms |
-| `render.cold` | 100.44 ms |
+| Edit block bytes | 170 |
+| `parse.initial` | 345.94 ms |
+| `render.cold` | 96.07 ms |
 | `source.applyEdit` | 0.88 ms |
-| `parse.middleInsert` | 337.90 ms |
-| `render.middleInsert.warmCache` | 80.12 ms |
-| `render.fullStringDiffScan` | 12.14 ms |
+| `parseAfterEdit.middleInsert` | 8.83 ms |
+| `parseAfterEdit.strategy` | `plainParagraphFastPath` |
+| `parse.middleInsert` | 328.31 ms |
+| `render.middleInsert.warmCache` | 75.73 ms |
+| `render.fullStringDiffScan` | 12.06 ms |
 
 Interpretation:
 
-- Full-document parse is the dominant per-edit cost on book-sized prose.
+- Full-document parse is the dominant per-edit cost on book-sized prose when
+  the edit is not eligible for the incremental fast path.
+- Plain active-paragraph edits can avoid that full parse and stay near a
+  single-frame budget on this fixture.
 - Warm render is improved by fragment caching, but still above a frame budget.
 - The full-string diff scan is smaller than parse/render but still visible.
 

@@ -9,6 +9,23 @@ import Markdown
 /// Outline and statistics are computed during the same walk.
 public enum MarkdownConverter {
 
+    public enum ParseStrategy: Equatable, Sendable {
+        case full
+        case plainParagraphFastPath
+    }
+
+    public struct IncrementalParseResult: Sendable {
+        public let document: QuoinDocument
+        public let inverse: SourceEdit
+        public let strategy: ParseStrategy
+
+        public init(document: QuoinDocument, inverse: SourceEdit, strategy: ParseStrategy) {
+            self.document = document
+            self.inverse = inverse
+            self.strategy = strategy
+        }
+    }
+
     public static func parse(_ source: String) -> QuoinDocument {
         // YAML front matter is split off before cmark sees the source; all
         // ranges downstream are shifted back to absolute source offsets.
@@ -42,6 +59,178 @@ public enum MarkdownConverter {
             stats: builder.stats,
             sourceHash: SHA256Hex.hash(of: source)
         )
+    }
+
+    public static func parseAfterEdit(previous: QuoinDocument, edit: SourceEdit) throws -> IncrementalParseResult {
+        let (newSource, inverse) = try edit.apply(to: previous.source)
+        if let fast = plainParagraphFastPath(previous: previous, edit: edit, newSource: newSource) {
+            return IncrementalParseResult(document: fast, inverse: inverse, strategy: .plainParagraphFastPath)
+        }
+        return IncrementalParseResult(document: parse(newSource), inverse: inverse, strategy: .full)
+    }
+
+    private static func plainParagraphFastPath(
+        previous: QuoinDocument,
+        edit: SourceEdit,
+        newSource: String
+    ) -> QuoinDocument? {
+        guard !edit.replacement.contains("\n"),
+              previous.footnotes.isEmpty,
+              let blockIndex = previous.blocks.firstIndex(where: {
+                  $0.range.offset <= edit.range.offset && edit.range.upperBound <= $0.range.upperBound
+              })
+        else { return nil }
+
+        let block = previous.blocks[blockIndex]
+        guard case .paragraph(let oldInlines) = block.kind,
+              oldInlines.allSatisfy({
+                  switch $0 {
+                  case .text, .softBreak:
+                      return true
+                  default:
+                      return false
+                  }
+              }),
+              let oldSlice = previous.source.substring(in: block.range)
+        else { return nil }
+
+        let relativeEdit = SourceEdit(
+            range: ByteRange(offset: edit.range.offset - block.range.offset, length: edit.range.length),
+            replacement: edit.replacement
+        )
+        guard let (newSlice, _) = try? relativeEdit.apply(to: oldSlice),
+              isSafePlainParagraphSource(oldSlice),
+              isSafePlainParagraphSource(newSlice)
+        else { return nil }
+
+        let newKind = BlockKind.paragraph(inlines: plainParagraphInlines(from: newSlice))
+        let newContentHash = contentHash(for: newKind)
+        let oldContentHash = block.id.contentHash
+        let oldHashCount = previous.blocks.filter { $0.id.contentHash == oldContentHash }.count
+        let newHashAlreadyExists = previous.blocks.enumerated().contains { index, candidate in
+            index != blockIndex && candidate.id.contentHash == newContentHash
+        }
+        guard oldHashCount == 1, !newHashAlreadyExists else { return nil }
+
+        let byteDelta = edit.replacement.utf8.count - edit.range.length
+        var blocks = previous.blocks
+        blocks[blockIndex] = Block(
+            id: BlockID(contentHash: newContentHash, occurrence: 0),
+            kind: newKind,
+            range: ByteRange(offset: block.range.offset, length: block.range.length + byteDelta)
+        )
+        if byteDelta != 0, blockIndex + 1 < blocks.count {
+            for index in (blockIndex + 1)..<blocks.count {
+                blocks[index] = shift(block: blocks[index], by: byteDelta)
+            }
+        }
+
+        let shiftedOutline = previous.outline.map { heading in
+            guard heading.range.offset > block.range.offset else { return heading }
+            return HeadingInfo(
+                id: heading.id,
+                level: heading.level,
+                title: heading.title,
+                slug: heading.slug,
+                range: ByteRange(offset: heading.range.offset + byteDelta, length: heading.range.length)
+            )
+        }
+        var stats = previous.stats
+        stats.characterCount = newSource.count
+        stats.wordCount += wordCount(in: newSlice) - wordCount(in: oldSlice)
+
+        return QuoinDocument(
+            source: newSource,
+            blocks: blocks,
+            outline: shiftedOutline,
+            stats: stats,
+            sourceHash: SHA256Hex.hash(of: newSource)
+        )
+    }
+
+    private static func contentHash(for kind: BlockKind) -> Int {
+        var hasher = Hasher()
+        hasher.combine(kind)
+        return hasher.finalize()
+    }
+
+    private static func isSafePlainParagraphSource(_ source: String) -> Bool {
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard !source.contains("\n\n"), !source.contains("\r") else { return false }
+        let forbidden = CharacterSet(charactersIn: "#>*_`[]!$=|<>&\\")
+        guard source.rangeOfCharacter(from: forbidden) == nil else { return false }
+
+        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+            let leading = line.trimmingCharacters(in: .whitespaces)
+            guard !leading.isEmpty else { return false }
+            if leading.hasPrefix("- ") || leading.hasPrefix("+ ") || leading.hasPrefix("* ") { return false }
+            if leading.hasPrefix("[TOC]") || leading.hasPrefix("[toc]") { return false }
+            if leading.first?.isNumber == true,
+               let marker = leading.firstIndex(where: { $0 == "." || $0 == ")" }),
+               leading.index(after: marker) < leading.endIndex,
+               leading[leading.index(after: marker)].isWhitespace {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func plainParagraphInlines(from source: String) -> [Inline] {
+        var inlines: [Inline] = []
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        for (index, line) in lines.enumerated() {
+            if !line.isEmpty {
+                inlines.append(.text(String(line)))
+            }
+            if index < lines.count - 1 {
+                inlines.append(.softBreak)
+            }
+        }
+        return inlines
+    }
+
+    private static func wordCount(in text: String) -> Int {
+        var words = 0
+        text.enumerateSubstrings(
+            in: text.startIndex..<text.endIndex,
+            options: [.byWords, .substringNotRequired]
+        ) { _, _, _, _ in
+            words += 1
+        }
+        return words
+    }
+
+    private static func shift(block: Block, by delta: Int) -> Block {
+        Block(
+            id: block.id,
+            kind: shift(kind: block.kind, by: delta),
+            range: ByteRange(offset: block.range.offset + delta, length: block.range.length)
+        )
+    }
+
+    private static func shift(kind: BlockKind, by delta: Int) -> BlockKind {
+        switch kind {
+        case .list(let items, let ordered, let start):
+            return .list(
+                items: items.map { item in
+                    ListItem(
+                        blocks: item.blocks.map { shift(block: $0, by: delta) },
+                        task: item.task,
+                        taskMarkerRange: item.taskMarkerRange.map {
+                            ByteRange(offset: $0.offset + delta, length: $0.length)
+                        }
+                    )
+                },
+                ordered: ordered,
+                start: start
+            )
+        case .blockQuote(let children):
+            return .blockQuote(children: children.map { shift(block: $0, by: delta) })
+        case .callout(let kind, let children):
+            return .callout(kind: kind, children: children.map { shift(block: $0, by: delta) })
+        default:
+            return kind
+        }
     }
 
     // MARK: - Builder

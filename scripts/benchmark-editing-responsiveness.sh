@@ -64,6 +64,11 @@ func generatedLargeDocument() -> String {
     return out
 }
 
+func isParagraph(_ block: Block) -> Bool {
+    if case .paragraph = block.kind { return true }
+    return false
+}
+
 let source: String
 let fixturePath = CommandLine.arguments.dropFirst().first
 if let fixturePath {
@@ -71,9 +76,6 @@ if let fixturePath {
 } else {
     source = generatedLargeDocument()
 }
-
-let midpointIndex = source.index(source.startIndex, offsetBy: source.count / 2)
-let middleUTF8 = source[..<midpointIndex].utf8.count
 
 print("fixture: \(fixturePath ?? "generated")")
 print("bytes: \(source.utf8.count)")
@@ -85,6 +87,15 @@ let document = measure("parse.initial") {
 print("blocks: \(document.blocks.count)")
 print("headings: \(document.outline.count)")
 
+let middleBlockStart = document.blocks.count / 2
+let editBlock = document.blocks.dropFirst(middleBlockStart).first(where: isParagraph)
+    ?? document.blocks.prefix(middleBlockStart).reversed().first(where: isParagraph)
+    ?? document.blocks[middleBlockStart]
+let editBlockSource = source.substring(in: editBlock.range) ?? ""
+let editBlockMidpoint = editBlockSource.index(editBlockSource.startIndex, offsetBy: editBlockSource.count / 2)
+let middleUTF8 = editBlock.range.offset + editBlockSource[..<editBlockMidpoint].utf8.count
+print("edit_block_bytes: \(editBlock.range.length)")
+
 let renderer = AttributedRenderer(theme: Theme(), baseURL: nil)
 var cache: [BlockID: NSAttributedString] = [:]
 let rendered = measure("render.cold") {
@@ -93,9 +104,15 @@ let rendered = measure("render.cold") {
 print("rendered_utf16: \(rendered.attributed.length)")
 print("cache_entries: \(cache.count)")
 
-let editedSource = try measure("source.applyEdit") {
-    try SourceEdit(range: ByteRange(offset: middleUTF8, length: 0), replacement: "x").apply(to: source).result
+let middleEdit = SourceEdit(range: ByteRange(offset: middleUTF8, length: 0), replacement: "x")
+let editApplication = try measure("source.applyEdit") {
+    try middleEdit.apply(to: source)
 }
+let editedSource = editApplication.result
+let incremental = try measure("parseAfterEdit.middleInsert") {
+    try MarkdownConverter.parseAfterEdit(previous: document, edit: middleEdit)
+}
+print("parseAfterEdit.strategy: \(incremental.strategy)")
 let edited = measure("parse.middleInsert") {
     MarkdownConverter.parse(editedSource)
 }
