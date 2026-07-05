@@ -863,10 +863,16 @@ enum DiagramRenderer {
     }
 
     private static func drawRelationMarker(
-        _ kind: ClassDiagram.RelationKind, at tip: CGPoint, from origin: CGPoint,
+        _ kind: ClassDiagram.RelationKind, at end: CGPoint, from origin: CGPoint,
         stroke: PlatformColor, canvas: PlatformColor, in context: CGContext
     ) {
-        let angle = atan2(tip.y - origin.y, tip.x - origin.x)
+        let angle = atan2(end.y - origin.y, end.x - origin.x)
+        // Stand the marker off the box border by a hairline, the way the
+        // flowchart arrowhead leaves a gap, so the whole glyph floats just
+        // outside the node instead of straddling the border (where the box
+        // outline, stroked afterward, overpaints the marker's near vertex).
+        let standoff: CGFloat = 3
+        let tip = CGPoint(x: end.x - standoff * cos(angle), y: end.y - standoff * sin(angle))
         func point(back: CGFloat, side: CGFloat) -> CGPoint {
             CGPoint(
                 x: tip.x - back * cos(angle) - side * sin(angle),
