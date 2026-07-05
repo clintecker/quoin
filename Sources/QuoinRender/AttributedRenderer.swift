@@ -12,6 +12,16 @@ import UIKit
 /// A rendered document: one attributed string for the whole document plus
 /// the character range of every top-level block, which powers TOC jumps,
 /// search navigation, and scroll anchoring across live reloads.
+public struct RenderSpliceHint: Sendable {
+    public let oldRange: NSRange
+    public let replacementRange: NSRange
+
+    public init(oldRange: NSRange, replacementRange: NSRange) {
+        self.oldRange = oldRange
+        self.replacementRange = replacementRange
+    }
+}
+
 public struct RenderedDocument {
     public let attributed: NSAttributedString
     public let blockRanges: [BlockID: NSRange]
@@ -20,19 +30,24 @@ public struct RenderedDocument {
     public let activeBlockID: BlockID?
     public let activeEditableRange: NSRange?
     public let activeSourceText: String?
+    /// AppKit can use this to apply a bounded TextKit splice for simple
+    /// active-block edits instead of scanning the whole rendered string.
+    public let spliceHint: RenderSpliceHint?
 
     public init(
         attributed: NSAttributedString,
         blockRanges: [BlockID: NSRange],
         activeBlockID: BlockID? = nil,
         activeEditableRange: NSRange? = nil,
-        activeSourceText: String? = nil
+        activeSourceText: String? = nil,
+        spliceHint: RenderSpliceHint? = nil
     ) {
         self.attributed = attributed
         self.blockRanges = blockRanges
         self.activeBlockID = activeBlockID
         self.activeEditableRange = activeEditableRange
         self.activeSourceText = activeSourceText
+        self.spliceHint = spliceHint
     }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])

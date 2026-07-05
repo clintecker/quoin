@@ -145,12 +145,20 @@ final class ReaderModel {
         }
     }
 
-    private func rerender() {
+    private func rerender(spliceHint: RenderSpliceHint? = nil) {
         QuoinPerformanceTrace.measure(
             "model.rerender",
             metadata: "bytes=\(document.source.utf8.count) blocks=\(document.blocks.count) active=\(activeBlockID != nil)"
         ) {
-            rendered = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
+            let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
+            rendered = RenderedDocument(
+                attributed: next.attributed,
+                blockRanges: next.blockRanges,
+                activeBlockID: next.activeBlockID,
+                activeEditableRange: next.activeEditableRange,
+                activeSourceText: next.activeSourceText,
+                spliceHint: spliceHint
+            )
             outline = document.outline
             stats = document.stats
             slugToBlock = Dictionary(
@@ -199,6 +207,7 @@ final class ReaderModel {
         )
         let caretUTF8 = absolute.offset + (caretDelta ?? replacement.utf8.count)
         let edit = SourceEdit(range: absolute, replacement: replacement)
+        let spliceHint = makeActiveEditSpliceHint(relativeRange: relativeRange, replacement: replacement)
         latestEditGeneration += 1
         let generation = latestEditGeneration
         let previousEditTask = editPipelineTask
@@ -215,13 +224,27 @@ final class ReaderModel {
             guard let newDocument else { return }
             guard generation == self.latestEditGeneration else { return }
             QuoinPerformanceTrace.measure("model.restoreCaret") {
-                self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8)
+                self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8, spliceHint: spliceHint)
             }
             self.scheduleH1Rename(for: newDocument)
             if generation == self.latestEditGeneration {
                 self.editPipelineTask = nil
             }
         }
+    }
+
+    private func makeActiveEditSpliceHint(relativeRange: ByteRange, replacement: String) -> RenderSpliceHint? {
+        guard !replacement.contains("\n"),
+              let active = rendered.activeEditableRange,
+              let source = rendered.activeSourceText,
+              let start = EditMapping.utf16Offset(inText: source, utf8Offset: relativeRange.offset),
+              let end = EditMapping.utf16Offset(inText: source, utf8Offset: relativeRange.upperBound)
+        else { return nil }
+        let location = active.location + start
+        return RenderSpliceHint(
+            oldRange: NSRange(location: location, length: end - start),
+            replacementRange: NSRange(location: location, length: replacement.utf16.count)
+        )
     }
 
     // MARK: - First H1 renames Untitled files (debounced, silent suffix)
@@ -284,7 +307,7 @@ final class ReaderModel {
     /// After an edit round-trip: adopt the new document, re-locate the
     /// block containing the caret (block identity changes with content, and
     /// an Enter can split one block into two), and restore the caret.
-    private func restoreCaret(in newDocument: QuoinDocument, atUTF8Offset caretUTF8: Int?) {
+    private func restoreCaret(in newDocument: QuoinDocument, atUTF8Offset caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil) {
         document = newDocument
         if let caretUTF8 {
             let block = newDocument.blocks.last(where: { $0.range.offset <= caretUTF8 })
@@ -302,7 +325,7 @@ final class ReaderModel {
             caretInActiveBlock = nil
         }
         caretGeneration += 1
-        rerender()
+        rerender(spliceHint: spliceHint)
     }
 
     // MARK: - Image drop
