@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fixture="${1:-}"
+workspace="$(mktemp -d "${TMPDIR:-/tmp}/quoin-edit-bench.XXXXXX")"
+trap 'rm -rf "$workspace"' EXIT
+
+mkdir -p "$workspace/Sources/QuoinEditBench"
+
+cat > "$workspace/Package.swift" <<SWIFT
+// swift-tools-version: 5.10
+import PackageDescription
+
+let package = Package(
+    name: "QuoinEditBench",
+    platforms: [.macOS(.v14)],
+    dependencies: [
+        .package(name: "Quoin", path: "$repo_root"),
+    ],
+    targets: [
+        .executableTarget(
+            name: "QuoinEditBench",
+            dependencies: [
+                .product(name: "QuoinCore", package: "Quoin"),
+                .product(name: "QuoinRender", package: "Quoin"),
+            ]
+        ),
+    ]
+)
+SWIFT
+
+cat > "$workspace/Sources/QuoinEditBench/main.swift" <<'SWIFT'
+import Foundation
+import QuoinCore
+import QuoinRender
+
+@discardableResult
+func measure<T>(_ label: String, _ work: () throws -> T) rethrows -> T {
+    let start = DispatchTime.now().uptimeNanoseconds
+    let value = try work()
+    let elapsed = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000.0
+    print("\(label): \(String(format: "%.2f", elapsed)) ms")
+    return value
+}
+
+func generatedLargeDocument() -> String {
+    var out = "# Large Editing Fixture\n \n"
+    var chapter = 1
+    while out.utf8.count < 1_200_000 {
+        out += "## Chapter \(chapter)\n \n"
+        for paragraph in 1...18 {
+            out += """
+            Paragraph \(chapter).\(paragraph) keeps ordinary prose flowing with **bold**, *italic*, `code`, a [link](https://example.com/\(chapter)/\(paragraph)), and enough words to wrap across several visual lines in the editor. It intentionally uses whitespace-only blank lines between paragraphs, matching public-domain ebook markdown that looks blank to readers but is not represented by a literal double-newline pair.
+             
+            """
+        }
+        chapter += 1
+    }
+    return out
+}
+
+let source: String
+let fixturePath = CommandLine.arguments.dropFirst().first
+if let fixturePath {
+    source = try String(contentsOf: URL(fileURLWithPath: fixturePath), encoding: .utf8)
+} else {
+    source = generatedLargeDocument()
+}
+
+let midpointIndex = source.index(source.startIndex, offsetBy: source.count / 2)
+let middleUTF8 = source[..<midpointIndex].utf8.count
+
+print("fixture: \(fixturePath ?? "generated")")
+print("bytes: \(source.utf8.count)")
+print("lines: \(source.split(separator: "\n", omittingEmptySubsequences: false).count)")
+
+let document = measure("parse.initial") {
+    MarkdownConverter.parse(source)
+}
+print("blocks: \(document.blocks.count)")
+print("headings: \(document.outline.count)")
+
+let renderer = AttributedRenderer(theme: Theme(), baseURL: nil)
+var cache: [BlockID: NSAttributedString] = [:]
+let rendered = measure("render.cold") {
+    renderer.render(document, cache: &cache)
+}
+print("rendered_utf16: \(rendered.attributed.length)")
+print("cache_entries: \(cache.count)")
+
+let editedSource = try measure("source.applyEdit") {
+    try SourceEdit(range: ByteRange(offset: middleUTF8, length: 0), replacement: "x").apply(to: source).result
+}
+let edited = measure("parse.middleInsert") {
+    MarkdownConverter.parse(editedSource)
+}
+let active = edited.blocks.first {
+    $0.range.offset <= middleUTF8 && middleUTF8 <= $0.range.offset + $0.range.length
+}?.id
+let rerendered = measure("render.middleInsert.warmCache") {
+    renderer.render(edited, activeBlockID: active, activeCaret: nil, cache: &cache)
+}
+
+measure("render.fullStringDiffScan") {
+    let old = rendered.attributed.string as NSString
+    let new = rerendered.attributed.string as NSString
+    let oldLen = old.length
+    let newLen = new.length
+    let bound = min(oldLen, newLen)
+    var prefix = 0
+    while prefix < bound, old.character(at: prefix) == new.character(at: prefix) {
+        prefix += 1
+    }
+    var suffix = 0
+    let suffixBound = bound - prefix
+    while suffix < suffixBound,
+          old.character(at: oldLen - 1 - suffix) == new.character(at: newLen - 1 - suffix) {
+        suffix += 1
+    }
+    return prefix + suffix
+}
+SWIFT
+
+cd "$workspace"
+swift run -c release QuoinEditBench ${fixture:+"$fixture"}
