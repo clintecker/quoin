@@ -82,9 +82,15 @@ final class ReaderModel {
     // MARK: - Merge banner
 
     func resolveConflictKeepingMine() {
-        conflictDiskSource = nil
         guard let session else { return }
-        Task { await session.resolveConflictKeepingMine() }
+        Task {
+            do {
+                try await session.resolveConflictKeepingMine()
+                self.conflictDiskSource = nil
+            } catch {
+                // Keep the merge banner visible; the local version is still dirty.
+            }
+        }
     }
 
     func resolveConflictTakingDisk() {
@@ -100,7 +106,7 @@ final class ReaderModel {
         snapshotTask = nil
         let session = session
         Task {
-            await session?.saveNow()
+            try? await session?.saveNow()
             await session?.stopWatching()
         }
     }
@@ -212,7 +218,11 @@ final class ReaderModel {
 
     private func performH1Rename(to title: String) async {
         guard let session, let url = fileURL else { return }
-        await session.saveNow()
+        do {
+            try await session.saveNow()
+        } catch {
+            return
+        }
         guard let renamed = try? Library.rename(url, to: title) else { return }
         await session.relocate(to: renamed)
         fileURL = renamed

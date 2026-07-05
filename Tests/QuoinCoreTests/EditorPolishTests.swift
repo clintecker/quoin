@@ -233,4 +233,35 @@ final class ConflictTests: XCTestCase {
         let adopted = await session.document
         XCTAssertEqual(adopted.source, "external change")
     }
+
+    func testKeepMineConflictResolutionKeepsDirtyStateWhenSaveFails() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("original".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        try await session.applyEdit(SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "local "))
+
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+
+        do {
+            try await session.resolveConflictKeepingMine()
+            XCTFail("conflict resolution should fail when the document URL is a directory")
+        } catch SessionError.fileWriteFailed(let url, _) {
+            XCTAssertEqual(url, file)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        let isDirty = await session.hasUnsavedChanges
+        let saveError = await session.lastSaveError
+        let source = await session.document.source
+        XCTAssertTrue(isDirty)
+        XCTAssertNotNil(saveError)
+        XCTAssertEqual(source, "local original")
+    }
 }

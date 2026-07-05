@@ -144,7 +144,7 @@ final class IOSReaderModel: ObservableObject {
         snapshotTask = nil
         let session = session
         Task {
-            await session?.saveNow()
+            try? await session?.saveNow()
             await session?.stopWatching()
         }
     }
