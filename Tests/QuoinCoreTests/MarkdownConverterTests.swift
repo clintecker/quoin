@@ -187,6 +187,50 @@ final class MarkdownConverterTests: XCTestCase {
         XCTAssertEqual(doc.outline[0].title, "Café ☕️")
     }
 
+    // MARK: - Incremental parsing
+
+    func testPlainParagraphEditFastPathMatchesFullParse() throws {
+        let source = """
+        # Title
+
+        Alpha beta gamma.
+
+        ## Later
+
+        Tail paragraph.
+        """
+        let previous = MarkdownConverter.parse(source)
+        let paragraph = try XCTUnwrap(previous.blocks.first { block in
+            if case .paragraph = block.kind { return true }
+            return false
+        })
+        let insertionOffset = paragraph.range.offset + "Alpha ".utf8.count
+        let edit = SourceEdit(range: ByteRange(offset: insertionOffset, length: 0), replacement: "brave ")
+
+        let incremental = try MarkdownConverter.parseAfterEdit(previous: previous, edit: edit)
+        XCTAssertEqual(incremental.strategy, .plainParagraphFastPath)
+        assertEquivalentToFullParse(incremental.document)
+    }
+
+    func testPlainParagraphFastPathFallsBackForMarkdownSyntax() throws {
+        let source = "Alpha beta gamma.\n\nTail paragraph."
+        let previous = MarkdownConverter.parse(source)
+        let edit = SourceEdit(range: ByteRange(offset: "Alpha ".utf8.count, length: 0), replacement: "**bold** ")
+
+        let incremental = try MarkdownConverter.parseAfterEdit(previous: previous, edit: edit)
+        XCTAssertEqual(incremental.strategy, .full)
+        assertEquivalentToFullParse(incremental.document)
+    }
+
+    private func assertEquivalentToFullParse(_ document: QuoinDocument, file: StaticString = #filePath, line: UInt = #line) {
+        let full = MarkdownConverter.parse(document.source)
+        XCTAssertEqual(document.blocks, full.blocks, file: file, line: line)
+        XCTAssertEqual(document.outline, full.outline, file: file, line: line)
+        XCTAssertEqual(document.footnotes, full.footnotes, file: file, line: line)
+        XCTAssertEqual(document.stats, full.stats, file: file, line: line)
+        XCTAssertEqual(document.sourceHash, full.sourceHash, file: file, line: line)
+    }
+
     // MARK: - Stats
 
     func testStats() {

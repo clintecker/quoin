@@ -165,14 +165,13 @@ public actor DocumentSession {
     /// so callers can restore the caret synchronously.
     @discardableResult
     public func applyEdit(_ edit: SourceEdit, publishSnapshot: Bool = true) throws -> QuoinDocument {
-        let (newSource, inverse) = try edit.apply(to: document.source)
-        undoStack.append(inverse)
+        let parsed = try MarkdownConverter.parseAfterEdit(previous: document, edit: edit)
+        undoStack.append(parsed.inverse)
         redoStack.removeAll()
-        let newDocument = MarkdownConverter.parse(newSource)
         if publishSnapshot {
-            publish(newDocument)
+            publish(parsed.document)
         } else {
-            document = newDocument
+            document = parsed.document
         }
         scheduleAutosave()
         return document
