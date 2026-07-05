@@ -105,6 +105,33 @@ final class SessionEditingTests: XCTestCase {
         XCTAssertEqual(redone?.source, "# Title\n\nHello there.")
     }
 
+    func testApplyEditCanSkipSnapshotPublishForLocalRenderCoalescing() async throws {
+        let session = DocumentSession(source: "hello")
+        let stream = await session.snapshots()
+        var iterator = stream.makeAsyncIterator()
+        let initial = await iterator.next()
+        XCTAssertEqual(initial?.source, "hello")
+
+        let edit = SourceEdit(range: ByteRange(offset: 5, length: 0), replacement: " world")
+        let edited = try await session.applyEdit(edit, publishSnapshot: false)
+        XCTAssertEqual(edited.source, "hello world")
+        let authoritative = await session.document
+        XCTAssertEqual(authoritative.source, "hello world")
+
+        let unexpectedSnapshot = expectation(description: "suppressed local edit snapshot")
+        unexpectedSnapshot.isInverted = true
+        let nextSnapshotTask = Task {
+            if await iterator.next() != nil {
+                unexpectedSnapshot.fulfill()
+            }
+        }
+        await fulfillment(of: [unexpectedSnapshot], timeout: 0.2)
+        nextSnapshotTask.cancel()
+
+        let undone = try await session.undo()
+        XCTAssertEqual(undone?.source, "hello")
+    }
+
     func testEditAutosavesToDisk() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("quoin-tests-\(UUID().uuidString)")

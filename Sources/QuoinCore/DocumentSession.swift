@@ -164,11 +164,16 @@ public actor DocumentSession {
     /// publish, and schedule a debounced autosave. Returns the new document
     /// so callers can restore the caret synchronously.
     @discardableResult
-    public func applyEdit(_ edit: SourceEdit) throws -> QuoinDocument {
+    public func applyEdit(_ edit: SourceEdit, publishSnapshot: Bool = true) throws -> QuoinDocument {
         let (newSource, inverse) = try edit.apply(to: document.source)
         undoStack.append(inverse)
         redoStack.removeAll()
-        publish(MarkdownConverter.parse(newSource))
+        let newDocument = MarkdownConverter.parse(newSource)
+        if publishSnapshot {
+            publish(newDocument)
+        } else {
+            document = newDocument
+        }
         scheduleAutosave()
         return document
     }

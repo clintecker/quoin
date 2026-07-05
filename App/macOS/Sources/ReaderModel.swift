@@ -39,6 +39,8 @@ final class ReaderModel {
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?
     @ObservationIgnored private var renderer = AttributedRenderer()
     @ObservationIgnored private var renameTask: Task<Void, Never>?
+    @ObservationIgnored private var editPipelineTask: Task<Void, Never>?
+    @ObservationIgnored private var latestEditGeneration = 0
 
     @ObservationIgnored private var slugToBlock: [String: BlockID] = [:]
     /// Per-block rendered fragments reused across re-renders so a keystroke
@@ -105,7 +107,9 @@ final class ReaderModel {
         snapshotTask?.cancel()
         snapshotTask = nil
         let session = session
+        let pendingEdits = editPipelineTask
         Task {
+            await pendingEdits?.value
             try? await session?.saveNow()
             await session?.stopWatching()
         }
@@ -195,19 +199,28 @@ final class ReaderModel {
         )
         let caretUTF8 = absolute.offset + (caretDelta ?? replacement.utf8.count)
         let edit = SourceEdit(range: absolute, replacement: replacement)
+        latestEditGeneration += 1
+        let generation = latestEditGeneration
+        let previousEditTask = editPipelineTask
 
-        Task {
+        editPipelineTask = Task { [weak self] in
+            await previousEditTask?.value
+            guard let self else { return }
             let newDocument = try? await QuoinPerformanceTrace.measure(
                 "model.session.applyEdit",
                 metadata: "range_offset=\(absolute.offset) replacement_bytes=\(replacement.utf8.count)"
             ) {
-                try await session.applyEdit(edit)
+                try await session.applyEdit(edit, publishSnapshot: false)
             }
             guard let newDocument else { return }
+            guard generation == self.latestEditGeneration else { return }
             QuoinPerformanceTrace.measure("model.restoreCaret") {
                 self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8)
             }
             self.scheduleH1Rename(for: newDocument)
+            if generation == self.latestEditGeneration {
+                self.editPipelineTask = nil
+            }
         }
     }
 
@@ -328,7 +341,7 @@ final class ReaderModel {
 
         let edit = SourceEdit(range: ByteRange(offset: offset, length: 0), replacement: markdown)
         Task {
-            guard let newDocument = try? await session.applyEdit(edit) else { return }
+            guard let newDocument = try? await session.applyEdit(edit, publishSnapshot: false) else { return }
             QuoinPerformanceTrace.measure("model.restoreCaret.imageInsert") {
                 self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
             }
