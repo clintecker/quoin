@@ -166,9 +166,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
             // scroll offset never jumps.
             let splicedRange = QuoinPerformanceTrace.measure(
                 "render.textkit.splice",
-                metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length)"
+                metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length) hinted=\(rendered.spliceHint != nil)"
             ) {
-                Coordinator.spliceChanges(in: storage, to: rendered.attributed)
+                Coordinator.spliceChanges(in: storage, to: rendered.attributed, hint: rendered.spliceHint)
             }
             QuoinPerformanceTrace.measure("render.decorations.invalidate") {
                 (textView as? QuoinTextView)?.invalidateDecorations()

@@ -3,6 +3,9 @@ import XCTest
 import CoreGraphics
 @testable import QuoinRender
 import QuoinCore
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Focused unit tests for the small render helpers that the recent
 /// decomposition passes extracted, exercised through the public render
@@ -142,5 +145,43 @@ final class RenderHelperTests: XCTestCase {
         XCTAssertEqual(outsideFont?.pointSize, 1,
             "caret outside the span collapses the delimiter to a 1pt glyph")
     }
+
+    #if canImport(AppKit)
+    func testHintedSpliceAppliesBoundedReplacement() {
+        let storage = NSTextStorage(string: "abcdef")
+        let replacement = NSAttributedString(string: "abcXYZdef")
+        let hint = RenderSpliceHint(
+            oldRange: NSRange(location: 3, length: 0),
+            replacementRange: NSRange(location: 3, length: 3)
+        )
+
+        let changed = MarkdownReaderView.Coordinator.spliceChanges(
+            in: storage,
+            to: replacement,
+            hint: hint
+        )
+
+        XCTAssertEqual(storage.string, "abcXYZdef")
+        XCTAssertEqual(changed, NSRange(location: 3, length: 3))
+    }
+
+    func testInvalidHintFallsBackToDiffSplice() {
+        let storage = NSTextStorage(string: "abcdef")
+        let replacement = NSAttributedString(string: "abQdef")
+        let hint = RenderSpliceHint(
+            oldRange: NSRange(location: 99, length: 1),
+            replacementRange: NSRange(location: 99, length: 1)
+        )
+
+        let changed = MarkdownReaderView.Coordinator.spliceChanges(
+            in: storage,
+            to: replacement,
+            hint: hint
+        )
+
+        XCTAssertEqual(storage.string, "abQdef")
+        XCTAssertEqual(changed, NSRange(location: 2, length: 1))
+    }
+    #endif
 }
 #endif

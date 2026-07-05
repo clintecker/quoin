@@ -73,6 +73,25 @@ extension MarkdownReaderView {
             return NSRange(location: prefix, length: newChangedLen)
         }
 
+        static func spliceChanges(
+            in storage: NSTextStorage,
+            to newAttr: NSAttributedString,
+            hint: RenderSpliceHint?
+        ) -> NSRange? {
+            if let hint,
+               hint.oldRange.location >= 0,
+               hint.replacementRange.location >= 0,
+               NSMaxRange(hint.oldRange) <= storage.length,
+               NSMaxRange(hint.replacementRange) <= newAttr.length {
+                let replacement = newAttr.attributedSubstring(from: hint.replacementRange)
+                storage.beginEditing()
+                storage.replaceCharacters(in: hint.oldRange, with: replacement)
+                storage.endEditing()
+                return hint.replacementRange
+            }
+            return spliceChanges(in: storage, to: newAttr)
+        }
+
         init(parent: MarkdownReaderView) {
             self.parent = parent
         }
