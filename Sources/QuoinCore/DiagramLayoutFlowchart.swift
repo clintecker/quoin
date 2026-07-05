@@ -410,11 +410,12 @@ extension DiagramLayoutEngine {
             }
         }
 
-        // Distribute each face's ports into distinct cross positions so several
-        // edges meeting one face (e.g. a node's incoming edge and an outgoing
-        // back edge) fan out instead of collapsing onto one line. A lone edge
-        // keeps its channel coordinate (stays straight); a crowd is centered and
-        // evenly spaced, ordered by channel so they don't cross.
+        // Place each face port at the coordinate it actually wants (its channel
+        // / the direction of its far endpoint), then push neighbours apart only
+        // enough to keep a minimum separation. A lone edge keeps its channel and
+        // stays straight; two edges that want opposite sides stay on opposite
+        // sides — evenly centering them made a node's incoming edge and its
+        // outgoing back edge squish together and curl into a tuning-fork.
         var portCross: [String: CGFloat] = [:]   // "edge|isSource" -> cross
         func portKey(_ edge: Int, _ isSource: Bool) -> String { "\(edge)|\(isSource)" }
         for (key, ports) in buckets {
@@ -424,20 +425,19 @@ extension DiagramLayoutEngine {
                 ? (f.minY + min(f.height * 0.22, f.height / 2), f.maxY - min(f.height * 0.22, f.height / 2))
                 : (f.minX + min(f.width * 0.22, f.width / 2), f.maxX - min(f.width * 0.22, f.width / 2))
             let sorted = ports.sorted { $0.wanted < $1.wanted }
-            let n = sorted.count
-            if n == 1 {
-                portCross[portKey(sorted[0].edge, sorted[0].isSource)] = min(max(sorted[0].wanted, lo), hi)
-                continue
+            let minSep = min(flowchartPortSep, (hi - lo) / CGFloat(max(sorted.count, 1)))
+            var pos = sorted.map { min(max($0.wanted, lo), hi) }
+            for i in 1..<max(pos.count, 1) where pos[i] < pos[i - 1] + minSep {
+                pos[i] = pos[i - 1] + minSep
             }
-            // Separation floor derived from what a bend + arrowhead occupy: two
-            // rounded elbows (radius 5 each) plus the ~7pt arrowhead half-width
-            // plus clearance, so fanned ports don't pinch into a tuning-fork.
-            let gap = min(flowchartPortSep, (hi - lo) / CGFloat(n))
-            let center = (lo + hi) / 2
-            let block = gap * CGFloat(n - 1)
-            for (i, p) in sorted.enumerated() {
-                portCross[portKey(p.edge, p.isSource)] = center - block / 2 + gap * CGFloat(i)
+            if let last = pos.last, last > hi {   // block overflowed; slide it left
+                let shift = last - hi
+                for i in pos.indices { pos[i] -= shift }
+                for i in 1..<max(pos.count, 1) where pos[i] < pos[i - 1] + minSep {
+                    pos[i] = pos[i - 1] + minSep
+                }
             }
+            for (i, p) in sorted.enumerated() { portCross[portKey(p.edge, p.isSource)] = pos[i] }
         }
 
         // Give each edge entering the same target a distinct jog track, ordered
@@ -481,20 +481,6 @@ extension DiagramLayoutEngine {
                 let (v, stub) = diamondPort(g.fromFrame, toward: g.firstNext, isSource: true)
                 start = v
                 head = stub.map { [v, $0] } ?? [v]
-            } else if !g.exitBottom,
-                      (buckets[faceKey(g.chain[0], bottom: false)]?.count ?? 0) > 1 {
-                // An upward (back) edge would share the source's top/leading face
-                // with a downward edge and pinch into a tuning-fork. Leave from a
-                // SIDE face toward the target instead, then route up: the two
-                // never run parallel on one face.
-                let f = g.fromFrame
-                start = horizontal
-                    ? CGPoint(x: f.minX + f.width * 0.32, y: g.firstNext.y <= f.midY ? f.minY : f.maxY)
-                    : CGPoint(x: g.firstNext.x <= f.midX ? f.minX : f.maxX, y: f.minY + f.height * 0.32)
-                let elbow = horizontal
-                    ? CGPoint(x: start.x, y: g.firstNext.y)
-                    : CGPoint(x: g.firstNext.x, y: start.y)
-                head = [start, elbow]
             } else {
                 let cross = portCross[portKey(index, true)] ?? (horizontal ? g.firstNext.y : g.firstNext.x)
                 start = attach(g.chain[0], cross: cross, rightOrBottom: g.exitBottom, isSource: true)
