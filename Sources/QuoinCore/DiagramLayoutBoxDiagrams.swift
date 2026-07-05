@@ -47,7 +47,7 @@ extension DiagramLayoutEngine {
             sizes: boxSizes,
             layeringEdges: layeringEdges,
             routingEdges: diagram.relations.map { (from: $0.from, to: $0.to) },
-            layerGap: 52, nodeGap: 30, margin: 14
+            layerGap: 66, nodeGap: 30, margin: 14
         )
 
         let boxes = diagram.classes.compactMap { cls -> ClassLayout.Box? in
@@ -93,7 +93,7 @@ extension DiagramLayoutEngine {
             sizes: boxSizes,
             layeringEdges: diagram.relations.map { ($0.from, $0.to) },
             routingEdges: diagram.relations.map { (from: $0.from, to: $0.to) },
-            layerGap: 52, nodeGap: 30, margin: 14
+            layerGap: 66, nodeGap: 30, margin: 14
         )
 
         let boxes = diagram.entities.compactMap { entity -> ERLayout.Box? in
@@ -174,7 +174,7 @@ extension DiagramLayoutEngine {
             sizes: sizes,
             layeringEdges: diagram.edges.map { ($0.from, $0.to) },
             routingEdges: diagram.edges.map { (from: $0.from, to: $0.to) },
-            layerGap: 40, nodeGap: 26, margin: 6
+            layerGap: 54, nodeGap: 26, margin: 6
         )
 
         var outNodes: [StateLayout.Node] = []

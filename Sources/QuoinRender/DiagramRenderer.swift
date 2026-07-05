@@ -423,11 +423,12 @@ enum DiagramRenderer {
         }
         // Reserve the marker/arrowhead zone near each endpoint so a label's
         // opaque pad can't cover a crow's-foot, tick, UML marker, or arrowhead:
-        // ER crow's feet / zero-circles reach ~18pt off a border and spread a
-        // few points to the side, so a 20pt-radius keep-out clears them.
+        // ER crow's feet / zero-circles reach ~18pt off a border, so an 18pt
+        // keep-out clears them without shoving the label further than needed
+        // (the wider layer gap leaves a centered spot between the two markers).
         var obstacles = obstacles
         for end in [points.first, points.last].compactMap({ $0 }) {
-            obstacles.append(CGRect(x: end.x - 20, y: end.y - 20, width: 40, height: 40))
+            obstacles.append(CGRect(x: end.x - 18, y: end.y - 18, width: 36, height: 36))
         }
         // Sample along the edge's arc length, not just at the midpoint, so two
         // antiparallel edges between the same box pair can slide their labels

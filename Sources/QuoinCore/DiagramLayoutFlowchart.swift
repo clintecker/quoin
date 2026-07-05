@@ -11,7 +11,7 @@ extension DiagramLayoutEngine {
     // MARK: Flowchart (layered / Sugiyama-style)
 
     private static let flowchartMargin: CGFloat = 12
-    private static let flowchartLayerGap: CGFloat = 44
+    private static let flowchartLayerGap: CGFloat = 56
     private static let flowchartNodeGap: CGFloat = 26
     /// Cross-axis breadth a dummy node reserves — a narrow channel a long edge
     /// runs through, between real nodes.
