@@ -47,9 +47,11 @@ feasible: it would be QuoinCore's diagram files + a thin render protocol.
     `FlowchartLayout.PlacedEdge` carries a `labelPoint`.
 - `Sources/QuoinCore/DiagramLayoutFlowchart.swift` — flowchart layout:
   `layout(_:)` runs assignLayers → insert dummy nodes for multi-layer edges →
-  barycenterOrder → `placeFlowchartFrames` → `routeChains`. `placeEdgeLabels`
-  scores label positions vs. node frames + other labels. `routePolyline`,
-  `simplifyCollinear`, `dummyBreadth`.
+  barycenterOrder → `brandesKoepfX` → `placeFlowchartFrames` → `routeChains`.
+  `routeChains` is the edge router; its pipeline and the invariants it enforces
+  are in **"Flowchart edge routing"** below. `placeEdgeLabels` scores label
+  positions vs. node frames + other labels. `routePolyline` (with `jogBias`),
+  `simplifyCollinear`, `separateRuns`, `dummyBreadth`.
 - `Sources/QuoinCore/DiagramLayoutBoxDiagrams.swift` — class / ER / state
   layouts. All three call `layeredRoutes`. State recurses for composite scopes.
 - `Sources/QuoinRender/DiagramRenderer.swift` — CoreGraphics drawing:
@@ -84,6 +86,63 @@ QUOIN_RENDER_GALLERY=/tmp/gallery swift test --filter DiagramGalleryTests
 var (skipped in normal runs). This is how to *observe* and iterate — render,
 read the PNG, fix, re-render.
 
+## Flowchart edge routing (`routeChains`) — strategy & invariants
+
+The edge router evolved from a pile of independent heuristics into a small
+pipeline. Understanding the *order* and *why* matters — several bugs came from
+two stages disagreeing about where an edge should sit.
+
+**Pipeline (per `layout(_:)` call):**
+1. **Geometry pass** — per edge compute the dummy-chain waypoints, `firstNext`
+   / `lastPrev`, exit/enter faces, and whether each end is a diamond.
+2. **Port distribution** — every non-diamond edge-end that touches a node face
+   is bucketed by `(node, face)`. Within a bucket, place each port **at the
+   coordinate it actually wants** (its channel / the direction of its far
+   endpoint), then push neighbours apart only enough to hold a minimum
+   separation (`flowchartPortSep`). Do **not** evenly centre a crowd — that made
+   a node's incoming edge and its outgoing back edge (which want opposite sides)
+   squish together and curl into a "tuning-fork".
+3. **Jog-track stagger** — edges entering the *same target* get distinct
+   horizontal-jog tracks (`jogBias` fed into `routePolyline`), so their bend
+   corners don't nest into a "double corner".
+4. **Build** — decisions attach at a **vertex** (`diamondPort`: incoming → the
+   main-axis face, i.e. top for TD; outgoing branches → the N/E/S/W vertex
+   facing their target, with a short side stub); every other shape uses its
+   distributed face port via `attach` (which insets off the corners).
+5. **`separateRuns`** — a global post-pass: find main-axis runs from *different*
+   edges that share a track (same cross coord, overlapping extent) and nudge the
+   **movable** one (ends are interior bends, not anchored to a box) aside by
+   `flowchartPortSep`. This is the guarantee that **no two edge runs coincide** —
+   port separation alone can't do it, because a separated port immediately jogs
+   back to its dummy channel, which may sit on another edge's column.
+
+**Key invariants / rules learned (don't regress these):**
+- A **target port aligns with where the edge descends** (`sourceExitCross` — the
+  source's vertex/stub, or its face port), *not* the source's centre. Using the
+  source centre clamps the target to the far side of its band and forces a
+  wasteful right-then-back-left **S-jog**.
+- **Decisions meet edges at vertices**, never a slanted face (that leaves the
+  arrowhead stuck on a diamond's side). Incoming enters the top; branches leave
+  the side/bottom vertex toward their target.
+- **No doubled/touching lines** — `separateRuns` enforces it; if two lines still
+  touch, it's a bug in that pass (movable-detection or relaxation count), fix it
+  there rather than adding a per-case nudge.
+- The **4-point orthogonal invariant** (`testOffsetFlowchartEdgesRouteOrthogonally`):
+  an offset edge routes as exactly 4 axis-aligned points. Track/jog/separate
+  changes may *move* a jog but must not *add* segments.
+- BK adjacency must be **deduplicated** (the paper's neighbour *sets*): a
+  parallel/back edge counted twice skews the index-based median and skews the
+  whole layout.
+
+**Diagnostic method that actually works:** do **not** judge routing from a
+downsampled gallery PNG — it hides which of two near-coincident lines is which
+and turns real bugs into vague "weirdness". Instead **dump the exact edge points**
+(a throwaway test that prints `edge.points` for the fixture), and reason about
+concrete coordinates ("target x is 457, should be 484"). Every routing bug this
+engine had was found in seconds once the numbers were on screen, and lost hours
+when guessed from pixels. Crop-zoom (`sips -c H W --cropOffset Y X`) for a close
+look, but confirm the *cause* in the coordinates.
+
 ## What has been done
 
 - Added native **Gantt**; polished pie (clean hub + saturated categorical
@@ -115,7 +174,14 @@ read the PNG, fix, re-render.
   crow's-feet, UML markers, and overrunning routes can't clip.
 - **Dead code removed:** `Placement`, `orderedLayers`, `layeredPlacement`,
   `BoxFace`, `RoutedBoxEdge`, `routeBoxEdges`, `borderPoint` are gone.
-- 242 tests green throughout; commit + push to `main` per unit of work.
+- **Flowchart router cleanup pass** (see "Flowchart edge routing"): decisions
+  attach at vertices (`diamondPort`); ports placed at their **wanted side** with
+  min-separation (not tight-centred); target ports align with the edge's
+  **descent** (`sourceExitCross`, kills S-jogs); per-target **jog-track**
+  stagger; **`separateRuns`** guarantees no two edge runs coincide; wider layer
+  gaps for arrowhead/label room; relation markers stood off the box border. An
+  expert-panel workflow framed A/B/D as one missing "routing-track" phase.
+- 244 tests green throughout; commit + push to `main` per unit of work.
 
 ## Open problems
 
