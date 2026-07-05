@@ -487,49 +487,55 @@ extension DiagramLayoutEngine {
             }
         }
 
+        var routes = [[CGPoint]](repeating: [], count: chart.edges.count)
+        for index in chart.edges.indices {
+            let g = geos[index]
+            guard g.valid else { continue }
+
+            // Head (leaves the source) and tail (enters the target). A decision
+            // uses vertex ports; every other shape uses its distributed face port.
+            let head: [CGPoint]
+            if g.srcDiamond {
+                let (v, stub) = diamondPort(g.fromFrame, toward: g.firstNext, isSource: true)
+                head = stub.map { [v, $0] } ?? [v]
+            } else {
+                let cross = portCross[portKey(index, true)] ?? (horizontal ? g.firstNext.y : g.firstNext.x)
+                head = [attach(g.chain[0], cross: cross, rightOrBottom: g.exitBottom, isSource: true)]
+            }
+            let tail: [CGPoint]
+            if g.dstDiamond {
+                let (v, stub) = diamondPort(g.toFrame, toward: g.lastPrev, isSource: false)
+                tail = stub.map { [$0, v] } ?? [v]
+            } else {
+                let cross = portCross[portKey(index, false)] ?? (horizontal ? g.lastPrev.y : g.lastPrev.x)
+                tail = [attach(g.chain[g.chain.count - 1], cross: cross, rightOrBottom: g.enterBottom, isSource: false)]
+            }
+
+            routes[index] = routePolyline(head + g.dummyCenters + tail, horizontal: horizontal, jogBias: jogBias[index])
+        }
+
+        // Separate coincident main-axis runs: two different edges whose runs
+        // share a track (an incoming edge's descent and a back edge's channel
+        // land on one node column) read as a single doubled line. Nudge the
+        // movable run — one whose ends are interior bends, not anchored to a
+        // box — aside to restore the minimum separation.
+        separateRuns(&routes, horizontal: horizontal, minSep: flowchartPortSep)
+
         var placedEdges: [FlowchartLayout.PlacedEdge] = []
         var crossLimit = flowchartMargin + crossExtent
         for f in frames.values { crossLimit = max(crossLimit, horizontal ? f.maxY : f.maxX) }
-
         for (index, edge) in chart.edges.enumerated() {
-            let g = geos[index]
-            guard g.valid else {
+            let pts = routes[index]
+            guard pts.count >= 2 else {
                 let p = CGPoint.zero
                 placedEdges.append(FlowchartLayout.PlacedEdge(
                     start: p, end: p, points: [p, p],
                     label: edge.label, dashed: edge.dashed, hasArrow: edge.hasArrow))
                 continue
             }
-
-            // Head (leaves the source) and tail (enters the target). A decision
-            // uses vertex ports; every other shape uses its distributed face port.
-            let head: [CGPoint]
-            let start: CGPoint
-            if g.srcDiamond {
-                let (v, stub) = diamondPort(g.fromFrame, toward: g.firstNext, isSource: true)
-                start = v
-                head = stub.map { [v, $0] } ?? [v]
-            } else {
-                let cross = portCross[portKey(index, true)] ?? (horizontal ? g.firstNext.y : g.firstNext.x)
-                start = attach(g.chain[0], cross: cross, rightOrBottom: g.exitBottom, isSource: true)
-                head = [start]
-            }
-            let tail: [CGPoint]
-            let end: CGPoint
-            if g.dstDiamond {
-                let (v, stub) = diamondPort(g.toFrame, toward: g.lastPrev, isSource: false)
-                end = v
-                tail = stub.map { [$0, v] } ?? [v]
-            } else {
-                let cross = portCross[portKey(index, false)] ?? (horizontal ? g.lastPrev.y : g.lastPrev.x)
-                end = attach(g.chain[g.chain.count - 1], cross: cross, rightOrBottom: g.enterBottom, isSource: false)
-                tail = [end]
-            }
-
-            let points = routePolyline(head + g.dummyCenters + tail, horizontal: horizontal, jogBias: jogBias[index])
-            for p in points { crossLimit = max(crossLimit, horizontal ? p.y : p.x) }
+            for p in pts { crossLimit = max(crossLimit, horizontal ? p.y : p.x) }
             placedEdges.append(FlowchartLayout.PlacedEdge(
-                start: start, end: end, points: points,
+                start: pts.first!, end: pts.last!, points: pts,
                 label: edge.label, dashed: edge.dashed, hasArrow: edge.hasArrow))
         }
         return (placedEdges, crossLimit)
@@ -562,6 +568,59 @@ extension DiagramLayoutEngine {
         }
         pts.append(waypoints[waypoints.count - 1])
         return simplifyCollinear(pts)
+    }
+
+    /// Pushes apart main-axis runs (vertical for TD, horizontal for LR) that
+    /// belong to different edges yet share a track — the same cross coordinate
+    /// with an overlapping extent — so two edges don't render as one doubled
+    /// line. Only a *movable* run is nudged: one whose two endpoints are both
+    /// interior bends, so shifting its cross coordinate is absorbed by the
+    /// connecting cross-axis segments without detaching an endpoint from a box.
+    /// A few relaxation passes let a nudge that creates a fresh clash settle.
+    static func separateRuns(_ routes: inout [[CGPoint]], horizontal: Bool, minSep: CGFloat) {
+        let tol: CGFloat = 4
+        func cross(_ p: CGPoint) -> CGFloat { horizontal ? p.y : p.x }
+        func main(_ p: CGPoint) -> CGFloat { horizontal ? p.x : p.y }
+        // Is segment (a,b) a main-axis run? (constant cross, changing main.)
+        func isRun(_ a: CGPoint, _ b: CGPoint) -> Bool {
+            abs(cross(a) - cross(b)) < 0.5 && abs(main(a) - main(b)) > tol
+        }
+        for _ in 0..<4 {
+            // Collect runs: (edge, segment index, cross, mainLo, mainHi, movable).
+            var runs: [(e: Int, i: Int, c: CGFloat, lo: CGFloat, hi: CGFloat, movable: Bool)] = []
+            for (e, pts) in routes.enumerated() where pts.count >= 2 {
+                for i in 0..<(pts.count - 1) where isRun(pts[i], pts[i + 1]) {
+                    let movable = i > 0 && i + 1 < pts.count - 1
+                    runs.append((e, i, cross(pts[i]),
+                                 min(main(pts[i]), main(pts[i + 1])),
+                                 max(main(pts[i]), main(pts[i + 1])), movable))
+                }
+            }
+            var moved = false
+            for a in 0..<runs.count {
+                for b in (a + 1)..<runs.count where runs[a].e != runs[b].e {
+                    let ra = runs[a], rb = runs[b]
+                    guard abs(ra.c - rb.c) < tol else { continue }          // same track
+                    guard min(ra.hi, rb.hi) - max(ra.lo, rb.lo) > tol else { continue } // overlap
+                    let t = ra.movable ? a : (rb.movable ? b : -1)
+                    guard t >= 0 else { continue }
+                    let other = (t == a ? rb : ra)
+                    let s = runs[t]
+                    let dir: CGFloat = s.c >= other.c ? 1 : -1              // push away
+                    let shift = dir * minSep - (s.c - other.c)
+                    routes[s.e][s.i] = offsetCross(routes[s.e][s.i], by: shift, horizontal: horizontal)
+                    routes[s.e][s.i + 1] = offsetCross(routes[s.e][s.i + 1], by: shift, horizontal: horizontal)
+                    runs[t].c += shift
+                    moved = true
+                }
+            }
+            if !moved { break }
+        }
+        for e in routes.indices { routes[e] = simplifyCollinear(routes[e]) }
+    }
+
+    private static func offsetCross(_ p: CGPoint, by d: CGFloat, horizontal: Bool) -> CGPoint {
+        horizontal ? CGPoint(x: p.x, y: p.y + d) : CGPoint(x: p.x + d, y: p.y)
     }
 
     /// Drops points that lie on a straight run with their neighbours, and exact
