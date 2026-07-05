@@ -406,6 +406,18 @@ enum DiagramRenderer {
     /// layouts don't compute a labelPoint. Scores segment midpoints plus small
     /// sideways nudges by overlap and keeps the cheapest; records the choice in
     /// `placed` so sibling labels spread apart.
+    /// Thin bounding rects along a polyline's segments — used as soft obstacles
+    /// so an edge label avoids sitting on *another* edge's line (which, for an
+    /// antiparallel pair, pushes each label onto the correct outer side).
+    private static func edgeSegmentRects(_ points: [CGPoint], halfWidth: CGFloat = 4) -> [CGRect] {
+        guard points.count >= 2 else { return [] }
+        return (0..<(points.count - 1)).map { i in
+            let a = points[i], b = points[i + 1]
+            return CGRect(x: min(a.x, b.x) - halfWidth, y: min(a.y, b.y) - halfWidth,
+                          width: abs(a.x - b.x) + halfWidth * 2, height: abs(a.y - b.y) + halfWidth * 2)
+        }
+    }
+
     private static func labelAnchor(
         for points: [CGPoint], label: String, bounds: CGSize,
         obstacles: [CGRect], placed: inout [CGRect]
@@ -818,12 +830,15 @@ enum DiagramRenderer {
         // Batch shafts by dash style so crossing edges don't stack alpha.
         strokeEdgeShafts(layout.edges.map { ($0.points, $0.kind.dashed) }, color: stroke, in: context)
         var placedLabels: [CGRect] = []
-        let obstacles = layout.boxes.map(\.frame)
-        for edge in layout.edges {
+        let nodeObstacles = layout.boxes.map(\.frame)
+        let allEdgeRects = layout.edges.map { edgeSegmentRects($0.points) }
+        for (i, edge) in layout.edges.enumerated() {
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawRelationMarker(edge.kind, at: edge.end, from: approach,
                                stroke: stroke, canvas: theme.canvas, in: context)
             if let label = edge.label, !label.isEmpty {
+                var obstacles = nodeObstacles
+                for (j, rects) in allEdgeRects.enumerated() where j != i { obstacles += rects }
                 let at = labelAnchor(for: edge.points, label: label, bounds: layout.size, obstacles: obstacles, placed: &placedLabels)
                 drawEdgeLabel(label, at: at, theme: theme, in: context)
             }
@@ -924,14 +939,17 @@ enum DiagramRenderer {
         // Batch shafts by dash style so crossing edges don't stack alpha.
         strokeEdgeShafts(layout.edges.map { ($0.points, !$0.identifying) }, color: stroke, in: context)
         var placedLabels: [CGRect] = []
-        let obstacles = layout.boxes.map(\.frame)
-        for edge in layout.edges {
+        let nodeObstacles = layout.boxes.map(\.frame)
+        let allEdgeRects = layout.edges.map { edgeSegmentRects($0.points) }
+        for (i, edge) in layout.edges.enumerated() {
             let fromApproach = edge.points.count > 1 ? edge.points[1] : edge.end
             let toApproach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawCardinality(edge.fromCard, at: edge.start, from: fromApproach, color: stroke, in: context)
             drawCardinality(edge.toCard, at: edge.end, from: toApproach, color: stroke, in: context)
 
             if !edge.label.isEmpty {
+                var obstacles = nodeObstacles
+                for (j, rects) in allEdgeRects.enumerated() where j != i { obstacles += rects }
                 let at = labelAnchor(for: edge.points, label: edge.label, bounds: layout.size, obstacles: obstacles, placed: &placedLabels)
                 drawEdgeLabel(edge.label, at: at, theme: theme, in: context)
             }
@@ -1002,11 +1020,14 @@ enum DiagramRenderer {
         context.restoreGState()
 
         var placedLabels: [CGRect] = []
-        let obstacles = layout.nodes.map(\.frame)
-        for edge in layout.edges {
+        let nodeObstacles = layout.nodes.map(\.frame)
+        let allEdgeRects = layout.edges.map { edgeSegmentRects($0.points) }
+        for (i, edge) in layout.edges.enumerated() {
             let approach = edge.points.count > 1 ? edge.points[edge.points.count - 2] : edge.start
             drawArrowhead(at: edge.end, from: approach, color: stroke, canvas: theme.canvas, in: context)
             if let label = edge.label, !label.isEmpty {
+                var obstacles = nodeObstacles
+                for (j, rects) in allEdgeRects.enumerated() where j != i { obstacles += rects }
                 let at = labelAnchor(for: edge.points, label: label, bounds: layout.size, obstacles: obstacles, placed: &placedLabels)
                 drawEdgeLabel(label, at: at, theme: theme, in: context)
             }
