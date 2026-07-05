@@ -103,6 +103,11 @@ let rendered = measure("render.cold") {
 }
 print("rendered_utf16: \(rendered.attributed.length)")
 print("cache_entries: \(cache.count)")
+var activeCache = cache
+let activeRendered = measure("render.activateBlock") {
+    renderer.render(document, activeBlockID: editBlock.id, activeCaret: nil, cache: &activeCache)
+}
+print("active_editable_utf16: \(activeRendered.activeEditableRange?.length ?? 0)")
 
 let middleEdit = SourceEdit(range: ByteRange(offset: middleUTF8, length: 0), replacement: "x")
 let editApplication = try measure("source.applyEdit") {
@@ -113,6 +118,13 @@ let incremental = try measure("parseAfterEdit.middleInsert") {
     try MarkdownConverter.parseAfterEdit(previous: document, edit: middleEdit)
 }
 print("parseAfterEdit.strategy: \(incremental.strategy)")
+let patchedBlock = incremental.document.blocks.first {
+    $0.range.offset <= middleUTF8 && middleUTF8 <= $0.range.offset + $0.range.length
+}
+let patchedBlockSource = patchedBlock.flatMap { incremental.document.source.substring(in: $0.range) } ?? ""
+measure("render.activeBlockPatch.fragment") {
+    renderer.renderEditableSourceFragment(patchedBlockSource, caretOffset: nil)
+}
 let edited = measure("parse.middleInsert") {
     MarkdownConverter.parse(editedSource)
 }
@@ -146,6 +158,7 @@ let localThresholds: [(label: String, maxMilliseconds: Double)] = [
     ("source.applyEdit", 20),
     ("parse.initial", 750),
     ("render.cold", 250),
+    ("render.activeBlockPatch.fragment", 20),
     ("parse.middleInsert", 750),
     ("render.middleInsert.warmCache", 200),
     ("render.fullStringDiffScan", 40),

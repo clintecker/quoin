@@ -22,6 +22,16 @@ public struct RenderSpliceHint: Sendable {
     }
 }
 
+public struct RenderStoragePatch {
+    public let oldRange: NSRange
+    public let replacement: NSAttributedString
+
+    public init(oldRange: NSRange, replacement: NSAttributedString) {
+        self.oldRange = oldRange
+        self.replacement = replacement
+    }
+}
+
 public struct RenderedDocument {
     public let attributed: NSAttributedString
     public let blockRanges: [BlockID: NSRange]
@@ -33,6 +43,10 @@ public struct RenderedDocument {
     /// AppKit can use this to apply a bounded TextKit splice for simple
     /// active-block edits instead of scanning the whole rendered string.
     public let spliceHint: RenderSpliceHint?
+    /// AppKit can apply this attributed replacement directly to live TextKit
+    /// storage. This is used when the model has already proven a block-local
+    /// active edit and rendering the whole document would be wasted work.
+    public let storagePatch: RenderStoragePatch?
 
     public init(
         attributed: NSAttributedString,
@@ -40,7 +54,8 @@ public struct RenderedDocument {
         activeBlockID: BlockID? = nil,
         activeEditableRange: NSRange? = nil,
         activeSourceText: String? = nil,
-        spliceHint: RenderSpliceHint? = nil
+        spliceHint: RenderSpliceHint? = nil,
+        storagePatch: RenderStoragePatch? = nil
     ) {
         self.attributed = attributed
         self.blockRanges = blockRanges
@@ -48,6 +63,7 @@ public struct RenderedDocument {
         self.activeEditableRange = activeEditableRange
         self.activeSourceText = activeSourceText
         self.spliceHint = spliceHint
+        self.storagePatch = storagePatch
     }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])
@@ -167,6 +183,10 @@ public struct AttributedRenderer {
             activeEditableRange: activeEditableRange,
             activeSourceText: activeSourceText
         )
+    }
+
+    public func renderEditableSourceFragment(_ slice: String, caretOffset: Int? = nil) -> NSAttributedString {
+        renderEditableSource(slice, caretOffset: caretOffset)
     }
 
     /// The inter-block separator. Boxed blocks (callouts, code, tables,
