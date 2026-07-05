@@ -39,6 +39,8 @@ final class LibraryModel {
 
     @ObservationIgnored private var accessedURL: URL?
     @ObservationIgnored private var eventsWatcher: FSEventsWatcher?
+    @ObservationIgnored private var librarySearchTask: Task<Void, Never>?
+    @ObservationIgnored private var quickOpenTask: Task<Void, Never>?
     /// Inverse file moves for ⌘Z (design rule: sidebar moves are undoable).
     @ObservationIgnored private var moveUndoStack: [(from: URL, to: URL)] = []
 
@@ -54,6 +56,8 @@ final class LibraryModel {
     }
 
     deinit {
+        librarySearchTask?.cancel()
+        quickOpenTask?.cancel()
         accessedURL?.stopAccessingSecurityScopedResource()
     }
 
@@ -99,6 +103,10 @@ final class LibraryModel {
     }
 
     private func adopt(rootURL url: URL) {
+        librarySearchTask?.cancel()
+        quickOpenTask?.cancel()
+        librarySearchResults = []
+        quickOpenResults = []
         accessedURL?.stopAccessingSecurityScopedResource()
         _ = url.startAccessingSecurityScopedResource()
         accessedURL = url
@@ -161,19 +169,28 @@ final class LibraryModel {
 
     func runLibrarySearch() {
         guard let root else {
+            librarySearchTask?.cancel()
             librarySearchResults = []
             return
         }
         let query = librarySearchQuery
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            librarySearchTask?.cancel()
             librarySearchResults = []
             return
         }
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let results = QuickOpen.search(query: query, in: root, maxResults: 40)
+        librarySearchTask?.cancel()
+        librarySearchTask = Task { [weak self, root, query] in
+            try? await Task.sleep(for: .milliseconds(140))
+            guard !Task.isCancelled else { return }
+            let results = await Task.detached(priority: .userInitiated) {
+                QuickOpen.search(query: query, in: root, maxResults: 40)
+            }.value
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, self.librarySearchQuery == query else { return }
                 self.librarySearchResults = results
+                self.librarySearchTask = nil
             }
         }
     }
@@ -192,15 +209,28 @@ final class LibraryModel {
 
     func runQuickOpen() {
         guard let root else {
+            quickOpenTask?.cancel()
             quickOpenResults = []
             return
         }
         let query = quickOpenQuery
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let results = QuickOpen.search(query: query, in: root)
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            quickOpenTask?.cancel()
+            quickOpenResults = []
+            return
+        }
+        quickOpenTask?.cancel()
+        quickOpenTask = Task { [weak self, root, query] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled else { return }
+            let results = await Task.detached(priority: .userInitiated) {
+                QuickOpen.search(query: query, in: root)
+            }.value
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, self.quickOpenQuery == query else { return }
                 self.quickOpenResults = results
+                self.quickOpenTask = nil
             }
         }
     }
