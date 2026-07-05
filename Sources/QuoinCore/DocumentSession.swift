@@ -2,6 +2,7 @@ import Foundation
 
 public enum SessionError: Error {
     case fileUnreadable(URL)
+    case fileWriteFailed(URL, String)
     case taskNotTogglable
 }
 
@@ -20,7 +21,9 @@ public actor DocumentSession {
     /// the UI shows a non-blocking merge banner (handoff rule) instead of
     /// silently replacing.
     public var onConflict: (@Sendable (String) -> Void)?
+    public private(set) var lastSaveError: SessionError?
     private var isDirty = false
+    public var hasUnsavedChanges: Bool { isDirty }
 
     private var watcher: FileWatcher?
     private var continuations: [UUID: AsyncStream<QuoinDocument>.Continuation] = [:]
@@ -133,14 +136,15 @@ public actor DocumentSession {
     }
 
     /// Merge-banner resolution: overwrite disk with the local version.
-    public func resolveConflictKeepingMine() {
-        saveNow()
+    public func resolveConflictKeepingMine() throws {
+        try saveNow()
     }
 
     /// Merge-banner resolution: adopt the on-disk version, discarding
     /// unsaved local edits.
     public func resolveConflictTakingDisk(_ diskSource: String) {
         isDirty = false
+        lastSaveError = nil
         autosaveTask?.cancel()
         publish(MarkdownConverter.parse(diskSource))
     }
@@ -198,16 +202,27 @@ public actor DocumentSession {
         autosaveTask = Task { [autosaveDelay] in
             try? await Task.sleep(for: autosaveDelay)
             guard !Task.isCancelled else { return }
-            await self.saveNow()
+            try? await self.saveNow()
         }
     }
 
-    public func saveNow() {
+    public func saveNow() throws {
         guard let fileURL else { return }
         let source = document.source
-        selfWriteHash = SHA256Hex.hash(of: source)
-        try? Data(source.utf8).write(to: fileURL, options: .atomic)
-        isDirty = false
+        let wasDirty = isDirty
+        do {
+            try Data(source.utf8).write(to: fileURL, options: .atomic)
+            selfWriteHash = SHA256Hex.hash(of: source)
+            isDirty = false
+            lastSaveError = nil
+            autosaveTask?.cancel()
+            autosaveTask = nil
+        } catch {
+            if wasDirty { isDirty = true }
+            let failure = SessionError.fileWriteFailed(fileURL, String(describing: error))
+            lastSaveError = failure
+            throw failure
+        }
     }
 
     /// Toggles a task checkbox and writes the change back to disk,
@@ -230,8 +245,15 @@ public actor DocumentSession {
         let newSource = try TaskToggler.toggle(source: base.source, markerRange: markerRange)
 
         if let fileURL {
-            selfWriteHash = SHA256Hex.hash(of: newSource)
-            try Data(newSource.utf8).write(to: fileURL, options: .atomic)
+            do {
+                try Data(newSource.utf8).write(to: fileURL, options: .atomic)
+                selfWriteHash = SHA256Hex.hash(of: newSource)
+                lastSaveError = nil
+            } catch {
+                let failure = SessionError.fileWriteFailed(fileURL, String(describing: error))
+                lastSaveError = failure
+                throw failure
+            }
         }
         publish(MarkdownConverter.parse(newSource))
     }

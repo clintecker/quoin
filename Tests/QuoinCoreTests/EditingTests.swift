@@ -121,6 +121,47 @@ final class SessionEditingTests: XCTestCase {
         XCTAssertEqual(onDisk, "hello world")
     }
 
+    func testFailedSaveKeepsDirtyStateAndCanRetry() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("hello".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        try await session.applyEdit(SourceEdit(range: ByteRange(offset: 5, length: 0), replacement: " world"))
+
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+
+        do {
+            try await session.saveNow()
+            XCTFail("save should fail when the document URL is a directory")
+        } catch SessionError.fileWriteFailed(let url, _) {
+            XCTAssertEqual(url, file)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        let isDirtyAfterFailure = await session.hasUnsavedChanges
+        let saveErrorAfterFailure = await session.lastSaveError
+        let sourceAfterFailure = await session.document.source
+        XCTAssertTrue(isDirtyAfterFailure)
+        XCTAssertNotNil(saveErrorAfterFailure)
+        XCTAssertEqual(sourceAfterFailure, "hello world")
+
+        try FileManager.default.removeItem(at: file)
+        try await session.saveNow()
+
+        let isDirtyAfterRetry = await session.hasUnsavedChanges
+        let saveErrorAfterRetry = await session.lastSaveError
+        XCTAssertFalse(isDirtyAfterRetry)
+        XCTAssertNil(saveErrorAfterRetry)
+        let onDisk = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertEqual(onDisk, "hello world")
+    }
+
     func testUntouchedRegionsAreByteLossless() throws {
         // The acceptance-checklist guarantee: editing one block leaves every
         // other byte of the file identical.
