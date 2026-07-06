@@ -110,7 +110,8 @@ that way.
 | Packet | ✅ | 32-bit grid, fields wrap across rows, bit indices |
 | XY Chart | ✅ | grouped bars + line series, value axis, gridlines |
 | Kanban | ✅ | tinted columns, word-wrapped cards, ticket chips |
-| gitGraph, requirement, C4, sankey, block, architecture, radar, treemap, … | 🟡 | tidy labelled source card |
+| Radar | ✅ | spoked graticule, overlaid curve polygons, legend |
+| gitGraph, requirement, C4, sankey, block, architecture, treemap, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 

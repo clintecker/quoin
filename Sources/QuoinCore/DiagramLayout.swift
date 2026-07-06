@@ -320,6 +320,38 @@ public struct KanbanLayout: Sendable {
     public let cards: [Card]
 }
 
+public struct RadarLayout: Sendable {
+    public struct Curve: Sendable {
+        public let points: [CGPoint]
+        public let colorIndex: Int
+    }
+
+    public struct Ring: Sendable {
+        public let points: [CGPoint]
+    }
+
+    public struct Spoke: Sendable {
+        public let end: CGPoint
+        public let label: String
+        public let labelPoint: CGPoint
+    }
+
+    public struct LegendEntry: Sendable {
+        public let label: String
+        public let swatchCenter: CGPoint
+        public let labelPoint: CGPoint
+        public let colorIndex: Int
+    }
+
+    public let size: CGSize
+    public let title: String?
+    public let center: CGPoint
+    public let rings: [Ring]
+    public let spokes: [Spoke]
+    public let curves: [Curve]
+    public let legend: [LegendEntry]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

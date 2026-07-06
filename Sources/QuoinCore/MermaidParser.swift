@@ -20,6 +20,7 @@ public enum MermaidDiagram: Hashable, Sendable {
     case packet(PacketDiagram)
     case xychart(XYChart)
     case kanban(KanbanBoard)
+    case radar(RadarChart)
 }
 
 // MARK: - Parser
@@ -79,6 +80,9 @@ public enum MermaidParser {
         if header.hasPrefix("kanban") {
             // Indentation is significant, so re-read the raw (untrimmed) source.
             return parseKanban(source: source).map { .kanban($0) }
+        }
+        if header.hasPrefix("radar") {
+            return parseRadar(body: Array(lines.dropFirst())).map { .radar($0) }
         }
         return nil
     }

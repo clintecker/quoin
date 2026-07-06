@@ -246,6 +246,17 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("radar", """
+        radar-beta
+            title Renderer Capability Radar
+            axis CM["CommonMark"], GFM["GFM"], DIA["Diagrams"], MATH["Math"], A11Y["Accessibility"], PERF["Performance"]
+            curve baseline["Baseline"]{CM: 90, GFM: 65, DIA: 10, MATH: 5, A11Y: 55, PERF: 88}
+            curve extended["Extended"]{CM: 92, GFM: 82, DIA: 74, MATH: 79, A11Y: 70, PERF: 76}
+            curve aspirational["Aspirational"]{CM: 98, GFM: 95, DIA: 92, MATH: 94, A11Y: 90, PERF: 90}
+            max 100
+            min 0
+            ticks 5
+        """),
         ("kanban", """
         kanban
             backlog[Backlog]

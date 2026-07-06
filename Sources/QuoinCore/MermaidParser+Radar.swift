@@ -1,0 +1,80 @@
+import Foundation
+
+extension MermaidParser {
+
+    static func parseRadar(body: [String]) -> RadarChart? {
+        var title: String?
+        var axes: [RadarChart.Axis] = []
+        var rawCurves: [(label: String, byKey: [String: Double])] = []
+        var maxValue = 100.0, minValue = 0.0, ticks = 5
+
+        /// `KEY["Label"]` or bare `KEY` → (key, label).
+        func axisDef(_ token: String) -> RadarChart.Axis? {
+            let t = token.trimmingCharacters(in: .whitespaces)
+            guard !t.isEmpty else { return nil }
+            if let open = t.firstIndex(of: "["), let close = t.lastIndex(of: "]"), open < close {
+                let key = String(t[..<open]).trimmingCharacters(in: .whitespaces)
+                let label = t[t.index(after: open)..<close].trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+                return RadarChart.Axis(key: key, label: label.isEmpty ? key : label)
+            }
+            return RadarChart.Axis(key: t, label: t)
+        }
+
+        for line in body {
+            if line.hasPrefix("title ") {
+                title = String(line.dropFirst("title ".count)).trimmingCharacters(in: .whitespaces)
+            } else if line.hasPrefix("axis ") {
+                axes = splitTopLevel(String(line.dropFirst("axis ".count)), separator: ",").compactMap(axisDef)
+            } else if line.hasPrefix("curve ") {
+                let spec = String(line.dropFirst("curve ".count))
+                let label: String
+                if let open = spec.firstIndex(of: "["), let close = spec.firstIndex(of: "]"), open < close {
+                    label = String(spec[spec.index(after: open)..<close]).trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+                } else {
+                    label = String(spec.prefix { $0 != "{" }).trimmingCharacters(in: .whitespaces)
+                }
+                var byKey: [String: Double] = [:]
+                if let open = spec.firstIndex(of: "{"), let close = spec.lastIndex(of: "}"), open < close {
+                    for pair in spec[spec.index(after: open)..<close].split(separator: ",") {
+                        let kv = pair.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                        if kv.count == 2, let v = Double(kv[1]) { byKey[kv[0]] = v }
+                    }
+                }
+                rawCurves.append((label, byKey))
+            } else if line.hasPrefix("max ") {
+                maxValue = Double(line.dropFirst(4).trimmingCharacters(in: .whitespaces)) ?? maxValue
+            } else if line.hasPrefix("min ") {
+                minValue = Double(line.dropFirst(4).trimmingCharacters(in: .whitespaces)) ?? minValue
+            } else if line.hasPrefix("ticks ") {
+                ticks = Int(line.dropFirst(6).trimmingCharacters(in: .whitespaces)) ?? ticks
+            }
+        }
+
+        guard !axes.isEmpty, !rawCurves.isEmpty else { return nil }
+        // Align each curve's values to the axis order.
+        let curves = rawCurves.map { raw in
+            RadarChart.Curve(label: raw.label, values: axes.map { raw.byKey[$0.key] ?? minValue })
+        }
+        return RadarChart(title: title, axes: axes, curves: curves,
+                          maxValue: maxValue, minValue: minValue, ticks: max(ticks, 1))
+    }
+
+    /// Splits on `separator` but not inside `[]` or `{}` (so axis labels and
+    /// curve value maps aren't cut in half).
+    static func splitTopLevel(_ text: String, separator: Character) -> [String] {
+        var out: [String] = []
+        var depth = 0
+        var current = ""
+        for ch in text {
+            if ch == "[" || ch == "{" { depth += 1 }
+            else if ch == "]" || ch == "}" { depth = Swift.max(0, depth - 1) }
+            if ch == separator, depth == 0 {
+                out.append(current); current = ""
+            } else {
+                current.append(ch)
+            }
+        }
+        if !current.trimmingCharacters(in: .whitespaces).isEmpty { out.append(current) }
+        return out
+    }
+}

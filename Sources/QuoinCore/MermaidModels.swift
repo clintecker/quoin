@@ -408,3 +408,43 @@ public struct KanbanBoard: Hashable, Sendable {
     public var columns: [Column]
     public init(columns: [Column]) { self.columns = columns }
 }
+
+/// A Mermaid `radar` chart: named axes and one or more curves scoring each
+/// axis, drawn as overlaid polygons on a spoked graticule.
+public struct RadarChart: Hashable, Sendable {
+    public struct Axis: Hashable, Sendable {
+        public let key: String
+        public let label: String
+        public init(key: String, label: String) {
+            self.key = key
+            self.label = label
+        }
+    }
+
+    public struct Curve: Hashable, Sendable {
+        public let label: String
+        /// Values aligned to `axes` order (missing axes default to min).
+        public let values: [Double]
+        public init(label: String, values: [Double]) {
+            self.label = label
+            self.values = values
+        }
+    }
+
+    public var title: String?
+    public var axes: [Axis]
+    public var curves: [Curve]
+    public var maxValue: Double
+    public var minValue: Double
+    public var ticks: Int
+
+    public init(title: String?, axes: [Axis], curves: [Curve],
+                maxValue: Double, minValue: Double, ticks: Int) {
+        self.title = title
+        self.axes = axes
+        self.curves = curves
+        self.maxValue = maxValue
+        self.minValue = minValue
+        self.ticks = ticks
+    }
+}

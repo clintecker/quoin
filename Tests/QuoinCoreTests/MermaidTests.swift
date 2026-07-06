@@ -283,6 +283,30 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(board.columns[2].cards.count, 0)
     }
 
+    func testRadarParsing() {
+        let diagram = MermaidParser.parse("""
+        radar-beta
+            title Capability Radar
+            axis CM["CommonMark"], GFM["GFM"], DIA["Diagrams"]
+            curve base["Baseline"]{CM: 90, GFM: 65, DIA: 10}
+            curve ext["Extended"]{CM: 92, DIA: 74, GFM: 82}
+            max 100
+            min 0
+            ticks 4
+        """)
+        guard case .radar(let radar) = diagram else { return XCTFail("expected radar") }
+        XCTAssertEqual(radar.title, "Capability Radar")
+        XCTAssertEqual(radar.axes.map(\.key), ["CM", "GFM", "DIA"])
+        XCTAssertEqual(radar.axes[0].label, "CommonMark")
+        XCTAssertEqual(radar.curves.count, 2)
+        XCTAssertEqual(radar.curves[0].label, "Baseline")
+        // Values align to axis order regardless of key order in the source.
+        XCTAssertEqual(radar.curves[0].values, [90, 65, 10])
+        XCTAssertEqual(radar.curves[1].values, [92, 82, 74])
+        XCTAssertEqual(radar.maxValue, 100)
+        XCTAssertEqual(radar.ticks, 4)
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
@@ -879,5 +903,28 @@ final class DiagramLayoutTests: XCTestCase {
         // Its card is taller because it wraps.
         let shortCard = layout.cards.first { $0.ticket == nil }!
         XCTAssertGreaterThan(longCard.frame.height, shortCard.frame.height)
+    }
+
+    func testRadarLayout() {
+        guard case .radar(let radar)? = MermaidParser.parse("""
+        radar-beta
+            axis A, B, C, D
+            curve x["X"]{A: 100, B: 0, C: 100, D: 0}
+            max 100
+            ticks 5
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(radar, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertEqual(layout.spokes.count, 4)
+        XCTAssertEqual(layout.rings.count, 5)
+        XCTAssertEqual(layout.curves.count, 1)
+        XCTAssertEqual(layout.curves[0].points.count, 4)
+        XCTAssertEqual(layout.legend.count, 1)
+        // Axis A is at the top → its full-value vertex sits above the center.
+        XCTAssertLessThan(layout.curves[0].points[0].y, layout.center.y)
+        // Axis B scores 0 → its vertex sits at the center.
+        XCTAssertEqual(layout.curves[0].points[1].x, layout.center.x, accuracy: 0.5)
+        XCTAssertEqual(layout.curves[0].points[1].y, layout.center.y, accuracy: 0.5)
     }
 }
