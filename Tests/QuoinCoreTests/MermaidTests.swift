@@ -307,6 +307,27 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(radar.ticks, 4)
     }
 
+    func testTreemapParsing() {
+        let diagram = MermaidParser.parse("""
+        treemap-beta
+            "Root"
+                "CommonMark": 32
+                "GFM"
+                    "Tables": 7
+                    "Task Lists": 4
+                "Edge Cases": 12
+        """)
+        guard case .treemap(let treemap) = diagram else { return XCTFail("expected treemap") }
+        XCTAssertEqual(treemap.root.label, "Root")
+        XCTAssertEqual(treemap.root.children.map(\.label), ["CommonMark", "GFM", "Edge Cases"])
+        // Internal node value = sum of children (7 + 4 = 11).
+        let gfm = treemap.root.children.first { $0.label == "GFM" }!
+        XCTAssertEqual(gfm.value, 11)
+        XCTAssertEqual(gfm.children.count, 2)
+        // Root value = 32 + 11 + 12 = 55.
+        XCTAssertEqual(treemap.root.value, 55)
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
@@ -926,5 +947,26 @@ final class DiagramLayoutTests: XCTestCase {
         // Axis B scores 0 → its vertex sits at the center.
         XCTAssertEqual(layout.curves[0].points[1].x, layout.center.x, accuracy: 0.5)
         XCTAssertEqual(layout.curves[0].points[1].y, layout.center.y, accuracy: 0.5)
+    }
+
+    func testTreemapLayout() {
+        guard case .treemap(let treemap)? = MermaidParser.parse("""
+        treemap-beta
+            "Root"
+                "Big": 80
+                "Small": 20
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(treemap, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        let leaves = layout.cells.filter(\.isLeaf)
+        XCTAssertEqual(leaves.count, 2)
+        // Area is proportional to value: "Big" (80) covers ~4× "Small" (20).
+        let big = leaves.first { $0.label == "Big" }!
+        let small = leaves.first { $0.label == "Small" }!
+        let ratio = (big.frame.width * big.frame.height) / (small.frame.width * small.frame.height)
+        XCTAssertEqual(ratio, 4, accuracy: 0.3)
+        // Cells don't overlap (Big and Small are disjoint).
+        XCTAssertFalse(big.frame.insetBy(dx: 1, dy: 1).intersects(small.frame.insetBy(dx: 1, dy: 1)))
     }
 }

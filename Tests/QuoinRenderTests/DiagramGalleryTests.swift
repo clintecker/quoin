@@ -246,6 +246,24 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("treemap", """
+        treemap-beta
+            "Markdown Fixture"
+                "CommonMark": 32
+                "GFM"
+                    "Tables": 7
+                    "Task Lists": 4
+                    "Autolinks": 3
+                    "Strikethrough": 4
+                "Mermaid"
+                    "Stable diagrams": 18
+                    "Beta diagrams": 14
+                "MathJax"
+                    "Inline": 5
+                    "Display": 8
+                    "Macros": 3
+                "Edge Cases": 12
+        """),
         ("radar", """
         radar-beta
             title Renderer Capability Radar

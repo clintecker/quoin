@@ -352,6 +352,23 @@ public struct RadarLayout: Sendable {
     public let legend: [LegendEntry]
 }
 
+public struct TreemapLayout: Sendable {
+    public struct Cell: Sendable {
+        public let label: String
+        public let value: Double
+        public let frame: CGRect
+        /// Categorical tint by top-level branch.
+        public let colorIndex: Int
+        public let isLeaf: Bool
+        public let depth: Int
+    }
+
+    public let size: CGSize
+    /// Internal group rects first, then leaves — so the renderer draws groups
+    /// behind their children.
+    public let cells: [Cell]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

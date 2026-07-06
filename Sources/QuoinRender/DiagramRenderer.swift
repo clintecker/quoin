@@ -108,6 +108,10 @@ enum DiagramRenderer {
                 let layout = DiagramLayoutEngine.layout(radar, measure: measure)
                 size = layout.size
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .treemap(let treemap):
+                let layout = DiagramLayoutEngine.layout(treemap, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 

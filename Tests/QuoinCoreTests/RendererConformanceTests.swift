@@ -142,6 +142,7 @@ final class RendererConformanceTests: XCTestCase {
         case .xychart(let x): return DiagramLayoutEngine.layout(x, measure: measure).size
         case .kanban(let k): return DiagramLayoutEngine.layout(k, measure: measure).size
         case .radar(let r): return DiagramLayoutEngine.layout(r, measure: measure).size
+        case .treemap(let t): return DiagramLayoutEngine.layout(t, measure: measure).size
         }
     }
 

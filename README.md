@@ -111,7 +111,8 @@ that way.
 | XY Chart | ✅ | grouped bars + line series, value axis, gridlines |
 | Kanban | ✅ | tinted columns, word-wrapped cards, ticket chips |
 | Radar | ✅ | spoked graticule, overlaid curve polygons, legend |
-| gitGraph, requirement, C4, sankey, block, architecture, treemap, … | 🟡 | tidy labelled source card |
+| Treemap | ✅ | squarified nested rectangles, group headers, values |
+| gitGraph, requirement, C4, sankey, block, architecture, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 

@@ -448,3 +448,22 @@ public struct RadarChart: Hashable, Sendable {
         self.ticks = ticks
     }
 }
+
+/// A Mermaid `treemap`: a weighted hierarchy drawn as nested rectangles.
+/// Leaf nodes carry an explicit value; an internal node's value is the sum of
+/// its children. Hierarchy comes from indentation.
+public struct TreemapNode: Hashable, Sendable {
+    public let label: String
+    public let value: Double
+    public let children: [TreemapNode]
+    public init(label: String, value: Double, children: [TreemapNode] = []) {
+        self.label = label
+        self.value = value
+        self.children = children
+    }
+}
+
+public struct Treemap: Hashable, Sendable {
+    public var root: TreemapNode
+    public init(root: TreemapNode) { self.root = root }
+}
