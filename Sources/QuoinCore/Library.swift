@@ -128,20 +128,35 @@ public enum Library {
         func url(named name: String) -> URL {
             folder.appendingPathComponent(name).appendingPathExtension(ext)
         }
+        let excludedKey = excluding.map(identityKey)
         var candidate = url(named: baseName)
         var counter = 2
-        while fileManager.fileExists(atPath: candidate.path), candidate != excluding {
+        while fileManager.fileExists(atPath: candidate.path), identityKey(candidate) != excludedKey {
             candidate = url(named: "\(baseName) \(counter)")
             counter += 1
         }
         return candidate
     }
 
+    /// A volume-agnostic identity for a file: its directory plus a
+    /// case-folded, canonically-composed name. On case-insensitive or
+    /// normalization-insensitive volumes `Bar.md`, `bar.md`, and an NFD
+    /// spelling of the same accented name are the *same file* — so a rename
+    /// whose only change is case or Unicode normalization matches `excluding`
+    /// and keeps its name instead of collecting a spurious " 2" suffix.
+    private static func identityKey(_ url: URL) -> String {
+        let directory = url.deletingLastPathComponent().standardizedFileURL.path
+        let name = url.lastPathComponent
+            .precomposedStringWithCanonicalMapping
+            .lowercased()
+        return directory + "/" + name
+    }
+
     /// Renames a document, keeping its extension; a name collision gets a
     /// " 2", " 3"… suffix silently (design rule: never a modal).
     public static func rename(_ url: URL, to newName: String, fileManager: FileManager = .default) throws -> URL {
         let candidate = uniqueURL(
-            baseName: newName, extension: url.pathExtension,
+            baseName: FilenamePolicy.sanitize(newName), extension: url.pathExtension,
             in: url.deletingLastPathComponent(), excluding: url, fileManager: fileManager
         )
         if candidate == url { return url }
@@ -165,11 +180,18 @@ public enum QuickOpen {
         public var id: URL { url }
     }
 
+    /// Case- and diacritic-insensitive fold, matching the content-snippet
+    /// search so a title and a body hit behave identically ("cafe" finds
+    /// "Café" in both). Locale-independent for reproducible ordering.
+    static func fold(_ s: String) -> String {
+        s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
     /// Subsequence fuzzy match: all query characters appear in order.
     /// Score favors consecutive runs and word-boundary hits.
     public static func fuzzyScore(query: String, candidate: String) -> Int? {
-        let q = Array(query.lowercased())
-        let c = Array(candidate.lowercased())
+        let q = Array(fold(query))
+        let c = Array(fold(candidate))
         guard !q.isEmpty else { return 0 }
         var qi = 0
         var score = 0

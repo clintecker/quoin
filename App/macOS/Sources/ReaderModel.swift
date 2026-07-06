@@ -300,11 +300,7 @@ final class ReaderModel {
     }
 
     private func sanitizedFilename(_ title: String) -> String {
-        let cleaned = title
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return String(cleaned.prefix(80))
+        FilenamePolicy.sanitize(title)
     }
 
     func undo() {

@@ -90,6 +90,37 @@ final class LibraryTests: XCTestCase {
         XCTAssertGreaterThan(strong, weak)
     }
 
+    func testFuzzyScoringIsDiacriticAndCaseInsensitive() {
+        // Titles must match the diacritic-insensitive behavior of content search:
+        // "cafe" finds "Café", regardless of case or accent spelling.
+        XCTAssertNotNil(QuickOpen.fuzzyScore(query: "cafe", candidate: "Café Notes"))
+        XCTAssertNotNil(QuickOpen.fuzzyScore(query: "CAFE", candidate: "café"))
+        XCTAssertNotNil(QuickOpen.fuzzyScore(query: "resume", candidate: "Résumé"))
+        // Composed (NFC) vs decomposed (NFD) spelling of the same accented name.
+        let nfd = "Cafe\u{0301}"                               // Cafe + combining acute
+        XCTAssertNotNil(QuickOpen.fuzzyScore(query: "cafe", candidate: nfd))
+    }
+
+    func testUniqueURLKeepsNameOnCaseOnlyRename() throws {
+        // On a case-insensitive volume, renaming "Bar" to "bar" must not
+        // produce "bar 2" — it's the same file. `excluding` identifies it by a
+        // case/normalization-folded key, so the original name is returned.
+        let bar = root.appendingPathComponent("Bar.md")
+        try Data("x".utf8).write(to: bar)
+        let renamed = Library.uniqueURL(
+            baseName: "bar", extension: "md", in: root, excluding: bar
+        )
+        XCTAssertEqual(renamed.lastPathComponent, "bar.md")
+    }
+
+    func testRenameSanitizesUnsafeTitles() throws {
+        let alpha = root.appendingPathComponent("Alpha.md")
+        // Path separators and a leading dot would otherwise create an
+        // inaccessible or mis-nested file.
+        let renamed = try Library.rename(alpha, to: ".a/b:c")
+        XCTAssertEqual(renamed.lastPathComponent, "a-b-c.md")
+    }
+
     func testQuickOpenTitleAndContentSearch() {
         let tree = Library.scan(root: root)
         let byTitle = QuickOpen.search(query: "alpha", in: tree)
