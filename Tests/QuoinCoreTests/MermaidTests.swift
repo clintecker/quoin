@@ -264,6 +264,25 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(chart.categories, ["1", "2", "3"])
     }
 
+    func testKanbanParsing() {
+        let diagram = MermaidParser.parse("""
+        kanban
+            backlog[Backlog]
+                task1[Add diagrams]@{ assigned: 'QA', ticket: MD-101, priority: 'High' }
+                task2[Add math]@{ ticket: MD-102 }
+            doing[In Progress]
+                task3[Run diff]@{ ticket: MD-103 }
+            done[Done]
+        """)
+        guard case .kanban(let board) = diagram else { return XCTFail("expected kanban") }
+        XCTAssertEqual(board.columns.map(\.title), ["Backlog", "In Progress", "Done"])
+        XCTAssertEqual(board.columns[0].cards.count, 2)
+        XCTAssertEqual(board.columns[0].cards[0].text, "Add diagrams")
+        XCTAssertEqual(board.columns[0].cards[0].ticket, "MD-101")
+        XCTAssertEqual(board.columns[0].cards[0].priority, "High")
+        XCTAssertEqual(board.columns[2].cards.count, 0)
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
@@ -837,5 +856,28 @@ final class DiagramLayoutTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(bar.frame.minY, layout.plotRect.minY - 0.5)
             XCTAssertLessThanOrEqual(bar.frame.maxY, layout.plotRect.maxY + 0.5)
         }
+    }
+
+    func testKanbanLayout() {
+        guard case .kanban(let board)? = MermaidParser.parse("""
+        kanban
+            a[To Do]
+                c1[First task with a fairly long title that should wrap]@{ ticket: T-1 }
+            b[Done]
+                c2[Short]
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(board, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertEqual(layout.columns.count, 2)
+        XCTAssertEqual(layout.cards.count, 2)
+        // Columns are laid out left-to-right, non-overlapping.
+        XCTAssertLessThan(layout.columns[0].headerFrame.maxX, layout.columns[1].headerFrame.minX)
+        // The long card wraps to multiple lines; the short one is single-line.
+        let longCard = layout.cards.first { $0.ticket == "T-1" }!
+        XCTAssertGreaterThan(longCard.lines.count, 1)
+        // Its card is taller because it wraps.
+        let shortCard = layout.cards.first { $0.ticket == nil }!
+        XCTAssertGreaterThan(longCard.frame.height, shortCard.frame.height)
     }
 }

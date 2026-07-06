@@ -381,3 +381,30 @@ public struct XYChart: Hashable, Sendable {
         self.series = series
     }
 }
+
+/// A Mermaid `kanban` board: named columns, each holding cards with optional
+/// ticket and priority metadata. Hierarchy comes from indentation.
+public struct KanbanBoard: Hashable, Sendable {
+    public struct Card: Hashable, Sendable {
+        public let text: String
+        public let ticket: String?
+        public let priority: String?
+        public init(text: String, ticket: String? = nil, priority: String? = nil) {
+            self.text = text
+            self.ticket = ticket
+            self.priority = priority
+        }
+    }
+
+    public struct Column: Hashable, Sendable {
+        public let title: String
+        public let cards: [Card]
+        public init(title: String, cards: [Card]) {
+            self.title = title
+            self.cards = cards
+        }
+    }
+
+    public var columns: [Column]
+    public init(columns: [Column]) { self.columns = columns }
+}

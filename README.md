@@ -109,7 +109,8 @@ that way.
 | Quadrant | ✅ | 2×2 tinted matrix, axis-end labels, plotted points |
 | Packet | ✅ | 32-bit grid, fields wrap across rows, bit indices |
 | XY Chart | ✅ | grouped bars + line series, value axis, gridlines |
-| gitGraph, requirement, C4, sankey, block, kanban, architecture, radar, treemap, … | 🟡 | tidy labelled source card |
+| Kanban | ✅ | tinted columns, word-wrapped cards, ticket chips |
+| gitGraph, requirement, C4, sankey, block, architecture, radar, treemap, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 

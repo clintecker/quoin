@@ -300,6 +300,26 @@ public struct XYChartLayout: Sendable {
     public let xAxisTitle: Label?
 }
 
+public struct KanbanLayout: Sendable {
+    public struct Card: Sendable {
+        /// Pre-wrapped text lines.
+        public let lines: [String]
+        public let ticket: String?
+        public let frame: CGRect
+        public let colorIndex: Int
+    }
+
+    public struct Column: Sendable {
+        public let title: String
+        public let headerFrame: CGRect
+        public let colorIndex: Int
+    }
+
+    public let size: CGSize
+    public let columns: [Column]
+    public let cards: [Card]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

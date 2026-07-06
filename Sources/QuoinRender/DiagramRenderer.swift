@@ -100,6 +100,10 @@ enum DiagramRenderer {
                 let layout = DiagramLayoutEngine.layout(chart, measure: measure)
                 size = layout.size
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .kanban(let board):
+                let layout = DiagramLayoutEngine.layout(board, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 

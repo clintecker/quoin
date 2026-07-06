@@ -246,6 +246,19 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("kanban", """
+        kanban
+            backlog[Backlog]
+                t1[Add all Mermaid diagram families]@{ ticket: MD-101, priority: 'High' }
+                t2[Add MathJax matrices and cases]@{ ticket: MD-102 }
+            doing[In Progress]
+                t3[Run the visual regression diff]@{ ticket: MD-103 }
+            blocked[Blocked]
+                t4[Renderer lacks beta diagram support]@{ ticket: MD-104 }
+            done[Done]
+                t5[CommonMark baseline parser]@{ ticket: MD-001 }
+                t6[GFM tables and task lists]@{ ticket: MD-002 }
+        """),
         ("xychart", """
         xychart-beta
             title "Renderer timing by fixture size"
