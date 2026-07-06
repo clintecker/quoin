@@ -246,6 +246,20 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("journey", """
+        journey
+            title Writing a note in Quoin
+            section Capture
+              Open Quick Open: 4: Writer
+              Create document: 5: Writer
+            section Draft
+              Type markdown: 5: Writer
+              Insert diagram: 3: Writer, Reviewer
+              Fix a broken table: 2: Writer
+            section Publish
+              Export to HTML: 4: Writer
+              Share with team: 5: Writer, Reviewer
+        """),
     ]
 
     func testRenderGallery() throws {

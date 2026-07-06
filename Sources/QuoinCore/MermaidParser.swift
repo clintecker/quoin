@@ -15,6 +15,7 @@ public enum MermaidDiagram: Hashable, Sendable {
     case gantt(GanttChart)
     case timeline(Timeline)
     case mindmap(Mindmap)
+    case journey(UserJourney)
 }
 
 // MARK: - Models
@@ -272,6 +273,36 @@ public struct MindmapNode: Hashable, Sendable {
     }
 }
 
+/// A Mermaid `journey` (user journey): titled sections of tasks, each task
+/// carrying a 1–5 satisfaction score and the actors involved.
+public struct UserJourney: Hashable, Sendable {
+    public struct Task: Hashable, Sendable {
+        public let label: String
+        /// Satisfaction, clamped to 1…5.
+        public let score: Int
+        public let actors: [String]
+        public let section: String
+
+        public init(label: String, score: Int, actors: [String], section: String) {
+            self.label = label
+            self.score = score
+            self.actors = actors
+            self.section = section
+        }
+    }
+
+    public var title: String?
+    public var tasks: [Task]
+    /// Section names in first-appearance order.
+    public var sections: [String]
+
+    public init(title: String?, tasks: [Task], sections: [String]) {
+        self.title = title
+        self.tasks = tasks
+        self.sections = sections
+    }
+}
+
 // MARK: - Parser
 
 public enum MermaidParser {
@@ -314,7 +345,45 @@ public enum MermaidParser {
             // Indentation is significant, so re-read the raw (untrimmed) source.
             return parseMindmap(source: source).map { .mindmap($0) }
         }
+        if header.hasPrefix("journey") {
+            return parseJourney(body: Array(lines.dropFirst())).map { .journey($0) }
+        }
         return nil
+    }
+
+    // MARK: Journey
+
+    static func parseJourney(body: [String]) -> UserJourney? {
+        var title: String?
+        var currentSection = ""
+        var sections: [String] = []
+        var tasks: [UserJourney.Task] = []
+
+        for line in body {
+            if line.hasPrefix("title ") {
+                title = String(line.dropFirst("title ".count)).trimmingCharacters(in: .whitespaces)
+                continue
+            }
+            if line.hasPrefix("section ") {
+                currentSection = String(line.dropFirst("section ".count)).trimmingCharacters(in: .whitespaces)
+                if !currentSection.isEmpty, !sections.contains(currentSection) {
+                    sections.append(currentSection)
+                }
+                continue
+            }
+            // `Task name: <score>: Actor1, Actor2`. Score and actors optional.
+            let parts = line.split(separator: ":", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            guard let label = parts.first, !label.isEmpty, parts.count >= 2 else { continue }
+            let score = min(max(Int(parts[1]) ?? 3, 1), 5)
+            let actors = parts.count >= 3
+                ? parts[2].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                : []
+            tasks.append(UserJourney.Task(label: label, score: score, actors: actors, section: currentSection))
+        }
+
+        guard !tasks.isEmpty else { return nil }
+        return UserJourney(title: title, tasks: tasks, sections: sections)
     }
 
     // MARK: Mindmap

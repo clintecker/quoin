@@ -193,6 +193,32 @@ public struct MindmapLayout: Sendable {
     public let edges: [Edge]
 }
 
+public struct JourneyLayout: Sendable {
+    public struct Task: Sendable {
+        public let label: String
+        /// Left-aligned anchor at the row's vertical center.
+        public let labelPoint: CGPoint
+        /// Satisfaction score, 1…5 (drives the score badge colour).
+        public let score: Int
+        public let scoreCenter: CGPoint
+        /// Actors joined for display, and their left-aligned anchor.
+        public let actors: String
+        public let actorsPoint: CGPoint
+    }
+
+    public struct SectionBand: Sendable {
+        public let name: String
+        public let frame: CGRect
+        public let colorIndex: Int
+    }
+
+    public let size: CGSize
+    public let title: String?
+    public let scoreDiameter: CGFloat
+    public let tasks: [Task]
+    public let sections: [SectionBand]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

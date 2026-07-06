@@ -146,6 +146,37 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertNil(MermaidParser.parse("mindmap\n"))
     }
 
+    func testJourneyParsing() {
+        let diagram = MermaidParser.parse("""
+        journey
+            title My Day
+            section Morning
+              Wake up: 3: Me
+              Coffee: 5: Me, Cat
+            section Work
+              Standup: 2: Team
+        """)
+        guard case .journey(let journey) = diagram else { return XCTFail("expected journey") }
+        XCTAssertEqual(journey.title, "My Day")
+        XCTAssertEqual(journey.tasks.count, 3)
+        XCTAssertEqual(journey.tasks[0].label, "Wake up")
+        XCTAssertEqual(journey.tasks[0].score, 3)
+        XCTAssertEqual(journey.tasks[1].actors, ["Me", "Cat"])
+        XCTAssertEqual(journey.tasks[2].section, "Work")
+        XCTAssertEqual(journey.sections, ["Morning", "Work"])
+    }
+
+    func testJourneyClampsScoreAndHandlesMissingActors() {
+        let diagram = MermaidParser.parse("""
+        journey
+          Overjoyed: 9: A
+          Silent: 4
+        """)
+        guard case .journey(let journey) = diagram else { return XCTFail("expected journey") }
+        XCTAssertEqual(journey.tasks[0].score, 5, "out-of-range score clamps to 5")
+        XCTAssertEqual(journey.tasks[1].actors, [], "no actors is allowed")
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
@@ -607,5 +638,29 @@ final class DiagramLayoutTests: XCTestCase {
         let b = layout.nodes.first { $0.label == "B" }!
         XCTAssertNotEqual(a.colorIndex, b.colorIndex)
         XCTAssertEqual(a1.colorIndex, a.colorIndex)
+    }
+
+    func testJourneyLayout() {
+        guard case .journey(let journey)? = MermaidParser.parse("""
+        journey
+            title Day
+            section Morning
+              Wake: 3: Me
+              Coffee: 5: Me
+            section Work
+              Standup: 2: Team
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(journey, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertGreaterThan(layout.size.height, 0)
+        XCTAssertEqual(layout.tasks.count, 3)
+        // Rows flow top-to-bottom.
+        XCTAssertLessThan(layout.tasks[0].scoreCenter.y, layout.tasks[1].scoreCenter.y)
+        // Score badge sits left of its label.
+        XCTAssertLessThan(layout.tasks[0].scoreCenter.x, layout.tasks[0].labelPoint.x)
+        // Two sections → two tint bands.
+        XCTAssertEqual(layout.sections.count, 2)
+        XCTAssertEqual(Set(layout.sections.map(\.name)), ["Morning", "Work"])
     }
 }
