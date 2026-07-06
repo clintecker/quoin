@@ -161,7 +161,7 @@ enum DiagramRenderer {
     }
 
     /// Draws text centered on `center` in a flipped (y-down) context.
-    private static func drawText(
+    static func drawText(
         _ text: String,
         center: CGPoint,
         size: CGFloat,
@@ -681,7 +681,7 @@ enum DiagramRenderer {
     /// A categorical palette for charts (pie slices, gantt section bands).
     /// More saturated and distinct than the text-highlight pastels so slices
     /// read as separate data series; tuned to sit well on light and dark.
-    private static let categoricalPalette: [PlatformColor] = [
+    static let categoricalPalette: [PlatformColor] = [
         rgbStatic(0x5B8FF9), // blue
         rgbStatic(0x5AD8A6), // green
         rgbStatic(0xF6BD16), // gold
@@ -690,7 +690,7 @@ enum DiagramRenderer {
         rgbStatic(0x9270CA), // purple
     ]
 
-    private static func categoricalColor(_ index: Int) -> PlatformColor {
+    static func categoricalColor(_ index: Int) -> PlatformColor {
         categoricalPalette[index % categoricalPalette.count]
     }
 
@@ -756,74 +756,11 @@ enum DiagramRenderer {
 
     // MARK: - Gantt
 
-    private static func draw(_ layout: GanttLayout, theme: Theme, in context: CGContext) {
-        if let title = layout.title {
-            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
-                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
-        }
-
-        // Section tint bands behind everything, in the section's palette color.
-        for band in layout.sections {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
-            context.fill(band.frame)
-            context.restoreGState()
-        }
-
-        // Day grid: hairline verticals with a small index label at the base.
-        for tick in layout.ticks {
-            context.saveGState()
-            context.setStrokeColor(resolvedCGColor(theme.hairline))
-            context.setLineWidth(1)
-            context.beginPath()
-            context.move(to: CGPoint(x: tick.x, y: tick.top))
-            context.addLine(to: CGPoint(x: tick.x, y: tick.bottom))
-            context.strokePath()
-            context.restoreGState()
-            drawText(tick.label, center: CGPoint(x: tick.x, y: tick.bottom + 9),
-                     size: 9, color: theme.tertiaryTextColor, in: context)
-        }
-
-        for bar in layout.bars {
-            // Task label, right-aligned into the gutter.
-            let measured = measure(bar.label, size: labelSize)
-            drawText(bar.label,
-                     center: CGPoint(x: bar.labelPoint.x - measured.width / 2, y: bar.labelPoint.y),
-                     size: labelSize, color: theme.secondaryTextColor, in: context)
-
-            let fill = ganttFill(bar.status, theme: theme)
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(fill))
-            if bar.isMilestone {
-                // A diamond centered in the bar's box.
-                let f = bar.frame
-                context.beginPath()
-                context.move(to: CGPoint(x: f.midX, y: f.minY))
-                context.addLine(to: CGPoint(x: f.maxX, y: f.midY))
-                context.addLine(to: CGPoint(x: f.midX, y: f.maxY))
-                context.addLine(to: CGPoint(x: f.minX, y: f.midY))
-                context.closePath()
-                context.fillPath()
-            } else {
-                context.addPath(CGPath(roundedRect: bar.frame, cornerWidth: 3, cornerHeight: 3, transform: nil))
-                context.fillPath()
-                if bar.status == .critical {
-                    context.setStrokeColor(resolvedCGColor(PlatformColor.systemRed))
-                    context.setLineWidth(1.5)
-                    context.addPath(CGPath(roundedRect: bar.frame.insetBy(dx: 0.75, dy: 0.75),
-                                           cornerWidth: 3, cornerHeight: 3, transform: nil))
-                    context.strokePath()
-                }
-            }
-            context.restoreGState()
-        }
-    }
-
-    private static let labelSize: CGFloat = 10.5
+    static let labelSize: CGFloat = 10.5
 
     /// Bar fill by task status: active is the full accent, normal a lighter
     /// tint, done a muted ink, critical a warm red.
-    private static func ganttFill(_ status: GanttChart.Status, theme: Theme) -> PlatformColor {
+    static func ganttFill(_ status: GanttChart.Status, theme: Theme) -> PlatformColor {
         switch status {
         case .normal: return theme.accent.withAlphaComponent(0.55)
         case .active: return theme.accent
@@ -834,185 +771,13 @@ enum DiagramRenderer {
 
     // MARK: - Timeline
 
-    private static func draw(_ layout: TimelineLayout, theme: Theme, in context: CGContext) {
-        if let title = layout.title {
-            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
-                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
-        }
-
-        // Section tint bands (and their names) behind the spine and cards.
-        for band in layout.sections {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
-            context.addPath(CGPath(roundedRect: band.frame, cornerWidth: 6, cornerHeight: 6, transform: nil))
-            context.fillPath()
-            context.restoreGState()
-            drawTextLeft(band.name, at: CGPoint(x: band.frame.minX + 8, y: band.frame.minY + 10),
-                         size: 9.5, weight: .semibold, color: theme.tertiaryTextColor, in: context)
-        }
-
-        // The vertical spine the dots sit on.
-        if layout.spineBottom > layout.spineTop {
-            context.saveGState()
-            context.setStrokeColor(resolvedCGColor(theme.ink.withAlphaComponent(0.25)))
-            context.setLineWidth(2)
-            context.beginPath()
-            context.move(to: CGPoint(x: layout.spineX, y: layout.spineTop))
-            context.addLine(to: CGPoint(x: layout.spineX, y: layout.spineBottom))
-            context.strokePath()
-            context.restoreGState()
-        }
-
-        for period in layout.periods {
-            // Connector from the spine to the first event card's row.
-            if let first = period.events.first {
-                context.saveGState()
-                context.setStrokeColor(resolvedCGColor(theme.ink.withAlphaComponent(0.18)))
-                context.setLineWidth(1)
-                context.beginPath()
-                context.move(to: period.dot)
-                context.addLine(to: CGPoint(x: first.frame.minX, y: period.dot.y))
-                context.strokePath()
-                context.restoreGState()
-            }
-
-            // Node dot on the spine.
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(theme.accent))
-            let radius: CGFloat = 4
-            context.fillEllipse(in: CGRect(x: period.dot.x - radius, y: period.dot.y - radius,
-                                           width: radius * 2, height: radius * 2))
-            context.restoreGState()
-
-            // Period label, right-aligned into the gutter.
-            let measured = measure(period.label, size: labelSize, weight: .semibold)
-            drawText(period.label,
-                     center: CGPoint(x: period.labelPoint.x - measured.width / 2, y: period.labelPoint.y),
-                     size: labelSize, weight: .semibold, color: theme.secondaryTextColor, in: context)
-
-            // Event cards, tinted by section (else by period).
-            for event in period.events {
-                let tint = categoricalColor(event.colorIndex)
-                context.saveGState()
-                context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.16)))
-                context.addPath(CGPath(roundedRect: event.frame, cornerWidth: 5, cornerHeight: 5, transform: nil))
-                context.fillPath()
-                context.setStrokeColor(resolvedCGColor(tint.withAlphaComponent(0.45)))
-                context.setLineWidth(1)
-                context.addPath(CGPath(roundedRect: event.frame.insetBy(dx: 0.5, dy: 0.5),
-                                       cornerWidth: 5, cornerHeight: 5, transform: nil))
-                context.strokePath()
-                context.restoreGState()
-
-                drawTextLeft(event.text, at: CGPoint(x: event.frame.minX + 10, y: event.frame.midY),
-                             size: labelSize, color: theme.ink, in: context)
-            }
-        }
-    }
-
     // MARK: - Packet
-
-    private static func draw(_ layout: PacketLayout, theme: Theme, in context: CGContext) {
-        if let title = layout.title {
-            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
-                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
-        }
-
-        for segment in layout.segments {
-            let tint = categoricalColor(segment.colorIndex)
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.16)))
-            context.addPath(CGPath(roundedRect: segment.frame, cornerWidth: 3, cornerHeight: 3, transform: nil))
-            context.fillPath()
-            context.setStrokeColor(resolvedCGColor(tint.withAlphaComponent(0.55)))
-            context.setLineWidth(1)
-            context.addPath(CGPath(roundedRect: segment.frame.insetBy(dx: 0.5, dy: 0.5),
-                                   cornerWidth: 3, cornerHeight: 3, transform: nil))
-            context.strokePath()
-            context.restoreGState()
-
-            // Bit indices at the segment's top corners.
-            drawText("\(segment.startBit)", center: CGPoint(x: segment.frame.minX + 9, y: segment.frame.minY + 7),
-                     size: 7.5, color: theme.tertiaryTextColor, in: context)
-            if segment.endBit != segment.startBit {
-                drawText("\(segment.endBit)", center: CGPoint(x: segment.frame.maxX - 9, y: segment.frame.minY + 7),
-                         size: 7.5, color: theme.tertiaryTextColor, in: context)
-            }
-
-            switch segment.labelMode {
-            case .horizontal:
-                drawText(segment.label, center: CGPoint(x: segment.frame.midX, y: segment.frame.midY + 3),
-                         size: labelSize, color: theme.ink, in: context)
-            case .vertical:
-                // Rotated label for narrow fields (e.g. TCP flags), below the
-                // bit-index strip.
-                drawTextRotated(segment.label, center: CGPoint(x: segment.frame.midX, y: segment.frame.midY + 5),
-                                size: labelSize, color: theme.ink, in: context)
-            case .none:
-                break
-            }
-        }
-    }
 
     // MARK: - Quadrant
 
-    private static func draw(_ layout: QuadrantLayout, theme: Theme, in context: CGContext) {
-        if let title = layout.title {
-            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
-                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
-        }
-
-        // Tint quarters (Mermaid quadrant order → categorical palette).
-        for (index, rect) in layout.quadrantRects.enumerated() {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(index).withAlphaComponent(0.08)))
-            context.fill(rect)
-            context.restoreGState()
-        }
-
-        // Plot border and center cross.
-        context.saveGState()
-        context.setStrokeColor(resolvedCGColor(theme.ink.withAlphaComponent(0.28)))
-        context.setLineWidth(1)
-        context.stroke(layout.plotRect)
-        context.beginPath()
-        context.move(to: CGPoint(x: layout.plotRect.midX, y: layout.plotRect.minY))
-        context.addLine(to: CGPoint(x: layout.plotRect.midX, y: layout.plotRect.maxY))
-        context.move(to: CGPoint(x: layout.plotRect.minX, y: layout.plotRect.midY))
-        context.addLine(to: CGPoint(x: layout.plotRect.maxX, y: layout.plotRect.midY))
-        context.strokePath()
-        context.restoreGState()
-
-        for label in layout.quadrantLabels {
-            drawText(label.text, center: label.center, size: 10, weight: .semibold,
-                     color: theme.tertiaryTextColor, in: context)
-        }
-        for label in layout.xAxisLabels {
-            drawText(label.text, center: label.center, size: 9.5,
-                     color: theme.secondaryTextColor, in: context)
-        }
-        for label in layout.yAxisLabels {
-            drawTextRotated(label.text, center: label.center, size: 9.5,
-                            color: theme.secondaryTextColor, in: context)
-        }
-
-        for point in layout.points {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(theme.accent))
-            context.fillEllipse(in: CGRect(x: point.position.x - layout.dotRadius,
-                                           y: point.position.y - layout.dotRadius,
-                                           width: layout.dotRadius * 2, height: layout.dotRadius * 2))
-            context.restoreGState()
-            let measured = measure(point.label, size: labelSize)
-            drawText(point.label,
-                     center: CGPoint(x: point.labelPoint.x + measured.width / 2, y: point.labelPoint.y),
-                     size: labelSize, color: theme.ink, in: context)
-        }
-    }
-
     /// Draws text rotated 90° (reading bottom-to-top) centered on `center`,
     /// for vertical y-axis labels.
-    private static func drawTextRotated(
+    static func drawTextRotated(
         _ text: String, center: CGPoint, size: CGFloat,
         weight: PlatformFont.Weight = .regular, color: PlatformColor, in context: CGContext
     ) {
@@ -1026,51 +791,8 @@ enum DiagramRenderer {
 
     // MARK: - Journey
 
-    private static func draw(_ layout: JourneyLayout, theme: Theme, in context: CGContext) {
-        if let title = layout.title {
-            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
-                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
-        }
-
-        for band in layout.sections {
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
-            context.addPath(CGPath(roundedRect: band.frame, cornerWidth: 6, cornerHeight: 6, transform: nil))
-            context.fillPath()
-            context.restoreGState()
-            drawTextLeft(band.name, at: CGPoint(x: band.frame.minX + 8, y: band.frame.minY + 10),
-                         size: 9.5, weight: .semibold, color: theme.tertiaryTextColor, in: context)
-        }
-
-        for task in layout.tasks {
-            // Satisfaction badge: colour graded 1 (red) → 5 (green), digit inside.
-            let radius = layout.scoreDiameter / 2
-            context.saveGState()
-            context.setFillColor(resolvedCGColor(journeyScoreColor(task.score)))
-            context.fillEllipse(in: CGRect(x: task.scoreCenter.x - radius, y: task.scoreCenter.y - radius,
-                                           width: layout.scoreDiameter, height: layout.scoreDiameter))
-            context.restoreGState()
-            drawText("\(task.score)", center: task.scoreCenter, size: 11, weight: .semibold,
-                     color: .white, in: context)
-
-            // Task label.
-            let measured = measure(task.label, size: labelSize)
-            drawText(task.label,
-                     center: CGPoint(x: task.labelPoint.x + measured.width / 2, y: task.labelPoint.y),
-                     size: labelSize, color: theme.ink, in: context)
-
-            // Actors, muted.
-            if !task.actors.isEmpty {
-                let actorsMeasured = measure(task.actors, size: labelSize)
-                drawText(task.actors,
-                         center: CGPoint(x: task.actorsPoint.x + actorsMeasured.width / 2, y: task.actorsPoint.y),
-                         size: labelSize, color: theme.tertiaryTextColor, in: context)
-            }
-        }
-    }
-
     /// Satisfaction badge colour: 1 red, 2 orange, 3 amber, 4 lime, 5 green.
-    private static func journeyScoreColor(_ score: Int) -> PlatformColor {
+    static func journeyScoreColor(_ score: Int) -> PlatformColor {
         switch score {
         case 1: return PlatformColor.systemRed
         case 2: return PlatformColor.systemOrange
@@ -1082,56 +804,9 @@ enum DiagramRenderer {
 
     // MARK: - Mindmap
 
-    private static func draw(_ layout: MindmapLayout, theme: Theme, in context: CGContext) {
-        // Curved branch connectors, behind the nodes, tinted per branch. A
-        // horizontal-tangent cubic gives the organic mindmap look.
-        for edge in layout.edges {
-            let dx = max((edge.to.x - edge.from.x) * 0.5, 8)
-            context.saveGState()
-            context.setStrokeColor(resolvedCGColor(categoricalColor(edge.colorIndex).withAlphaComponent(0.55)))
-            context.setLineWidth(2)
-            context.setLineCap(.round)
-            context.beginPath()
-            context.move(to: edge.from)
-            context.addCurve(
-                to: edge.to,
-                control1: CGPoint(x: edge.from.x + dx, y: edge.from.y),
-                control2: CGPoint(x: edge.to.x - dx, y: edge.to.y)
-            )
-            context.strokePath()
-            context.restoreGState()
-        }
-
-        for node in layout.nodes {
-            context.saveGState()
-            if node.depth == 0 {
-                // Root: a filled accent pill.
-                context.setFillColor(resolvedCGColor(theme.accent))
-                context.addPath(CGPath(roundedRect: node.frame, cornerWidth: 8, cornerHeight: 8, transform: nil))
-                context.fillPath()
-            } else {
-                let tint = categoricalColor(node.colorIndex)
-                context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.16)))
-                context.addPath(CGPath(roundedRect: node.frame, cornerWidth: 7, cornerHeight: 7, transform: nil))
-                context.fillPath()
-                context.setStrokeColor(resolvedCGColor(tint.withAlphaComponent(0.5)))
-                context.setLineWidth(1)
-                context.addPath(CGPath(roundedRect: node.frame.insetBy(dx: 0.5, dy: 0.5),
-                                       cornerWidth: 7, cornerHeight: 7, transform: nil))
-                context.strokePath()
-            }
-            context.restoreGState()
-
-            let color = node.depth == 0 ? PlatformColor.white : theme.ink
-            drawText(node.label, center: CGPoint(x: node.frame.midX, y: node.frame.midY),
-                     size: labelSize, weight: node.depth == 0 ? .semibold : .regular,
-                     color: color, in: context)
-        }
-    }
-
     // MARK: - Class
 
-    private static func drawTextLeft(
+    static func drawTextLeft(
         _ text: String, at origin: CGPoint, size: CGFloat,
         weight: PlatformFont.Weight = .regular, color: PlatformColor, in context: CGContext
     ) {
