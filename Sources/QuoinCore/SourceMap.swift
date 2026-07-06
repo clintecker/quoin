@@ -57,10 +57,21 @@ struct LineIndex {
 }
 
 extension String {
-    /// The substring covered by a UTF-8 byte range, if it falls on valid boundaries.
+    /// The substring covered by a UTF-8 byte range, or `nil` if the range is
+    /// out of bounds or its endpoints split a multi-byte UTF-8 scalar.
+    ///
+    /// `String(decoding:as:)` repairs malformed UTF-8 with U+FFFD replacement
+    /// characters instead of failing, so a range that cuts an emoji or accented
+    /// letter in half would otherwise return a lossy string that breaks the
+    /// helper's "valid boundaries" contract. We round-trip the decoded result
+    /// back to bytes: a mismatch means the repair fired, which happens exactly
+    /// when a boundary landed mid-scalar.
     public func substring(in range: ByteRange) -> String? {
         let bytes = Array(utf8)
-        guard range.offset >= 0, range.upperBound <= bytes.count else { return nil }
-        return String(decoding: bytes[range.offset..<range.upperBound], as: UTF8.self)
+        guard range.offset >= 0, range.length >= 0, range.upperBound <= bytes.count else { return nil }
+        let slice = bytes[range.offset..<range.upperBound]
+        let decoded = String(decoding: slice, as: UTF8.self)
+        guard decoded.utf8.elementsEqual(slice) else { return nil }
+        return decoded
     }
 }

@@ -35,6 +35,30 @@ final class FrontMatterTests: XCTestCase {
         XCTAssertEqual(source.substring(in: marker), "[ ]")
     }
 
+    func testSubstringRejectsRangesSplittingMultibyteScalars() {
+        // "é" is 2 UTF-8 bytes, "☕️" is 6, "😀" is 4. A range must land on
+        // scalar boundaries or the helper returns nil rather than a lossy
+        // string full of replacement characters.
+        let source = "aé😀b"                     // bytes: a | éé | 😀😀😀😀 | b
+        let bytes = Array(source.utf8)
+        XCTAssertEqual(bytes.count, 8)
+
+        // Whole string and clean boundaries round-trip.
+        XCTAssertEqual(source.substring(in: ByteRange(offset: 0, length: 8)), "aé😀b")
+        XCTAssertEqual(source.substring(in: ByteRange(offset: 1, length: 2)), "é")
+        XCTAssertEqual(source.substring(in: ByteRange(offset: 3, length: 4)), "😀")
+
+        // Splitting the middle of "é" (offset 1, len 2) or "😀" must fail.
+        XCTAssertNil(source.substring(in: ByteRange(offset: 0, length: 2)), "splits é")
+        XCTAssertNil(source.substring(in: ByteRange(offset: 2, length: 2)), "starts mid-é")
+        XCTAssertNil(source.substring(in: ByteRange(offset: 3, length: 2)), "splits 😀")
+        XCTAssertNil(source.substring(in: ByteRange(offset: 5, length: 3)), "starts mid-😀")
+
+        // Out-of-bounds and negative ranges stay nil.
+        XCTAssertNil(source.substring(in: ByteRange(offset: 6, length: 5)))
+        XCTAssertNil(source.substring(in: ByteRange(offset: -1, length: 2)))
+    }
+
     func testNoFrontMatterWithoutClosingDelimiter() {
         let doc = MarkdownConverter.parse("---\nnot closed\n\ntext")
         if case .frontMatter = doc.blocks.first?.kind {
