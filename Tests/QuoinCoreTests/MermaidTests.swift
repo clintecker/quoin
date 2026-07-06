@@ -75,6 +75,47 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(pie.slices[0].value, 70)
     }
 
+    func testTimelineParsing() {
+        let diagram = MermaidParser.parse("""
+        timeline
+            title Social History
+            2002 : LinkedIn
+            2004 : Facebook : Google
+            section Modern
+                2007 : iPhone
+                2010 : Instagram
+        """)
+        guard case .timeline(let timeline) = diagram else { return XCTFail("expected timeline") }
+        XCTAssertEqual(timeline.title, "Social History")
+        XCTAssertEqual(timeline.periods.count, 4)
+        XCTAssertEqual(timeline.periods[0].label, "2002")
+        XCTAssertEqual(timeline.periods[0].events, ["LinkedIn"])
+        // Multiple colon-separated events on one period.
+        XCTAssertEqual(timeline.periods[1].events, ["Facebook", "Google"])
+        // Section applies to periods declared after it, not before.
+        XCTAssertEqual(timeline.periods[0].section, "")
+        XCTAssertEqual(timeline.periods[2].section, "Modern")
+        XCTAssertEqual(timeline.sections, ["Modern"])
+    }
+
+    func testTimelineContinuationLinesAddEvents() {
+        // A line starting with ":" carries more events for the period above it.
+        let diagram = MermaidParser.parse("""
+        timeline
+            2004 : Markdown introduced
+                 : Plain-text authoring
+            2014 : CommonMark begins
+        """)
+        guard case .timeline(let timeline) = diagram else { return XCTFail("expected timeline") }
+        XCTAssertEqual(timeline.periods.count, 2)
+        XCTAssertEqual(timeline.periods[0].events, ["Markdown introduced", "Plain-text authoring"])
+        XCTAssertEqual(timeline.periods[1].events, ["CommonMark begins"])
+    }
+
+    func testTimelineWithoutPeriodsReturnsNil() {
+        XCTAssertNil(MermaidParser.parse("timeline\n    title Empty"))
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gantt\n  title Timeline"))
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
@@ -461,5 +502,44 @@ final class DiagramLayoutTests: XCTestCase {
         // And the two layer-order pairs never overlap or swap.
         XCTAssertLessThan(x["D1"]!, x["B"]!)
         XCTAssertLessThan(x["D2"]!, x["E"]!)
+    }
+
+    func testTimelineLayout() {
+        guard case .timeline(let timeline)? = MermaidParser.parse("""
+        timeline
+            title History
+            2002 : LinkedIn
+            2004 : Facebook : Google
+            section Modern
+                2007 : iPhone
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(timeline, measure: measure)
+
+        // Non-degenerate canvas and one laid-out period per source period.
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertGreaterThan(layout.size.height, 0)
+        XCTAssertEqual(layout.periods.count, 3)
+
+        // Periods flow top-to-bottom: each dot is below the previous.
+        XCTAssertLessThan(layout.periods[0].dot.y, layout.periods[1].dot.y)
+        XCTAssertLessThan(layout.periods[1].dot.y, layout.periods[2].dot.y)
+
+        // All dots share the spine x, which the spine spans vertically.
+        for period in layout.periods {
+            XCTAssertEqual(period.dot.x, layout.spineX, accuracy: 0.5)
+        }
+        XCTAssertLessThanOrEqual(layout.spineTop, layout.periods.first!.dot.y)
+        XCTAssertGreaterThanOrEqual(layout.spineBottom, layout.periods.last!.dot.y)
+
+        // The two events on "2004" stack (distinct, increasing y) to the right
+        // of the spine, and never overlap.
+        let stacked = layout.periods[1].events
+        XCTAssertEqual(stacked.count, 2)
+        XCTAssertGreaterThan(stacked[0].frame.minX, layout.spineX)
+        XCTAssertLessThanOrEqual(stacked[0].frame.maxY, stacked[1].frame.minY)
+
+        // The "Modern" section produces exactly one tint band.
+        XCTAssertEqual(layout.sections.count, 1)
+        XCTAssertEqual(layout.sections.first?.name, "Modern")
     }
 }

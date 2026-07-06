@@ -219,6 +219,18 @@ final class DiagramGalleryTests: XCTestCase {
             "Email" : 8
             "Paid" : 3
         """),
+        ("timeline", """
+        timeline
+            title Markdown Renderer Milestones
+            2004 : Markdown introduced
+                 : Plain-text authoring becomes mainstream
+            2014 : CommonMark project begins
+                 : Formalized parsing edge cases
+            section Modern era
+                2017 : GFM specification published
+                     : Tables and task lists expected
+                2026 : Native diagram families
+        """),
     ]
 
     func testRenderGallery() throws {

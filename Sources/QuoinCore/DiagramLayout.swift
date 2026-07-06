@@ -134,6 +134,41 @@ public struct GanttLayout: Sendable {
     public let ticks: [Tick]
 }
 
+public struct TimelineLayout: Sendable {
+    public struct Event: Sendable {
+        public let text: String
+        public let frame: CGRect
+        /// Categorical tint index (by section, else by period).
+        public let colorIndex: Int
+    }
+
+    public struct Period: Sendable {
+        public let label: String
+        /// Right-aligned anchor for the period label: right edge at vertical
+        /// center of the period's first row.
+        public let labelPoint: CGPoint
+        /// The node dot sitting on the spine.
+        public let dot: CGPoint
+        public let events: [Event]
+    }
+
+    public struct SectionBand: Sendable {
+        public let name: String
+        /// Full-width tint band spanning the section's consecutive periods.
+        public let frame: CGRect
+        public let colorIndex: Int
+    }
+
+    public let size: CGSize
+    public let title: String?
+    /// X of the vertical spine the period dots sit on.
+    public let spineX: CGFloat
+    public let spineTop: CGFloat
+    public let spineBottom: CGFloat
+    public let periods: [Period]
+    public let sections: [SectionBand]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

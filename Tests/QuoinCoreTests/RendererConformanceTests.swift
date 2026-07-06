@@ -134,6 +134,7 @@ final class RendererConformanceTests: XCTestCase {
         case .er(let e): return DiagramLayoutEngine.layout(e, measure: measure).size
         case .state(let s): return DiagramLayoutEngine.layout(s, measure: measure).size
         case .gantt(let g): return DiagramLayoutEngine.layout(g, measure: measure).size
+        case .timeline(let t): return DiagramLayoutEngine.layout(t, measure: measure).size
         }
     }
 

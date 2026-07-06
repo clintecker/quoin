@@ -103,7 +103,8 @@ that way.
 | ER | ✅ | crow's-foot cardinalities, identifying/non-identifying |
 | State (v2) | ✅ | composite states, choice diamonds, fork/join bars, per-scope `[*]` |
 | Gantt | ✅ | sections, `after` dependencies, date/duration timeline, statuses, milestones |
-| gitGraph, mindmap, timeline, C4, … | 🟡 | tidy labelled source card |
+| Timeline | ✅ | vertical spine, sectioned event cards, multi-event continuation lines |
+| gitGraph, mindmap, C4, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 
