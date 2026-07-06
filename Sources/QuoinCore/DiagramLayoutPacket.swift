@@ -32,9 +32,21 @@ extension DiagramLayoutEngine {
                     width: CGFloat(cells) * bitWidth,
                     height: rowHeight
                 )
-                let showLabel = frame.width >= measure(field.label, labelFontSize).width + 6
+                // Prefer a horizontal label; fall back to a rotated (vertical)
+                // one for narrow fields — the label's text width must fit in the
+                // row height, below the bit-index strip. Otherwise no label.
+                let labelWidth = measure(field.label, labelFontSize).width
+                let mode: PacketLayout.LabelMode
+                if frame.width >= labelWidth + 6 {
+                    mode = .horizontal
+                } else if frame.width >= 13, labelWidth <= rowHeight - 11 {
+                    // Fits vertically in the space below the bit-index strip.
+                    mode = .vertical
+                } else {
+                    mode = .none
+                }
                 segments.append(PacketLayout.Segment(
-                    label: field.label, showLabel: showLabel, frame: frame,
+                    label: field.label, labelMode: mode, frame: frame,
                     startBit: bit, endBit: segmentEnd, colorIndex: index
                 ))
                 maxRow = max(maxRow, row)

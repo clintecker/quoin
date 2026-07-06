@@ -766,4 +766,18 @@ final class DiagramLayoutTests: XCTestCase {
         // The wrapped segment sits on the next row (greater y).
         XCTAssertGreaterThan(wrapSegments[1].frame.minY, wrapSegments[0].frame.minY)
     }
+
+    func testPacketNarrowFieldLabelsGoVertical() {
+        guard case .packet(let packet)? = MermaidParser.parse("""
+        packet-beta
+            0-15: "Wide Field"
+            16: "SYN"
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(packet, measure: measure)
+        let wide = layout.segments.first { $0.label == "Wide Field" }!
+        let flag = layout.segments.first { $0.label == "SYN" }!
+        // A 16-bit field fits its label horizontally; a single-bit field rotates.
+        XCTAssertEqual(wide.labelMode, .horizontal)
+        XCTAssertEqual(flag.labelMode, .vertical)
+    }
 }

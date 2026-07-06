@@ -248,12 +248,15 @@ public struct QuadrantLayout: Sendable {
 }
 
 public struct PacketLayout: Sendable {
+    /// How a segment's label fits: horizontally, rotated vertically (for narrow
+    /// single-/few-bit fields like TCP flags), or not at all.
+    public enum LabelMode: Sendable { case horizontal, vertical, none }
+
     /// One row-slice of a field (a field wraps into multiple segments when it
     /// crosses the 32-bit row boundary).
     public struct Segment: Sendable {
         public let label: String
-        /// Draw the label only when the segment is wide enough to fit it.
-        public let showLabel: Bool
+        public let labelMode: LabelMode
         public let frame: CGRect
         public let startBit: Int
         public let endBit: Int

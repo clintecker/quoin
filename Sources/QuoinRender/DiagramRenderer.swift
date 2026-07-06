@@ -939,9 +939,17 @@ enum DiagramRenderer {
                          size: 7.5, color: theme.tertiaryTextColor, in: context)
             }
 
-            if segment.showLabel {
+            switch segment.labelMode {
+            case .horizontal:
                 drawText(segment.label, center: CGPoint(x: segment.frame.midX, y: segment.frame.midY + 3),
                          size: labelSize, color: theme.ink, in: context)
+            case .vertical:
+                // Rotated label for narrow fields (e.g. TCP flags), below the
+                // bit-index strip.
+                drawTextRotated(segment.label, center: CGPoint(x: segment.frame.midX, y: segment.frame.midY + 5),
+                                size: labelSize, color: theme.ink, in: context)
+            case .none:
+                break
             }
         }
     }
