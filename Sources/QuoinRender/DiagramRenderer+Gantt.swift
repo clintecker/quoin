@@ -74,5 +74,16 @@ extension DiagramRenderer {
             context.restoreGState()
         }
     }
+
+    /// Bar fill by task status: active is the full accent, normal a lighter
+    /// tint, done a muted ink, critical a warm red.
+    static func ganttFill(_ status: GanttChart.Status, theme: Theme) -> PlatformColor {
+        switch status {
+        case .normal: return theme.accent.withAlphaComponent(0.55)
+        case .active: return theme.accent
+        case .done: return theme.ink.withAlphaComponent(0.28)
+        case .critical: return PlatformColor.systemRed.withAlphaComponent(0.85)
+        }
+    }
 }
 #endif

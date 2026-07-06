@@ -54,5 +54,16 @@ extension DiagramRenderer {
             }
         }
     }
+
+    /// Satisfaction badge colour: 1 red, 2 orange, 3 amber, 4 lime, 5 green.
+    static func journeyScoreColor(_ score: Int) -> PlatformColor {
+        switch score {
+        case 1: return PlatformColor.systemRed
+        case 2: return PlatformColor.systemOrange
+        case 3: return PlatformColor.systemYellow.withAlphaComponent(0.95)
+        case 4: return PlatformColor(red: 0.52, green: 0.72, blue: 0.20, alpha: 1)
+        default: return PlatformColor.systemGreen
+        }
+    }
 }
 #endif
