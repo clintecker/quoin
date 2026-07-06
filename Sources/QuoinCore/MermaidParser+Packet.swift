@@ -1,0 +1,35 @@
+import Foundation
+
+extension MermaidParser {
+
+    static func parsePacket(body: [String]) -> PacketDiagram? {
+        var title: String?
+        var fields: [PacketDiagram.Field] = []
+
+        for line in body {
+            if line.hasPrefix("title ") {
+                title = String(line.dropFirst("title ".count)).trimmingCharacters(in: .whitespaces)
+                continue
+            }
+            // `<start>-<end>: "Label"` or `<bit>: "Label"`.
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let range = line[..<colon].trimmingCharacters(in: .whitespaces)
+            let label = line[line.index(after: colon)...]
+                .trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+            let bounds = range.split(separator: "-", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            let start: Int, end: Int
+            if bounds.count == 2, let a = Int(bounds[0]), let b = Int(bounds[1]) {
+                start = min(a, b); end = max(a, b)
+            } else if bounds.count == 1, let a = Int(bounds[0]) {
+                start = a; end = a
+            } else {
+                continue
+            }
+            guard start >= 0, !label.isEmpty else { continue }
+            fields.append(PacketDiagram.Field(startBit: start, endBit: end, label: label))
+        }
+
+        guard !fields.isEmpty else { return nil }
+        return PacketDiagram(title: title, fields: fields)
+    }
+}
