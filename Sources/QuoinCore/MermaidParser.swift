@@ -17,6 +17,7 @@ public enum MermaidDiagram: Hashable, Sendable {
     case mindmap(Mindmap)
     case journey(UserJourney)
     case quadrant(QuadrantChart)
+    case packet(PacketDiagram)
 }
 
 // MARK: - Models
@@ -341,6 +342,28 @@ public struct QuadrantChart: Hashable, Sendable {
     }
 }
 
+/// A Mermaid `packet` diagram: named bit-field ranges laid out on a 32-bit
+/// grid (a protocol-header picture).
+public struct PacketDiagram: Hashable, Sendable {
+    public struct Field: Hashable, Sendable {
+        public let startBit: Int
+        public let endBit: Int
+        public let label: String
+        public init(startBit: Int, endBit: Int, label: String) {
+            self.startBit = startBit
+            self.endBit = endBit
+            self.label = label
+        }
+    }
+
+    public var title: String?
+    public var fields: [Field]
+    public init(title: String?, fields: [Field]) {
+        self.title = title
+        self.fields = fields
+    }
+}
+
 // MARK: - Parser
 
 public enum MermaidParser {
@@ -389,7 +412,43 @@ public enum MermaidParser {
         if header.hasPrefix("quadrantChart") {
             return parseQuadrant(body: Array(lines.dropFirst())).map { .quadrant($0) }
         }
+        if header.hasPrefix("packet") {
+            return parsePacket(body: Array(lines.dropFirst())).map { .packet($0) }
+        }
         return nil
+    }
+
+    // MARK: Packet
+
+    static func parsePacket(body: [String]) -> PacketDiagram? {
+        var title: String?
+        var fields: [PacketDiagram.Field] = []
+
+        for line in body {
+            if line.hasPrefix("title ") {
+                title = String(line.dropFirst("title ".count)).trimmingCharacters(in: .whitespaces)
+                continue
+            }
+            // `<start>-<end>: "Label"` or `<bit>: "Label"`.
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let range = line[..<colon].trimmingCharacters(in: .whitespaces)
+            let label = line[line.index(after: colon)...]
+                .trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+            let bounds = range.split(separator: "-", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            let start: Int, end: Int
+            if bounds.count == 2, let a = Int(bounds[0]), let b = Int(bounds[1]) {
+                start = min(a, b); end = max(a, b)
+            } else if bounds.count == 1, let a = Int(bounds[0]) {
+                start = a; end = a
+            } else {
+                continue
+            }
+            guard start >= 0, !label.isEmpty else { continue }
+            fields.append(PacketDiagram.Field(startBit: start, endBit: end, label: label))
+        }
+
+        guard !fields.isEmpty else { return nil }
+        return PacketDiagram(title: title, fields: fields)
     }
 
     // MARK: Quadrant

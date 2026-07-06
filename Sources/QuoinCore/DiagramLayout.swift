@@ -247,6 +247,25 @@ public struct QuadrantLayout: Sendable {
     public let yAxisLabels: [Label]
 }
 
+public struct PacketLayout: Sendable {
+    /// One row-slice of a field (a field wraps into multiple segments when it
+    /// crosses the 32-bit row boundary).
+    public struct Segment: Sendable {
+        public let label: String
+        /// Draw the label only when the segment is wide enough to fit it.
+        public let showLabel: Bool
+        public let frame: CGRect
+        public let startBit: Int
+        public let endBit: Int
+        public let colorIndex: Int
+    }
+
+    public let size: CGSize
+    public let title: String?
+    public let bitsPerRow: Int
+    public let segments: [Segment]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

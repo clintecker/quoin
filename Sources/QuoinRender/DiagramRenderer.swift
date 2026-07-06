@@ -92,6 +92,10 @@ enum DiagramRenderer {
                 let layout = DiagramLayoutEngine.layout(quadrant, measure: measure)
                 size = layout.size
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .packet(let packet):
+                let layout = DiagramLayoutEngine.layout(packet, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 
@@ -902,6 +906,42 @@ enum DiagramRenderer {
 
                 drawTextLeft(event.text, at: CGPoint(x: event.frame.minX + 10, y: event.frame.midY),
                              size: labelSize, color: theme.ink, in: context)
+            }
+        }
+    }
+
+    // MARK: - Packet
+
+    private static func draw(_ layout: PacketLayout, theme: Theme, in context: CGContext) {
+        if let title = layout.title {
+            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
+                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
+        }
+
+        for segment in layout.segments {
+            let tint = categoricalColor(segment.colorIndex)
+            context.saveGState()
+            context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.16)))
+            context.addPath(CGPath(roundedRect: segment.frame, cornerWidth: 3, cornerHeight: 3, transform: nil))
+            context.fillPath()
+            context.setStrokeColor(resolvedCGColor(tint.withAlphaComponent(0.55)))
+            context.setLineWidth(1)
+            context.addPath(CGPath(roundedRect: segment.frame.insetBy(dx: 0.5, dy: 0.5),
+                                   cornerWidth: 3, cornerHeight: 3, transform: nil))
+            context.strokePath()
+            context.restoreGState()
+
+            // Bit indices at the segment's top corners.
+            drawText("\(segment.startBit)", center: CGPoint(x: segment.frame.minX + 9, y: segment.frame.minY + 7),
+                     size: 7.5, color: theme.tertiaryTextColor, in: context)
+            if segment.endBit != segment.startBit {
+                drawText("\(segment.endBit)", center: CGPoint(x: segment.frame.maxX - 9, y: segment.frame.minY + 7),
+                         size: 7.5, color: theme.tertiaryTextColor, in: context)
+            }
+
+            if segment.showLabel {
+                drawText(segment.label, center: CGPoint(x: segment.frame.midX, y: segment.frame.midY + 3),
+                         size: labelSize, color: theme.ink, in: context)
             }
         }
     }

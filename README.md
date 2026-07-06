@@ -107,7 +107,8 @@ that way.
 | Mindmap | ✅ | tidy horizontal tree, per-branch tints, indentation hierarchy, shape labels |
 | User Journey | ✅ | sectioned task rows, 1–5 satisfaction badges, actors |
 | Quadrant | ✅ | 2×2 tinted matrix, axis-end labels, plotted points |
-| gitGraph, requirement, C4, sankey, xychart, block, packet, kanban, architecture, radar, treemap, … | 🟡 | tidy labelled source card |
+| Packet | ✅ | 32-bit grid, fields wrap across rows, bit indices |
+| gitGraph, requirement, C4, sankey, xychart, block, kanban, architecture, radar, treemap, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 

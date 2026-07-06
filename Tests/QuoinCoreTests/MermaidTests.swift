@@ -212,6 +212,26 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(q.points[0].y, 0.0, accuracy: 0.001)
     }
 
+    func testPacketParsing() {
+        let diagram = MermaidParser.parse("""
+        packet-beta
+            title IPv4-ish
+            0-3: "Version"
+            4-7: "IHL"
+            16-31: "Total Length"
+            48: "Flag"
+        """)
+        guard case .packet(let packet) = diagram else { return XCTFail("expected packet") }
+        XCTAssertEqual(packet.title, "IPv4-ish")
+        XCTAssertEqual(packet.fields.count, 4)
+        XCTAssertEqual(packet.fields[0].startBit, 0)
+        XCTAssertEqual(packet.fields[0].endBit, 3)
+        XCTAssertEqual(packet.fields[2].label, "Total Length")
+        // Single-bit field: start == end.
+        XCTAssertEqual(packet.fields[3].startBit, 48)
+        XCTAssertEqual(packet.fields[3].endBit, 48)
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
@@ -724,5 +744,26 @@ final class DiagramLayoutTests: XCTestCase {
         for point in layout.points {
             XCTAssertTrue(layout.plotRect.insetBy(dx: -0.5, dy: -0.5).contains(point.position))
         }
+    }
+
+    func testPacketLayoutWrapsAcrossRows() {
+        guard case .packet(let packet)? = MermaidParser.parse("""
+        packet-beta
+            0-3: "A"
+            30-33: "Wrap"
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(packet, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertGreaterThan(layout.size.height, 0)
+        // "Wrap" (bits 30–33) crosses the 32-bit boundary → two segments.
+        let wrapSegments = layout.segments.filter { $0.label == "Wrap" }
+        XCTAssertEqual(wrapSegments.count, 2)
+        XCTAssertEqual(wrapSegments[0].startBit, 30)
+        XCTAssertEqual(wrapSegments[0].endBit, 31)
+        XCTAssertEqual(wrapSegments[1].startBit, 32)
+        XCTAssertEqual(wrapSegments[1].endBit, 33)
+        // The wrapped segment sits on the next row (greater y).
+        XCTAssertGreaterThan(wrapSegments[1].frame.minY, wrapSegments[0].frame.minY)
     }
 }
