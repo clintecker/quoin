@@ -38,6 +38,9 @@ struct ReaderScreen: View {
             if model.conflictDiskSource != nil {
                 conflictBanner
             }
+            if let failure = model.actionFailure {
+                actionFailureBanner(failure)
+            }
             ZStack(alignment: .topTrailing) {
             MarkdownReaderView(
                 rendered: model.rendered,
@@ -270,6 +273,32 @@ struct ReaderScreen: View {
             .background(Color.orange.opacity(0.08))
             Divider()
         }
+    }
+
+    // MARK: - Action failure banner (non-blocking, auto-dismissing)
+
+    private func actionFailureBanner(_ failure: ReaderModel.ActionFailure) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.red)
+                Text(failure.message)
+                    .font(.system(size: 12))
+                Spacer()
+                Button {
+                    model.dismissActionFailure()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .help("Dismiss")
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.red.opacity(0.08))
+            Divider()
+        }
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: - Status bar (10.5pt mono, 40% ink, top hairline)

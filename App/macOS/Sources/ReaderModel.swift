@@ -33,6 +33,18 @@ final class ReaderModel {
     /// Non-nil while an external change conflicts with unsaved local edits;
     /// holds the on-disk source for "use disk version".
     private(set) var conflictDiskSource: String?
+
+    /// A transient, non-blocking failure from a user-triggered file action
+    /// (image insert, checkbox toggle). Surfaced as a banner and auto-cleared
+    /// — never a modal (handoff interaction style). Recording it in model
+    /// state means the app can explain what didn't happen instead of failing
+    /// silently, which is dangerous in a file-backed editor.
+    private(set) var actionFailure: ActionFailure?
+
+    struct ActionFailure: Identifiable, Equatable {
+        let id = UUID()
+        let message: String
+    }
     /// The document's current URL; changes when the first H1 renames an
     /// Untitled file (design rule).
     private(set) var fileURL: URL?
@@ -47,6 +59,7 @@ final class ReaderModel {
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?
     @ObservationIgnored private var renderer = AttributedRenderer()
     @ObservationIgnored private var renameTask: Task<Void, Never>?
+    @ObservationIgnored private var actionFailureTask: Task<Void, Never>?
     @ObservationIgnored private var editPipelineTask: Task<Void, Never>?
     @ObservationIgnored private var latestEditGeneration = 0
 
@@ -450,7 +463,9 @@ final class ReaderModel {
     static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
 
     /// Drag-dropped image: copy the asset next to the document (assets/),
-    /// insert `![](assets/…)` at the caret (or document end).
+    /// insert `![](assets/…)` at the caret (or document end). Every file step
+    /// can fail; a failure is surfaced as a banner rather than swallowed, so
+    /// the user never believes an image landed when it didn't.
     func insertImage(from sourceURL: URL) {
         guard let session,
               let docURL = fileURL,
@@ -458,14 +473,24 @@ final class ReaderModel {
         else { return }
 
         let assetsFolder = docURL.deletingLastPathComponent().appendingPathComponent("assets", isDirectory: true)
-        try? FileManager.default.createDirectory(at: assetsFolder, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: assetsFolder, withIntermediateDirectories: true)
+        } catch {
+            reportFailure("Couldn't create the assets folder for the image.")
+            return
+        }
 
         // Silent-suffix collision handling, same rule as document names.
         let destination = Library.uniqueURL(
             baseName: sourceURL.deletingPathExtension().lastPathComponent,
             extension: sourceURL.pathExtension, in: assetsFolder
         )
-        guard (try? FileManager.default.copyItem(at: sourceURL, to: destination)) != nil else { return }
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destination)
+        } catch {
+            reportFailure("Couldn't copy “\(sourceURL.lastPathComponent)” into the library.")
+            return
+        }
 
         let markdown = "\n\n![](assets/\(destination.lastPathComponent))\n"
         let offset: Int
@@ -481,9 +506,16 @@ final class ReaderModel {
 
         let edit = SourceEdit(range: ByteRange(offset: offset, length: 0), replacement: markdown)
         Task {
-            guard let newDocument = try? await session.applyEdit(edit, publishSnapshot: false) else { return }
-            QuoinPerformanceTrace.measure("model.restoreCaret.imageInsert") {
-                self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
+            do {
+                let newDocument = try await session.applyEdit(edit, publishSnapshot: false)
+                QuoinPerformanceTrace.measure("model.restoreCaret.imageInsert") {
+                    self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
+                }
+            } catch {
+                // The copy succeeded but the reference didn't land — remove the
+                // orphaned asset so a retry doesn't accumulate copies.
+                try? FileManager.default.removeItem(at: destination)
+                self.reportFailure("Couldn't insert the image into the document.")
             }
         }
     }
@@ -493,7 +525,33 @@ final class ReaderModel {
     func toggleTask(markerOffset: Int) {
         guard let session else { return }
         Task {
-            try? await session.toggleTask(markerRange: ByteRange(offset: markerOffset, length: 3))
+            do {
+                try await session.toggleTask(markerRange: ByteRange(offset: markerOffset, length: 3))
+            } catch SessionError.taskNotTogglable {
+                // The file shifted under the click; the session republished the
+                // fresh state (see DocumentSession.toggleTask). Tell the user
+                // their tap didn't apply so they can re-tap on current content.
+                self.reportFailure("The document changed on disk, so the checkbox wasn't toggled — it's been refreshed.")
+            } catch {
+                self.reportFailure("Couldn't save the checkbox change.")
+            }
+        }
+    }
+
+    // MARK: - Non-blocking action failures
+
+    func dismissActionFailure() {
+        actionFailureTask?.cancel()
+        actionFailure = nil
+    }
+
+    private func reportFailure(_ message: String) {
+        actionFailure = ActionFailure(message: message)
+        actionFailureTask?.cancel()
+        actionFailureTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.actionFailure = nil
         }
     }
 
