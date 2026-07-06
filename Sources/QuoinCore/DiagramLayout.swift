@@ -169,6 +169,30 @@ public struct TimelineLayout: Sendable {
     public let sections: [SectionBand]
 }
 
+public struct MindmapLayout: Sendable {
+    public struct Node: Sendable {
+        public let label: String
+        public let frame: CGRect
+        /// 0 = root; deeper nodes inherit their branch's index.
+        public let depth: Int
+        /// Categorical tint index: which top-level branch this node belongs to.
+        public let colorIndex: Int
+    }
+
+    public struct Edge: Sendable {
+        /// Right-center of the parent node.
+        public let from: CGPoint
+        /// Left-center of the child node.
+        public let to: CGPoint
+        /// Tint index of the child's branch.
+        public let colorIndex: Int
+    }
+
+    public let size: CGSize
+    public let nodes: [Node]
+    public let edges: [Edge]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

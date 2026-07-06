@@ -161,9 +161,9 @@ reintroducing full re-renders.
 ## Remaining
 
 - **3.1** More native Mermaid types. Done: gantt, timeline (vertical spine with
-  sectioned event cards). Remaining: gitGraph, mindmap. Each is parser + layout
-  + renderer; until added they degrade to the tidy source card, so they're "not
-  broken," just not drawn.
+  sectioned event cards), mindmap (tidy horizontal tree with per-branch tints).
+  Remaining: gitGraph. Each is parser + layout + renderer; until added they
+  degrade to the tidy source card, so they're "not broken," just not drawn.
 - **3.2 stretch** Math accents (`\vec` `\hat` `\bar` `\overline`), `\hline` /
   array column rules — would let a few more fixture blocks render natively
   instead of falling back.

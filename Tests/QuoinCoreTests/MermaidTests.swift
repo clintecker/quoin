@@ -116,8 +116,37 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertNil(MermaidParser.parse("timeline\n    title Empty"))
     }
 
+    func testMindmapParsingByIndentation() {
+        let diagram = MermaidParser.parse("""
+        mindmap
+          root((Markdown))
+            Origins
+              CommonMark
+            Tools
+              Quoin
+              Obsidian
+        """)
+        guard case .mindmap(let mindmap) = diagram else { return XCTFail("expected mindmap") }
+        // Shape wrapper stripped to label text.
+        XCTAssertEqual(mindmap.root.label, "Markdown")
+        XCTAssertEqual(mindmap.root.children.map(\.label), ["Origins", "Tools"])
+        // Deeper indentation nests under the right parent.
+        XCTAssertEqual(mindmap.root.children[0].children.map(\.label), ["CommonMark"])
+        XCTAssertEqual(mindmap.root.children[1].children.map(\.label), ["Quoin", "Obsidian"])
+    }
+
+    func testMindmapShapeStripping() {
+        XCTAssertEqual(MermaidParser.mindmapLabel("id[Square]"), "Square")
+        XCTAssertEqual(MermaidParser.mindmapLabel("((Circle))"), "Circle")
+        XCTAssertEqual(MermaidParser.mindmapLabel("{{Hexagon}}"), "Hexagon")
+        XCTAssertEqual(MermaidParser.mindmapLabel("Plain text"), "Plain text")
+    }
+
+    func testMindmapEmptyReturnsNil() {
+        XCTAssertNil(MermaidParser.parse("mindmap\n"))
+    }
+
     func testUnsupportedTypeReturnsNil() {
-        XCTAssertNil(MermaidParser.parse("gantt\n  title Timeline"))
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
     }
@@ -541,5 +570,42 @@ final class DiagramLayoutTests: XCTestCase {
         // The "Modern" section produces exactly one tint band.
         XCTAssertEqual(layout.sections.count, 1)
         XCTAssertEqual(layout.sections.first?.name, "Modern")
+    }
+
+    func testMindmapLayout() {
+        guard case .mindmap(let mindmap)? = MermaidParser.parse("""
+        mindmap
+          root((Root))
+            A
+              A1
+              A2
+            B
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(mindmap, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertGreaterThan(layout.size.height, 0)
+        // 5 nodes: root, A, A1, A2, B.
+        XCTAssertEqual(layout.nodes.count, 5)
+        // 4 edges (every non-root node has one parent link).
+        XCTAssertEqual(layout.edges.count, 4)
+
+        let root = layout.nodes[0]
+        XCTAssertEqual(root.depth, 0)
+        // Depth increases strictly left-to-right: each child column is right of
+        // its parent's, so a child never overlaps its parent.
+        let a = layout.nodes.first { $0.label == "A" }!
+        let a1 = layout.nodes.first { $0.label == "A1" }!
+        XCTAssertGreaterThan(a.frame.minX, root.frame.maxX)
+        XCTAssertGreaterThan(a1.frame.minX, a.frame.maxX)
+
+        // A centers vertically on its children A1 and A2.
+        let a2 = layout.nodes.first { $0.label == "A2" }!
+        XCTAssertEqual(a.frame.midY, (a1.frame.midY + a2.frame.midY) / 2, accuracy: 0.5)
+
+        // Top-level branches A and B carry distinct tints; A1 inherits A's.
+        let b = layout.nodes.first { $0.label == "B" }!
+        XCTAssertNotEqual(a.colorIndex, b.colorIndex)
+        XCTAssertEqual(a1.colorIndex, a.colorIndex)
     }
 }

@@ -104,7 +104,8 @@ that way.
 | State (v2) | ✅ | composite states, choice diamonds, fork/join bars, per-scope `[*]` |
 | Gantt | ✅ | sections, `after` dependencies, date/duration timeline, statuses, milestones |
 | Timeline | ✅ | vertical spine, sectioned event cards, multi-event continuation lines |
-| gitGraph, mindmap, C4, … | 🟡 | tidy labelled source card |
+| Mindmap | ✅ | tidy horizontal tree, per-branch tints, indentation hierarchy, shape labels |
+| gitGraph, C4, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 

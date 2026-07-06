@@ -231,6 +231,21 @@ final class DiagramGalleryTests: XCTestCase {
                      : Tables and task lists expected
                 2026 : Native diagram families
         """),
+        ("mindmap", """
+        mindmap
+          root((Quoin))
+            Rendering
+              TextKit 2
+              Diagrams
+                Mermaid
+                Math
+            Editing
+              Syntax reveal
+              Byte-lossless
+            Storage
+              Plain .md files
+              Local-only
+        """),
     ]
 
     func testRenderGallery() throws {
