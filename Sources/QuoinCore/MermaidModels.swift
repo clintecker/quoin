@@ -346,3 +346,38 @@ public struct PacketDiagram: Hashable, Sendable {
         self.fields = fields
     }
 }
+
+/// A Mermaid `xychart`: bar and/or line series over shared x-axis categories,
+/// with an optional y-axis range and titles.
+public struct XYChart: Hashable, Sendable {
+    public enum SeriesKind: Hashable, Sendable { case bar, line }
+
+    public struct Series: Hashable, Sendable {
+        public let kind: SeriesKind
+        public let values: [Double]
+        public init(kind: SeriesKind, values: [Double]) {
+            self.kind = kind
+            self.values = values
+        }
+    }
+
+    public var title: String?
+    public var xAxisTitle: String?
+    /// Category labels along the x-axis.
+    public var categories: [String]
+    public var yAxisTitle: String?
+    public var yMin: Double?
+    public var yMax: Double?
+    public var series: [Series]
+
+    public init(title: String?, xAxisTitle: String?, categories: [String],
+                yAxisTitle: String?, yMin: Double?, yMax: Double?, series: [Series]) {
+        self.title = title
+        self.xAxisTitle = xAxisTitle
+        self.categories = categories
+        self.yAxisTitle = yAxisTitle
+        self.yMin = yMin
+        self.yMax = yMax
+        self.series = series
+    }
+}

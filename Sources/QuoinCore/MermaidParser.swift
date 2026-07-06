@@ -18,6 +18,7 @@ public enum MermaidDiagram: Hashable, Sendable {
     case journey(UserJourney)
     case quadrant(QuadrantChart)
     case packet(PacketDiagram)
+    case xychart(XYChart)
 }
 
 // MARK: - Parser
@@ -70,6 +71,9 @@ public enum MermaidParser {
         }
         if header.hasPrefix("packet") {
             return parsePacket(body: Array(lines.dropFirst())).map { .packet($0) }
+        }
+        if header.hasPrefix("xychart") {
+            return parseXYChart(body: Array(lines.dropFirst())).map { .xychart($0) }
         }
         return nil
     }

@@ -246,6 +246,14 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("xychart", """
+        xychart-beta
+            title "Renderer timing by fixture size"
+            x-axis ["1 KB", "10 KB", "50 KB", "100 KB", "250 KB", "1 MB"]
+            y-axis "Milliseconds" 0 --> 1200
+            bar [4, 18, 82, 140, 420, 1100]
+            line [3, 12, 44, 90, 210, 760]
+        """),
         ("packet", """
         packet-beta
             title IPv4 Header Layout

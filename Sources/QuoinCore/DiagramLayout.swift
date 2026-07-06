@@ -269,6 +269,37 @@ public struct PacketLayout: Sendable {
     public let segments: [Segment]
 }
 
+public struct XYChartLayout: Sendable {
+    public struct Bar: Sendable {
+        public let frame: CGRect
+        public let colorIndex: Int
+    }
+
+    public struct Line: Sendable {
+        public let points: [CGPoint]
+        public let colorIndex: Int
+    }
+
+    public struct Label: Sendable {
+        public let text: String
+        public let center: CGPoint
+    }
+
+    public let size: CGSize
+    public let title: String?
+    public let plotRect: CGRect
+    public let bars: [Bar]
+    public let lines: [Line]
+    /// Category labels below the plot.
+    public let xLabels: [Label]
+    /// Value ticks left of the plot (with gridline y positions).
+    public let yLabels: [Label]
+    /// Rotated y-axis title in the left gutter, if any.
+    public let yAxisTitle: Label?
+    /// x-axis title centered below, if any.
+    public let xAxisTitle: Label?
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

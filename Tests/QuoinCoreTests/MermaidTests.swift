@@ -232,6 +232,38 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(packet.fields[3].endBit, 48)
     }
 
+    func testXYChartParsing() {
+        let diagram = MermaidParser.parse("""
+        xychart-beta
+            title "Timing by size"
+            x-axis ["1 KB", "10 KB", "50 KB"]
+            y-axis "Milliseconds" 0 --> 1200
+            bar [4, 18, 82]
+            line [3, 12, 44]
+        """)
+        guard case .xychart(let chart) = diagram else { return XCTFail("expected xychart") }
+        XCTAssertEqual(chart.title, "Timing by size")
+        XCTAssertEqual(chart.categories, ["1 KB", "10 KB", "50 KB"])
+        XCTAssertEqual(chart.yAxisTitle, "Milliseconds")
+        XCTAssertEqual(chart.yMin, 0)
+        XCTAssertEqual(chart.yMax, 1200)
+        XCTAssertEqual(chart.series.count, 2)
+        XCTAssertEqual(chart.series[0].kind, .bar)
+        XCTAssertEqual(chart.series[0].values, [4, 18, 82])
+        XCTAssertEqual(chart.series[1].kind, .line)
+    }
+
+    func testXYChartPointLabelsAndDefaultCategories() {
+        let diagram = MermaidParser.parse("""
+        xychart-beta
+            line [10:"baseline", 8, 3:"rc"]
+        """)
+        guard case .xychart(let chart) = diagram else { return XCTFail("expected xychart") }
+        // `value:"label"` keeps the number; categories default to indices.
+        XCTAssertEqual(chart.series[0].values, [10, 8, 3])
+        XCTAssertEqual(chart.categories, ["1", "2", "3"])
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
@@ -779,5 +811,31 @@ final class DiagramLayoutTests: XCTestCase {
         // A 16-bit field fits its label horizontally; a single-bit field rotates.
         XCTAssertEqual(wide.labelMode, .horizontal)
         XCTAssertEqual(flag.labelMode, .vertical)
+    }
+
+    func testXYChartLayout() {
+        guard case .xychart(let chart)? = MermaidParser.parse("""
+        xychart-beta
+            x-axis ["A", "B", "C"]
+            y-axis 0 --> 100
+            bar [20, 60, 100]
+            line [10, 50, 90]
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(chart, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertEqual(layout.bars.count, 3)
+        XCTAssertEqual(layout.lines.count, 1)
+        XCTAssertEqual(layout.lines[0].points.count, 3)
+        XCTAssertEqual(layout.xLabels.map(\.text), ["A", "B", "C"])
+        // Taller value → taller bar (bar C at 100 > bar A at 20).
+        XCTAssertGreaterThan(layout.bars[2].frame.height, layout.bars[0].frame.height)
+        // Higher value plots higher on screen (smaller y): line point C above A.
+        XCTAssertLessThan(layout.lines[0].points[2].y, layout.lines[0].points[0].y)
+        // Every bar sits within the plot.
+        for bar in layout.bars {
+            XCTAssertGreaterThanOrEqual(bar.frame.minY, layout.plotRect.minY - 0.5)
+            XCTAssertLessThanOrEqual(bar.frame.maxY, layout.plotRect.maxY + 0.5)
+        }
     }
 }
