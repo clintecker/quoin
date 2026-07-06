@@ -141,6 +141,15 @@ Budgets from the PRD, enforced in CI (`PerformanceTests`):
 
 ## Architecture
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-overview-dark.png">
+  <img alt="Quoin module architecture" src="docs/images/architecture-overview.png">
+</picture>
+
+<sub>The image above is drawn by **Quoin's own native Mermaid engine** — no Mermaid.js, no JavaScript — from the source below. Regenerate with `QUOIN_DOC_DIAGRAMS=$PWD swift test --filter testRenderDocDiagrams`.</sub>
+
+<details><summary>Mermaid source</summary>
+
 ```mermaid
 flowchart TD
     subgraph Apps["App/macOS · App/iOS — SwiftUI shells (navigation only)"]
@@ -170,7 +179,7 @@ flowchart TD
     DS --> MC
 ```
 
-(Rendered by GitHub — and by Quoin itself, natively.)
+</details>
 
 See [docs/architecture.md](docs/architecture.md) for the full data-flow and
 [docs/rendering-roadmap.md](docs/rendering-roadmap.md) for what's next.

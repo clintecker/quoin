@@ -20,6 +20,17 @@ serialized *from* the view at all.
 The edit loop is a one-way cycle: keystrokes never mutate the view directly —
 they become source edits, and the view only ever receives re-projections.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/data-flow-dark.png">
+  <img alt="Quoin edit-loop data flow" src="images/data-flow.png">
+</picture>
+
+<sub>Rendered by Quoin's own native Mermaid engine from the source below, so
+this document doubles as a fixture. Regenerate with `QUOIN_DOC_DIAGRAMS=$PWD
+swift test --filter testRenderDocDiagrams`.</sub>
+
+<details><summary>Mermaid source</summary>
+
 ```mermaid
 flowchart TD
     Disk[document.md] -->|file events| Session[DocumentSession actor]
@@ -32,8 +43,7 @@ flowchart TD
     Coordinator -->|SourceEdit: byte range + replacement| Session
 ```
 
-(This diagram is mermaid — Quoin renders it natively, so this document
-doubles as a fixture.)
+</details>
 
 ### Parse (QuoinCore)
 

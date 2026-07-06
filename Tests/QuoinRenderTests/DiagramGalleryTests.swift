@@ -335,6 +335,55 @@ final class DiagramGalleryTests: XCTestCase {
         }
     }
 
+    /// Renders the Mermaid blocks embedded in the docs through Quoin's own
+    /// engine and writes them to `docs/images/`, so the documentation is
+    /// illustrated by the very renderer it documents. Gated on
+    /// `QUOIN_DOC_DIAGRAMS=<repo root>`; regenerates from live doc source so
+    /// the images can't drift.
+    func testRenderDocDiagrams() throws {
+        guard let root = ProcessInfo.processInfo.environment["QUOIN_DOC_DIAGRAMS"] else {
+            throw XCTSkip("set QUOIN_DOC_DIAGRAMS=<repo root> to regenerate doc diagram images")
+        }
+        let jobs: [(file: String, blockIndex: Int, baseName: String)] = [
+            ("README.md", 0, "architecture-overview"),
+            ("docs/architecture.md", 0, "data-flow"),
+        ]
+        for job in jobs {
+            let text = try String(contentsOfFile: "\(root)/\(job.file)", encoding: .utf8)
+            let blocks = Self.mermaidBlocks(in: text)
+            guard job.blockIndex < blocks.count else {
+                print("SKIP \(job.baseName): no block \(job.blockIndex) in \(job.file)"); continue
+            }
+            for (suffix, dark) in [("", false), ("-dark", true)] {
+                guard let png = Self.renderPNG(source: blocks[job.blockIndex],
+                                               theme: Theme(prefersDark: dark), scale: 2) else {
+                    print("SKIP \(job.baseName)\(suffix): not natively rendered"); continue
+                }
+                let out = "\(root)/docs/images/\(job.baseName)\(suffix).png"
+                try png.write(to: URL(fileURLWithPath: out))
+                print("wrote \(out)")
+            }
+        }
+    }
+
+    /// Extracts the contents of every ```mermaid fenced block, in order.
+    static func mermaidBlocks(in text: String) -> [String] {
+        var blocks: [String] = []
+        var current: [String]?
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if current == nil, trimmed == "```mermaid" {
+                current = []
+            } else if current != nil, trimmed == "```" {
+                blocks.append(current!.joined(separator: "\n"))
+                current = nil
+            } else if current != nil {
+                current!.append(line)
+            }
+        }
+        return blocks
+    }
+
     /// Renders a diagram to a padded PNG card, or nil if the source isn't
     /// natively rendered. Draws the diagram image under the theme's appearance
     /// so dynamic colors resolve to match the card.
