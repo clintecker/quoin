@@ -88,6 +88,10 @@ enum DiagramRenderer {
                 let layout = DiagramLayoutEngine.layout(journey, measure: measure)
                 size = layout.size
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .quadrant(let quadrant):
+                let layout = DiagramLayoutEngine.layout(quadrant, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 
@@ -900,6 +904,76 @@ enum DiagramRenderer {
                              size: labelSize, color: theme.ink, in: context)
             }
         }
+    }
+
+    // MARK: - Quadrant
+
+    private static func draw(_ layout: QuadrantLayout, theme: Theme, in context: CGContext) {
+        if let title = layout.title {
+            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
+                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
+        }
+
+        // Tint quarters (Mermaid quadrant order → categorical palette).
+        for (index, rect) in layout.quadrantRects.enumerated() {
+            context.saveGState()
+            context.setFillColor(resolvedCGColor(categoricalColor(index).withAlphaComponent(0.08)))
+            context.fill(rect)
+            context.restoreGState()
+        }
+
+        // Plot border and center cross.
+        context.saveGState()
+        context.setStrokeColor(resolvedCGColor(theme.ink.withAlphaComponent(0.28)))
+        context.setLineWidth(1)
+        context.stroke(layout.plotRect)
+        context.beginPath()
+        context.move(to: CGPoint(x: layout.plotRect.midX, y: layout.plotRect.minY))
+        context.addLine(to: CGPoint(x: layout.plotRect.midX, y: layout.plotRect.maxY))
+        context.move(to: CGPoint(x: layout.plotRect.minX, y: layout.plotRect.midY))
+        context.addLine(to: CGPoint(x: layout.plotRect.maxX, y: layout.plotRect.midY))
+        context.strokePath()
+        context.restoreGState()
+
+        for label in layout.quadrantLabels {
+            drawText(label.text, center: label.center, size: 10, weight: .semibold,
+                     color: theme.tertiaryTextColor, in: context)
+        }
+        for label in layout.xAxisLabels {
+            drawText(label.text, center: label.center, size: 9.5,
+                     color: theme.secondaryTextColor, in: context)
+        }
+        for label in layout.yAxisLabels {
+            drawTextRotated(label.text, center: label.center, size: 9.5,
+                            color: theme.secondaryTextColor, in: context)
+        }
+
+        for point in layout.points {
+            context.saveGState()
+            context.setFillColor(resolvedCGColor(theme.accent))
+            context.fillEllipse(in: CGRect(x: point.position.x - layout.dotRadius,
+                                           y: point.position.y - layout.dotRadius,
+                                           width: layout.dotRadius * 2, height: layout.dotRadius * 2))
+            context.restoreGState()
+            let measured = measure(point.label, size: labelSize)
+            drawText(point.label,
+                     center: CGPoint(x: point.labelPoint.x + measured.width / 2, y: point.labelPoint.y),
+                     size: labelSize, color: theme.ink, in: context)
+        }
+    }
+
+    /// Draws text rotated 90° (reading bottom-to-top) centered on `center`,
+    /// for vertical y-axis labels.
+    private static func drawTextRotated(
+        _ text: String, center: CGPoint, size: CGFloat,
+        weight: PlatformFont.Weight = .regular, color: PlatformColor, in context: CGContext
+    ) {
+        guard !text.isEmpty else { return }
+        context.saveGState()
+        context.translateBy(x: center.x, y: center.y)
+        context.rotate(by: -.pi / 2)
+        drawText(text, center: .zero, size: size, weight: weight, color: color, in: context)
+        context.restoreGState()
     }
 
     // MARK: - Journey

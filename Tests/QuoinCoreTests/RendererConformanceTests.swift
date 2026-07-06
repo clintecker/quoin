@@ -137,6 +137,7 @@ final class RendererConformanceTests: XCTestCase {
         case .timeline(let t): return DiagramLayoutEngine.layout(t, measure: measure).size
         case .mindmap(let m): return DiagramLayoutEngine.layout(m, measure: measure).size
         case .journey(let j): return DiagramLayoutEngine.layout(j, measure: measure).size
+        case .quadrant(let q): return DiagramLayoutEngine.layout(q, measure: measure).size
         }
     }
 

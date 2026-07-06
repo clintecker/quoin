@@ -219,6 +219,34 @@ public struct JourneyLayout: Sendable {
     public let sections: [SectionBand]
 }
 
+public struct QuadrantLayout: Sendable {
+    public struct Point: Sendable {
+        public let label: String
+        public let position: CGPoint
+        /// Left-aligned anchor for the point's label (right of the dot).
+        public let labelPoint: CGPoint
+    }
+
+    public struct Label: Sendable {
+        public let text: String
+        public let center: CGPoint
+    }
+
+    public let size: CGSize
+    public let title: String?
+    public let plotRect: CGRect
+    public let dotRadius: CGFloat
+    public let points: [Point]
+    /// One tint quarter per quadrant [q1 TR, q2 TL, q3 BL, q4 BR].
+    public let quadrantRects: [CGRect]
+    /// Quadrant name labels centered in their quarter (colorIndex = quadrant).
+    public let quadrantLabels: [Label]
+    /// x-axis end labels (below the plot), horizontal.
+    public let xAxisLabels: [Label]
+    /// y-axis end labels (left gutter), drawn rotated 90°.
+    public let yAxisLabels: [Label]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

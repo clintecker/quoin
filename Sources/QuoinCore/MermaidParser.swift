@@ -16,6 +16,7 @@ public enum MermaidDiagram: Hashable, Sendable {
     case timeline(Timeline)
     case mindmap(Mindmap)
     case journey(UserJourney)
+    case quadrant(QuadrantChart)
 }
 
 // MARK: - Models
@@ -303,6 +304,43 @@ public struct UserJourney: Hashable, Sendable {
     }
 }
 
+/// A Mermaid `quadrantChart`: labelled points plotted in a 2×2 matrix with
+/// axis-end labels and per-quadrant names. Coordinates are 0…1 (x: left→right,
+/// y: bottom→top). Quadrant order matches Mermaid: 1 top-right, 2 top-left,
+/// 3 bottom-left, 4 bottom-right.
+public struct QuadrantChart: Hashable, Sendable {
+    public struct Point: Hashable, Sendable {
+        public let label: String
+        public let x: Double
+        public let y: Double
+        public init(label: String, x: Double, y: Double) {
+            self.label = label
+            self.x = x
+            self.y = y
+        }
+    }
+
+    public var title: String?
+    public var xAxisLeft: String?
+    public var xAxisRight: String?
+    public var yAxisBottom: String?
+    public var yAxisTop: String?
+    /// Quadrant names [q1, q2, q3, q4]; any may be nil.
+    public var quadrants: [String?]
+    public var points: [Point]
+
+    public init(title: String?, xAxisLeft: String?, xAxisRight: String?,
+                yAxisBottom: String?, yAxisTop: String?, quadrants: [String?], points: [Point]) {
+        self.title = title
+        self.xAxisLeft = xAxisLeft
+        self.xAxisRight = xAxisRight
+        self.yAxisBottom = yAxisBottom
+        self.yAxisTop = yAxisTop
+        self.quadrants = quadrants
+        self.points = points
+    }
+}
+
 // MARK: - Parser
 
 public enum MermaidParser {
@@ -348,7 +386,66 @@ public enum MermaidParser {
         if header.hasPrefix("journey") {
             return parseJourney(body: Array(lines.dropFirst())).map { .journey($0) }
         }
+        if header.hasPrefix("quadrantChart") {
+            return parseQuadrant(body: Array(lines.dropFirst())).map { .quadrant($0) }
+        }
         return nil
+    }
+
+    // MARK: Quadrant
+
+    static func parseQuadrant(body: [String]) -> QuadrantChart? {
+        var title: String?
+        var xLeft: String?, xRight: String?, yBottom: String?, yTop: String?
+        var quadrants: [String?] = [nil, nil, nil, nil]
+        var points: [QuadrantChart.Point] = []
+
+        // Splits `Low --> High` into (Low, High); a label with no arrow is the
+        // low/left/bottom end alone.
+        func axisEnds(_ spec: String) -> (String?, String?) {
+            if let range = spec.range(of: "-->") {
+                let lo = spec[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+                let hi = spec[range.upperBound...].trimmingCharacters(in: .whitespaces)
+                return (lo.isEmpty ? nil : lo, hi.isEmpty ? nil : hi)
+            }
+            let single = spec.trimmingCharacters(in: .whitespaces)
+            return (single.isEmpty ? nil : single, nil)
+        }
+
+        for line in body {
+            if line.hasPrefix("title ") {
+                title = String(line.dropFirst("title ".count)).trimmingCharacters(in: .whitespaces)
+            } else if line.hasPrefix("x-axis ") {
+                (xLeft, xRight) = axisEnds(String(line.dropFirst("x-axis ".count)))
+            } else if line.hasPrefix("y-axis ") {
+                (yBottom, yTop) = axisEnds(String(line.dropFirst("y-axis ".count)))
+            } else if line.hasPrefix("quadrant-"),
+                      let digit = line.dropFirst("quadrant-".count).first,
+                      let index = Int(String(digit)), (1...4).contains(index) {
+                let name = line.drop { $0 != " " }.trimmingCharacters(in: .whitespaces)
+                quadrants[index - 1] = name.isEmpty ? nil : name
+            } else if let point = parseQuadrantPoint(line) {
+                points.append(point)
+            }
+        }
+
+        guard !points.isEmpty else { return nil }
+        return QuadrantChart(title: title, xAxisLeft: xLeft, xAxisRight: xRight,
+                             yAxisBottom: yBottom, yAxisTop: yTop, quadrants: quadrants, points: points)
+    }
+
+    /// Parses `"Label": [x, y]` (x, y in 0…1). Returns nil if malformed.
+    private static func parseQuadrantPoint(_ line: String) -> QuadrantChart.Point? {
+        guard let colon = line.firstIndex(of: ":"),
+              let open = line.firstIndex(of: "["),
+              let close = line.lastIndex(of: "]"), open < close else { return nil }
+        let label = line[..<colon].trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+        guard !label.isEmpty else { return nil }
+        let coords = line[line.index(after: open)..<close]
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard coords.count == 2, let x = Double(coords[0]), let y = Double(coords[1]) else { return nil }
+        return QuadrantChart.Point(label: label, x: min(max(x, 0), 1), y: min(max(y, 0), 1))
     }
 
     // MARK: Journey

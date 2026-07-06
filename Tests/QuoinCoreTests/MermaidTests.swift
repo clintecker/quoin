@@ -177,6 +177,41 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(journey.tasks[1].actors, [], "no actors is allowed")
     }
 
+    func testQuadrantParsing() {
+        let diagram = MermaidParser.parse("""
+        quadrantChart
+            title Risk Matrix
+            x-axis Low complexity --> High complexity
+            y-axis Low impact --> High impact
+            quadrant-1 High leverage
+            quadrant-3 Easy cleanup
+            "Tables": [0.35, 0.70]
+            "Mermaid": [0.74, 0.78]
+        """)
+        guard case .quadrant(let q) = diagram else { return XCTFail("expected quadrant") }
+        XCTAssertEqual(q.title, "Risk Matrix")
+        XCTAssertEqual(q.xAxisLeft, "Low complexity")
+        XCTAssertEqual(q.xAxisRight, "High complexity")
+        XCTAssertEqual(q.yAxisTop, "High impact")
+        XCTAssertEqual(q.quadrants[0], "High leverage")     // q1
+        XCTAssertNil(q.quadrants[1])                         // q2 unset
+        XCTAssertEqual(q.quadrants[2], "Easy cleanup")      // q3
+        XCTAssertEqual(q.points.count, 2)
+        XCTAssertEqual(q.points[0].label, "Tables")
+        XCTAssertEqual(q.points[0].x, 0.35, accuracy: 0.001)
+        XCTAssertEqual(q.points[0].y, 0.70, accuracy: 0.001)
+    }
+
+    func testQuadrantClampsCoordinates() {
+        let diagram = MermaidParser.parse("""
+        quadrantChart
+            "Over": [1.4, -0.2]
+        """)
+        guard case .quadrant(let q) = diagram else { return XCTFail("expected quadrant") }
+        XCTAssertEqual(q.points[0].x, 1.0, accuracy: 0.001)
+        XCTAssertEqual(q.points[0].y, 0.0, accuracy: 0.001)
+    }
+
     func testUnsupportedTypeReturnsNil() {
         XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
@@ -662,5 +697,32 @@ final class DiagramLayoutTests: XCTestCase {
         // Two sections → two tint bands.
         XCTAssertEqual(layout.sections.count, 2)
         XCTAssertEqual(Set(layout.sections.map(\.name)), ["Morning", "Work"])
+    }
+
+    func testQuadrantLayout() {
+        guard case .quadrant(let chart)? = MermaidParser.parse("""
+        quadrantChart
+            x-axis Low --> High
+            y-axis Low --> High
+            "TopRight": [0.9, 0.9]
+            "BottomLeft": [0.1, 0.1]
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(chart, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertGreaterThan(layout.size.height, 0)
+        XCTAssertEqual(layout.quadrantRects.count, 4)
+        XCTAssertEqual(layout.points.count, 2)
+
+        // y flips: a point at y=0.9 sits near the top (small screen-y) and a
+        // point at x=0.9 sits toward the right.
+        let topRight = layout.points.first { $0.label == "TopRight" }!
+        let bottomLeft = layout.points.first { $0.label == "BottomLeft" }!
+        XCTAssertLessThan(topRight.position.y, bottomLeft.position.y)      // higher = smaller y
+        XCTAssertGreaterThan(topRight.position.x, bottomLeft.position.x)
+        // Every point lands inside the plot.
+        for point in layout.points {
+            XCTAssertTrue(layout.plotRect.insetBy(dx: -0.5, dy: -0.5).contains(point.position))
+        }
     }
 }

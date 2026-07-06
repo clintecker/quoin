@@ -246,6 +246,21 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("quadrant", """
+        quadrantChart
+            title Feature Risk Matrix
+            x-axis Low complexity --> High complexity
+            y-axis Low impact --> High impact
+            quadrant-1 High leverage
+            quadrant-2 Strategic bets
+            quadrant-3 Easy cleanup
+            quadrant-4 Yak shave
+            "Tables": [0.30, 0.68]
+            "Mermaid": [0.74, 0.80]
+            "Footnotes": [0.44, 0.32]
+            "Emoji width": [0.22, 0.46]
+            "Sanitizer": [0.70, 0.90]
+        """),
         ("journey", """
         journey
             title Writing a note in Quoin
