@@ -246,6 +246,70 @@ final class DocumentSessionTests: XCTestCase {
         XCTAssertEqual(updated.stats.taskDone, 1)
     }
 
+    // MARK: - Task toggle re-anchoring after external source shifts (issue #2)
+
+    /// A task inserted *before* the intended one shifts its byte offset. The
+    /// toggle must follow the intended task by identity, not flip whatever
+    /// marker now sits at the stale offset.
+    func testToggleRelocatesAfterInsertionAbove() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("tasks.md")
+        try Data("- [ ] first\n- [ ] second\n".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        let doc = await session.document
+        guard case .list(let items, _, _) = doc.blocks[0].kind,
+              let firstMarker = items[0].taskMarkerRange else {
+            return XCTFail("expected task list")
+        }
+
+        // Another editor inserts a new task ahead of "first"; offsets shift.
+        try Data("- [ ] zero\n- [ ] first\n- [ ] second\n".utf8).write(to: file)
+
+        // Toggle using the ORIGINAL offset for "first".
+        try await session.toggleTask(markerRange: firstMarker)
+
+        let onDisk = try String(contentsOf: file, encoding: .utf8)
+        // "first" is checked; the inserted "zero" and "second" are untouched.
+        XCTAssertEqual(onDisk, "- [ ] zero\n- [x] first\n- [ ] second\n")
+    }
+
+    /// When the intended task can't be proven present, the toggle is refused
+    /// (no wrong-box flip) and the session republishes the fresh disk state.
+    func testToggleRefusesWhenIntendedTaskDeleted() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("tasks.md")
+        try Data("- [ ] first\n- [ ] second\n".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        let doc = await session.document
+        guard case .list(let items, _, _) = doc.blocks[0].kind,
+              let firstMarker = items[0].taskMarkerRange else {
+            return XCTFail("expected task list")
+        }
+
+        // "first" is deleted externally; "second" now occupies the old offset.
+        try Data("- [ ] second\n".utf8).write(to: file)
+
+        do {
+            try await session.toggleTask(markerRange: firstMarker)
+            XCTFail("expected taskNotTogglable")
+        } catch SessionError.taskNotTogglable {
+            // Refused, as intended.
+        }
+
+        let onDisk = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertEqual(onDisk, "- [ ] second\n", "no marker should have been flipped")
+        let updated = await session.document
+        XCTAssertEqual(updated.stats.taskTotal, 1, "session republished fresh disk state")
+    }
+
     func testReloadFromDiskPicksUpExternalChange() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("quoin-tests-\(UUID().uuidString)")

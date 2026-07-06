@@ -233,20 +233,36 @@ public actor DocumentSession {
     /// byte-precise. If the file changed on disk since the last parse, it is
     /// re-read first and the toggle is re-validated against fresh content.
     public func toggleTask(markerRange: ByteRange) throws {
-        var base = document
+        let viewed = document
 
-        // Conflict rule: if disk moved under us, re-parse before writing.
+        // The offset the UI sent is only meaningful against the render the
+        // user clicked. Capture *which* task that was (by label + ordinal)
+        // before touching disk, so a shifted file can't reroute the toggle.
+        guard let intended = TaskLocator.identify(offset: markerRange.offset, in: viewed) else {
+            throw SessionError.taskNotTogglable
+        }
+
+        var base = viewed
+        var effectiveRange = markerRange
+
+        // Conflict rule: if disk moved under us, re-parse and re-anchor by
+        // identity — never by the stale offset.
         if let fileURL,
            let data = try? Data(contentsOf: fileURL),
            let diskSource = String(data: data, encoding: .utf8),
-           SHA256Hex.hash(of: diskSource) != base.sourceHash {
-            base = MarkdownConverter.parse(diskSource)
-            guard base.source.substring(in: ByteRange(offset: markerRange.offset, length: markerRange.length)) != nil else {
+           SHA256Hex.hash(of: diskSource) != viewed.sourceHash {
+            let fresh = MarkdownConverter.parse(diskSource)
+            guard let relocated = TaskLocator.relocate(intended, in: fresh) else {
+                // Can't prove which task the user meant. Surface the current
+                // truth so they re-click on accurate content, then refuse.
+                publish(fresh)
                 throw SessionError.taskNotTogglable
             }
+            base = fresh
+            effectiveRange = relocated
         }
 
-        let newSource = try TaskToggler.toggle(source: base.source, markerRange: markerRange)
+        let newSource = try TaskToggler.toggle(source: base.source, markerRange: effectiveRange)
 
         if let fileURL {
             do {
