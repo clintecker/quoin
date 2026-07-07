@@ -19,6 +19,10 @@ Initial extraction from [Quoin](https://github.com/clintecker/quoin).
   tints/pie slices/sankey bands across all types; render cache now keys on
   the full theme fingerprint (a same-appearance theme change previously
   could serve a stale cached render).
+- Performance/robustness audit: A* router's open set is a binary heap
+  (architecture fixture 22.4 -> 13.1 ms cold); render cache is bounded
+  (64 MB cost limit, NSCache pressure eviction) and wrapped Sendable; both
+  targets compile with ZERO warnings under -strict-concurrency=complete.
 - DocC documentation catalogs for both targets (Getting Started, Theming,
   Embedding in Text Views, Headless Layout, Scene Geometry and Linting,
   Adding a Diagram Type) + `.spi.yml` for Swift Package Index hosting.

@@ -236,17 +236,10 @@ extension DiagramLayoutEngine {
             // State = node * 3 + dir, dir: 0 none, 1 horizontal, 2 vertical.
             var gScore: [Int: CGFloat] = [startNode * 3: 0]
             var cameFrom: [Int: Int] = [:]
-            var open: [(f: CGFloat, key: Int)] = [(heuristic(startNode), startNode * 3)]
-            func popMin() -> Int? {
-                guard !open.isEmpty else { return nil }
-                var mi = 0
-                for i in 1..<open.count where open[i].f < open[mi].f { mi = i }
-                let k = open[mi].key
-                open.remove(at: mi)
-                return k
-            }
+            var open = AStarHeap()
+            open.push(f: heuristic(startNode), key: startNode * 3)
             var goalKey: Int?
-            while let cur = popMin() {
+            while let cur = open.popMin() {
                 let node = cur / 3, dir = cur % 3
                 if node == goalNode { goalKey = cur; break }
                 let g = gScore[cur] ?? .greatestFiniteMagnitude
@@ -264,7 +257,7 @@ extension DiagramLayoutEngine {
                     if g + cost < (gScore[key2] ?? .greatestFiniteMagnitude) {
                         gScore[key2] = g + cost
                         cameFrom[key2] = cur
-                        open.append((g + cost + heuristic(n2), key2))
+                        open.push(f: g + cost + heuristic(n2), key: key2)
                     }
                 }
             }
@@ -323,5 +316,41 @@ extension DiagramLayoutEngine {
             groups: groupBoxes,
             services: services,
             edges: edges)
+    }
+}
+
+/// A binary min-heap for the router's A* open set — the previous linear-scan
+/// pop made each extraction O(n) and dominated dense-diagram routing time.
+private struct AStarHeap {
+    private var items: [(f: CGFloat, key: Int)] = []
+
+    mutating func push(f: CGFloat, key: Int) {
+        items.append((f, key))
+        var i = items.count - 1
+        while i > 0 {
+            let parent = (i - 1) / 2
+            guard items[i].f < items[parent].f else { break }
+            items.swapAt(i, parent)
+            i = parent
+        }
+    }
+
+    mutating func popMin() -> Int? {
+        guard let first = items.first else { return nil }
+        let last = items.removeLast()
+        if !items.isEmpty {
+            items[0] = last
+            var i = 0
+            while true {
+                let left = 2 * i + 1, right = 2 * i + 2
+                var smallest = i
+                if left < items.count, items[left].f < items[smallest].f { smallest = left }
+                if right < items.count, items[right].f < items[smallest].f { smallest = right }
+                if smallest == i { break }
+                items.swapAt(i, smallest)
+                i = smallest
+            }
+        }
+        return first.key
     }
 }

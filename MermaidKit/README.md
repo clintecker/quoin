@@ -41,7 +41,7 @@ Embedding Mermaid today usually means shipping mermaid.js inside a
 `WKWebView`: a JS runtime per diagram, async round-trips, non-native text,
 and a web process in your memory footprint. MermaidKit renders the same
 source natively and synchronously — every diagram type below renders cold in
-**under 25 ms** on Apple silicon, most in **under 3 ms**, and results are
+**under 15 ms** on Apple silicon, most in **under 3 ms**, and results are
 cached per (source, appearance).
 
 |  | MermaidKit | mermaid.js + WKWebView | [BeautifulMermaid](https://github.com/lukilabs/beautiful-mermaid-swift) |
@@ -109,7 +109,7 @@ smaller). Measured by `RenderBenchmarks`, which fails CI if any type exceeds
 
 | Diagram | Cold render | Diagram | Cold render |
 |---|---:|---|---:|
-| architecture | 22.4 ms | packet | 0.2 ms |
+| architecture | 13.1 ms | packet | 0.2 ms |
 | block | 0.4 ms | pie | 0.3 ms |
 | c4 | 1.3 ms | quadrant | 0.3 ms |
 | class | 1.9 ms | radar | 0.2 ms |

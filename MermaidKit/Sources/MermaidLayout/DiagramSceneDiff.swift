@@ -64,7 +64,7 @@ extension DiagramScene {
         var d = SceneDelta(sizeBefore: size, sizeAfter: after.size)
         let beforeByID = Dictionary(nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let afterByID = Dictionary(after.nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
-        for (id, a) in afterByID where beforeByID[id] == nil { d.addedNodes.append(id) }
+        for (id, _) in afterByID where beforeByID[id] == nil { d.addedNodes.append(id) }
         for (id, b) in beforeByID {
             guard let a = afterByID[id] else { d.removedNodes.append(id); continue }
             let dx = a.midX - b.midX, dy = a.midY - b.midY

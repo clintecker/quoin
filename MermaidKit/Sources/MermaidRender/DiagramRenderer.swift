@@ -20,7 +20,23 @@ enum DiagramRenderer {
         init(image: PlatformImage) { self.image = image }
     }
 
-    private static let cache = NSCache<NSString, Entry>()
+    /// NSCache is documented thread-safe ("you can add, remove, and query
+    /// items in the cache from different threads without having to lock the
+    /// cache yourself") but predates Sendable; this wrapper carries that
+    /// guarantee into strict concurrency, and bounds the cache so a host
+    /// rendering many large diagrams can't accumulate unbounded image memory
+    /// (NSCache also evicts under system memory pressure).
+    private final class RenderCache: @unchecked Sendable {
+        private let store = NSCache<NSString, Entry>()
+        init(totalCostLimit: Int) { store.totalCostLimit = totalCostLimit }
+        func object(forKey key: NSString) -> Entry? { store.object(forKey: key) }
+        func setObject(_ entry: Entry, forKey key: NSString, cost: Int) {
+            store.setObject(entry, forKey: key, cost: cost)
+        }
+    }
+
+    /// ~64 MB of rendered diagrams (cost = estimated decoded bytes).
+    private static let cache = RenderCache(totalCostLimit: 64 << 20)
 
     /// A rendered attachment for mermaid source, or nil when the dialect
     /// isn't supported yet (caller keeps the styled-source fallback).
@@ -179,7 +195,8 @@ enum DiagramRenderer {
             }
             #endif
             entry = Entry(image: image)
-            cache.setObject(entry, forKey: key)
+            let pixels = Int(entry.image.size.width * entry.image.size.height)
+            cache.setObject(entry, forKey: key, cost: pixels * 4)
         }
 
         let attachment = NSTextAttachment()

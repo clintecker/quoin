@@ -30,7 +30,7 @@ public enum MermaidRenderer {
     /// The CoreText measurer the renderer itself uses — pass to
     /// `DiagramLayoutEngine.layout`/`DiagramScene.lower` so layout geometry and
     /// lint checks see the same text metrics the render does.
-    public static let textMeasurer: DiagramTextMeasurer = { text, size in
+    public static let textMeasurer: @Sendable (String, Double) -> CGSize = { text, size in
         DiagramRenderer.measure(text, size: CGFloat(size))
     }
 }
