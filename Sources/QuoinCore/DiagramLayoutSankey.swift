@@ -58,6 +58,37 @@ extension DiagramLayoutEngine {
         var columns: [[Int]] = Array(repeating: [], count: maxDepth + 1)
         for i in 0..<n { columns[depths[i]].append(i) }
 
+        // Crossing minimization: reorder each column by the barycenter of its
+        // neighbours' positions in the adjacent column, alternating forward and
+        // backward sweeps. Without this the columns keep their arbitrary
+        // first-appearance order and the bands weave over each other.
+        var outgoing: [[Int]] = Array(repeating: [], count: n)
+        for link in d.links {
+            if let s = index[link.source], let t = index[link.target] { outgoing[s].append(t) }
+        }
+        var posInCol = [Int](repeating: 0, count: n)
+        func recordPositions() {
+            for col in columns { for (k, i) in col.enumerated() { posInCol[i] = k } }
+        }
+        recordPositions()
+        func barycenter(_ i: Int, _ neighbours: [[Int]], inColumn c: Int) -> Double {
+            let ns = neighbours[i].filter { depths[$0] == c }
+            guard !ns.isEmpty else { return Double(posInCol[i]) }
+            return Double(ns.reduce(0) { $0 + posInCol[$1] }) / Double(ns.count)
+        }
+        if maxDepth >= 1 {
+            for _ in 0..<4 {
+                for c in 1...maxDepth {
+                    columns[c].sort { barycenter($0, incoming, inColumn: c - 1) < barycenter($1, incoming, inColumn: c - 1) }
+                    recordPositions()
+                }
+                for c in stride(from: maxDepth - 1, through: 0, by: -1) {
+                    columns[c].sort { barycenter($0, outgoing, inColumn: c + 1) < barycenter($1, outgoing, inColumn: c + 1) }
+                    recordPositions()
+                }
+            }
+        }
+
         // Choose a value→pixel scale so the busiest column fits a target height.
         let targetHeight: CGFloat = 360
         var maxColValue = 0.0001
@@ -110,16 +141,33 @@ extension DiagramLayoutEngine {
         // is always strictly greater than its source's; `ct - cs >= 2` is
         // exactly the set of column-skipping links.
         let clearY = topOffset - 6   // above every bar (bars start at topOffset)
-        var outOffset = [CGFloat](repeating: 0, count: n)
-        var inOffset = [CGFloat](repeating: 0, count: n)
-        var links: [SankeyLayout.Link] = []
-        for link in d.links {
+        // Stack each node's outgoing bands by their target's vertical position
+        // and incoming bands by their source's — so bands leave and arrive in
+        // the same order as the nodes they connect and don't cross at the bar
+        // edges (the second half of untangling, after the column ordering).
+        struct Flow { let li: Int; let s: Int; let t: Int; let w: CGFloat }
+        var flows: [Flow] = []
+        for (li, link) in d.links.enumerated() {
             guard let s = index[link.source], let t = index[link.target] else { continue }
-            let w = CGFloat(link.value) * scale
-            let sTop = rects[s].minY + outOffset[s]
-            let tTop = rects[t].minY + inOffset[t]
-            outOffset[s] += w
-            inOffset[t] += w
+            flows.append(Flow(li: li, s: s, t: t, w: CGFloat(link.value) * scale))
+        }
+        var sourceTopY = [Int: CGFloat](), targetTopY = [Int: CGFloat]()
+        var srcOffset = [CGFloat](repeating: 0, count: n), tgtOffset = [CGFloat](repeating: 0, count: n)
+        for s in 0..<n {
+            for f in flows.filter({ $0.s == s }).sorted(by: { rects[$0.t].midY < rects[$1.t].midY }) {
+                sourceTopY[f.li] = rects[s].minY + srcOffset[s]; srcOffset[s] += f.w
+            }
+        }
+        for t in 0..<n {
+            for f in flows.filter({ $0.t == t }).sorted(by: { rects[$0.s].midY < rects[$1.s].midY }) {
+                targetTopY[f.li] = rects[t].minY + tgtOffset[t]; tgtOffset[t] += f.w
+            }
+        }
+        var links: [SankeyLayout.Link] = []
+        for f in flows {
+            let s = f.s, t = f.t, w = f.w
+            let sTop = sourceTopY[f.li] ?? rects[s].minY
+            let tTop = targetTopY[f.li] ?? rects[t].minY
             let sourceCenter = CGPoint(x: rects[s].maxX, y: sTop + w / 2)
             let targetCenter = CGPoint(x: rects[t].minX, y: tTop + w / 2)
             let route: [CGPoint]
