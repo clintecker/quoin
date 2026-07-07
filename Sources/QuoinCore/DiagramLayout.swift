@@ -739,6 +739,47 @@ public enum DiagramLayoutEngine {
             routes.append(points)
         }
 
+        // Push horizontal runs out of box bands. A cross-layer edge's jog is
+        // placed at the midpoint between its dummy and the target, which for a
+        // TALL intermediate box lands inside it (class "contains" jogging at
+        // y=272 through Customer, whose band is y179–300). Move any interior
+        // horizontal segment that crosses a box to the nearest clear y — the
+        // connecting vertical legs sit in dummy channels, so lengthening them
+        // stays clear. Routes with no crossing are untouched.
+        let realFrames = ids.compactMap { dummies.contains($0) ? nil : frames[$0] }
+        for ri in routes.indices {
+            var pts = routes[ri]
+            guard pts.count >= 4 else { continue }
+            var i = 1
+            while i < pts.count - 2 {
+                let a = pts[i], b = pts[i + 1]
+                if abs(a.y - b.y) < 0.5 && abs(a.x - b.x) > 1 {
+                    let lo = min(a.x, b.x) + 2, hi = max(a.x, b.x) - 2
+                    let pad: CGFloat = 16
+                    func crosses(_ yy: CGFloat) -> Bool {
+                        realFrames.contains { $0.minY + 2 < yy && $0.maxY - 2 > yy && $0.minX < hi && $0.maxX > lo }
+                    }
+                    // A destination y must clear every crossed box by `pad`, so the
+                    // run sits well inside the gap rather than skimming a border.
+                    func clearWithPadding(_ yy: CGFloat) -> Bool {
+                        !realFrames.contains { $0.minY - pad < yy && $0.maxY + pad > yy && $0.minX < hi && $0.maxX > lo }
+                    }
+                    if crosses(a.y) {
+                        var moved: CGFloat?
+                        var d: CGFloat = 4
+                        while d <= 300 {
+                            for cand in [a.y + d, a.y - d] where clearWithPadding(cand) { moved = cand; break }
+                            if moved != nil { break }
+                            d += 4
+                        }
+                        if let ny = moved { pts[i].y = ny; pts[i + 1].y = ny }
+                    }
+                }
+                i += 1
+            }
+            routes[ri] = pts
+        }
+
         // Same guarantee the flowchart router gives: no two edges' runs may
         // coincide on one track. Catches long/back-edge channels that land on a
         // box column (the antiparallel block above only covers adjacent pairs).

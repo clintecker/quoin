@@ -22,7 +22,7 @@ final class LayoutLintTests: XCTestCase {
         "flowchart", "sequence", "gantt", "journey", "kanban", "mindmap",
         "packet", "radar", "timeline", "treemap", "zenuml", "state",
         "block", "c4", "gitgraph", "pie", "quadrant", "requirement",
-        "sankey", "xychart", "er",
+        "sankey", "xychart", "er", "class",
     ]
 
     /// Known layout debt — edges routed through their own endpoint boxes. These
@@ -31,7 +31,7 @@ final class LayoutLintTests: XCTestCase {
     /// them. The routing needs to connect on the side facing the target instead
     /// of crossing the box to escape.
     private let knownIssues: Set<String> = [
-        "architecture", "class",
+        "architecture",
     ]
 
     private var fixturesDir: URL {
