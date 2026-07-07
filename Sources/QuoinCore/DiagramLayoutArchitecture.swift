@@ -42,10 +42,10 @@ extension DiagramLayoutEngine {
 
     public static func layout(_ diagram: ArchitectureDiagram, measure: DiagramTextMeasurer) -> ArchitectureLayout {
         let margin: CGFloat = 16
-        let groupGap: CGFloat = 24
-        let groupPad: CGFloat = 14
+        let groupGap: CGFloat = 30
+        let groupPad: CGFloat = 16
         let headerHeight: CGFloat = 22
-        let serviceGap: CGFloat = 18
+        let serviceGap: CGFloat = 30
         let boxH: CGFloat = 54
         let junctionSize: CGFloat = 16
         let maxRowWidth: CGFloat = 780
@@ -189,8 +189,8 @@ extension DiagramLayoutEngine {
         // wire leaves its source border by a short stub, then threads the
         // channels between boxes via a lattice A* so no segment cuts through a
         // box that isn't one of its own endpoints.
-        let clearance: CGFloat = 4
-        let stub: CGFloat = 8
+        let clearance: CGFloat = 9
+        let stub: CGFloat = 10
 
         let allObstacles: [(id: String, rect: CGRect)] =
             serviceFrames.map { ($0.key, $0.value) }
