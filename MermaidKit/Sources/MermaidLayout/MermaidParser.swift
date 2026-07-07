@@ -29,6 +29,36 @@ public enum MermaidDiagram: Hashable, Sendable {
     case c4(C4Diagram)
     case architecture(ArchitectureDiagram)
     case block(BlockDiagram)
+
+    /// A human-readable name for the diagram's type ("flowchart",
+    /// "sequence", …) — for accessibility labels, telemetry, and captions.
+    public var typeName: String {
+        switch self {
+        case .flowchart: return "flowchart"
+        case .sequence: return "sequence"
+        case .pie: return "pie chart"
+        case .classDiagram: return "class"
+        case .er: return "entity relationship"
+        case .state: return "state"
+        case .gantt: return "gantt"
+        case .timeline: return "timeline"
+        case .mindmap: return "mind map"
+        case .journey: return "user journey"
+        case .quadrant: return "quadrant chart"
+        case .packet: return "packet"
+        case .xychart: return "xy chart"
+        case .kanban: return "kanban"
+        case .radar: return "radar chart"
+        case .treemap: return "treemap"
+        case .gitGraph: return "git graph"
+        case .sankey: return "sankey"
+        case .requirement: return "requirement"
+        case .zenuml: return "zenuml sequence"
+        case .c4: return "C4"
+        case .architecture: return "architecture"
+        case .block: return "block"
+        }
+    }
 }
 
 // MARK: - Parser

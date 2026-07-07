@@ -7,13 +7,25 @@ Mermaid diagram types with pure Swift and CoreGraphics.
 ```swift
 import MermaidRender
 
+struct ReleaseFlow: View {
+    var body: some View {
+        MermaidView("""
+        flowchart TD
+            A[Start] --> B{Choice}
+            B -->|yes| C[Do it]
+            B -->|no| D[Skip]
+        """)
+    }
+}
+```
+
+`MermaidView` follows the environment's light/dark scheme, sizes to the
+diagram (scaling down, never up), and degrades unrecognized sources to
+readable monospaced text. Prefer images? One call:
+
+```swift
 let image = MermaidRenderer.image(
-    source: """
-    flowchart TD
-        A[Start] --> B{Choice}
-        B -->|yes| C[Do it]
-        B -->|no| D[Skip]
-    """,
+    source: "sequenceDiagram\n  Alice->>Bob: Hello",
     theme: DiagramTheme(prefersDark: false)
 )
 ```
@@ -60,6 +72,8 @@ regressions fail CI as *geometry*, not as pixel diffs.
 
 ## Usage notes
 
+- `MermaidView(source, theme:)` — SwiftUI drop-in; theme defaults to the
+  environment color scheme.
 - `MermaidRenderer.image(source:theme:)` — one-shot render, auto-sized.
 - `MermaidRenderer.attachmentString(source:theme:)` — the diagram as a
   single-attachment `NSAttributedString` for embedding in text views.
