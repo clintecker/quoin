@@ -129,6 +129,8 @@ cache. Input is bounded the same way mermaid.js bounds it
 (`MermaidParser.maxTextSize` = 50k chars, `maxEdges` = 500) — oversized
 sources return `nil` fast instead of feeding a super-linear layout.
 
+Swift 6 language mode, zero concurrency warnings.
+
 ## Robustness
 
 The parser and layout engines never crash on hostile input — empty/garbage
@@ -171,7 +173,9 @@ layout. Contributions welcome.
 - `DiagramTheme` — 7 colors + a categorical `palette` (node tints, pie
   slices, sankey bands…); override the palette to re-skin all 23 types at
   once. See the Theming article in the DocC docs.
-- `MermaidRenderer.image(source:theme:)` — one-shot render, auto-sized.
+- `MermaidRenderer.image(source:theme:)` — one-shot render, auto-sized;
+  an `async` twin renders off the calling thread (in async contexts Swift
+  resolves to it automatically).
 - `MermaidRenderer.attachmentString(source:theme:)` — the diagram as a
   single-attachment `NSAttributedString` for embedding in text views.
 - `MermaidRenderer.textMeasurer` — the renderer's own CoreText measurer;

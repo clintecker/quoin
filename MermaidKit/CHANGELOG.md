@@ -19,6 +19,9 @@ Initial extraction from [Quoin](https://github.com/clintecker/quoin).
   tints/pie slices/sankey bands across all types; render cache now keys on
   the full theme fingerprint (a same-appearance theme change previously
   could serve a stale cached render).
+- Swift 6 language mode (swift-tools-version 6.0), zero warnings; async
+  `MermaidRenderer.image(source:theme:)` twin renders off the calling
+  thread via `sending`.
 - `MermaidParser.diagnose(_:)`: human-readable parse failures with 1-based
   line numbers, cap explanations, and did-you-mean header suggestions.
 - Performance/robustness audit: A* router's open set is a binary heap

@@ -52,6 +52,22 @@ final class MermaidViewTests: XCTestCase {
         XCTAssertNotEqual(a, b, "palette override must change the output")
     }
 
+    /// The async variant renders off-thread and returns the same result as
+    /// the sync path (they share cache and pipeline).
+    func testAsyncImageMatchesSync() async throws {
+        let source = "flowchart TD\n A --> B"
+        let theme = DiagramTheme(prefersDark: false)
+        // Pin the sync overload via a non-async closure: in an async context
+        // Swift resolves `MermaidRenderer.image` to the async twin.
+        let syncImage: PlatformImage? = { MermaidRenderer.image(source: source, theme: theme) }()
+        let sync = try XCTUnwrap(syncImage)
+        let asyncResult: PlatformImage? = await MermaidRenderer.image(source: source, theme: theme)
+        let rendered = try XCTUnwrap(asyncResult)
+        XCTAssertEqual(sync.size, rendered.size)
+        let missing: PlatformImage? = await MermaidRenderer.image(source: "nonesuch", theme: theme)
+        XCTAssertNil(missing)
+    }
+
     func testTypeNameCoversAllCases() throws {
         let flowchart = try XCTUnwrap(MermaidParser.parse("flowchart TD\n  A --> B"))
         XCTAssertEqual(flowchart.typeName, "flowchart")

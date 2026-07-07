@@ -21,6 +21,18 @@ public enum MermaidRenderer {
         return attachment.image
     }
 
+    /// Renders off the calling thread — the async twin of
+    /// ``image(source:theme:)`` for hosts batching many diagrams or staying
+    /// paranoid about main-thread time (a single cold render is single-digit
+    /// milliseconds for most types; the worst dense fixture is ~13 ms).
+    /// Shares the same render cache.
+    public static func image(source: String, theme: DiagramTheme) async -> sending PlatformImage? {
+        let task = Task.detached(priority: .userInitiated) { () -> sending PlatformImage? in
+            image(source: source, theme: theme)
+        }
+        return await task.value
+    }
+
     /// The diagram as a single-attachment attributed string, for embedding in
     /// a text view (how Quoin's editor consumes it). Nil when not Mermaid.
     public static func attachmentString(source: String, theme: DiagramTheme) -> NSAttributedString? {

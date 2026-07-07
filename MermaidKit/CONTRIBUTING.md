@@ -30,6 +30,18 @@ layout linter.
 - Regenerate README images with `scripts/gen-gallery.sh` when a fix changes
   how a fixture renders.
 
+## API stability stance
+
+The wide public surface — every model and layout struct — is deliberate:
+headless geometry is a feature, not leakage. The deal that keeps it from
+becoming a semver trap:
+
+- Pre-1.0, minor versions may reshape model/layout fields (they follow the
+  diagrams' needs); the *entry points* (`MermaidParser.parse`/`diagnose`,
+  `DiagramLayoutEngine.layout`, `DiagramScene.lower`, `DiagramLayoutLinter`,
+  `MermaidRenderer`, `MermaidView`, `DiagramTheme`) stay stable.
+- Post-1.0, model/field changes are semver-major.
+
 ## Most-wanted
 
 - Syntax-coverage gaps in existing types (bring the diagram that broke).
