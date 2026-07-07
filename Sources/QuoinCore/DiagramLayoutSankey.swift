@@ -115,68 +115,15 @@ extension DiagramLayoutEngine {
         let originX = margin + leftRoom
         let topOffset = margin
 
-        // Place node bars. Start each column centered and stacked, then RELAX
-        // node y-positions toward the flow-weighted centre of their neighbours
-        // (d3-sankey coordinate assignment), resolving overlaps after each
-        // pass. Ordering alone leaves steep diagonal bands; this is the step
-        // that makes flows run horizontally and the diagram read cleanly.
-        let top = topOffset
-        let bottom = topOffset + contentHeight
-        var inWeighted: [[(Int, CGFloat)]] = Array(repeating: [], count: n)
-        var outWeighted: [[(Int, CGFloat)]] = Array(repeating: [], count: n)
-        for link in d.links {
-            guard let s = index[link.source], let t = index[link.target] else { continue }
-            outWeighted[s].append((t, CGFloat(link.value)))
-            inWeighted[t].append((s, CGFloat(link.value)))
-        }
-        var centerY = [CGFloat](repeating: 0, count: n)
-        for (c, col) in columns.enumerated() {
-            var y = top + (contentHeight - colHeights[c]) / 2
-            for i in col { centerY[i] = y + barHeight(i) / 2; y += barHeight(i) + nodeGap }
-        }
-        func resolveCollisions(_ col: [Int]) {
-            let ordered = col.sorted { centerY[$0] < centerY[$1] }
-            var y = top
-            for i in ordered {
-                let half = barHeight(i) / 2
-                if centerY[i] - half < y { centerY[i] = y + half }
-                y = centerY[i] + half + nodeGap
-            }
-            y = bottom
-            for i in ordered.reversed() {
-                let half = barHeight(i) / 2
-                if centerY[i] + half > y { centerY[i] = y - half }
-                y = centerY[i] - half - nodeGap
-            }
-        }
-        func weightedCentre(_ links: [(Int, CGFloat)]) -> CGFloat? {
-            let total = links.reduce(CGFloat(0)) { $0 + $1.1 }
-            guard total > 0 else { return nil }
-            return links.reduce(CGFloat(0)) { $0 + centerY[$1.0] * $1.1 } / total
-        }
-        if maxDepth >= 1 {
-            for iter in 0..<16 {
-                let alpha: CGFloat = 0.9 * pow(0.97, CGFloat(iter))
-                for c in 1...maxDepth {
-                    for i in columns[c] where !inWeighted[i].isEmpty {
-                        if let ty = weightedCentre(inWeighted[i]) { centerY[i] += (ty - centerY[i]) * alpha }
-                    }
-                    resolveCollisions(columns[c])
-                }
-                for c in stride(from: maxDepth - 1, through: 0, by: -1) {
-                    for i in columns[c] where !outWeighted[i].isEmpty {
-                        if let ty = weightedCentre(outWeighted[i]) { centerY[i] += (ty - centerY[i]) * alpha }
-                    }
-                    resolveCollisions(columns[c])
-                }
-            }
-        }
+        // Place node bars: each column centered vertically, stacked downward.
         var rects = [CGRect](repeating: .zero, count: n)
         for (c, col) in columns.enumerated() {
             let colX = originX + CGFloat(c) * columnSpacing
+            var y = topOffset + (contentHeight - colHeights[c]) / 2
             for i in col {
                 let h = barHeight(i)
-                rects[i] = CGRect(x: colX, y: centerY[i] - h / 2, width: thickness, height: h)
+                rects[i] = CGRect(x: colX, y: y, width: thickness, height: h)
+                y += h + nodeGap
             }
         }
 
