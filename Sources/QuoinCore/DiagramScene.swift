@@ -9,8 +9,8 @@ import CoreGraphics
 /// `DiagramScene`; the `DiagramLayoutLinter` then reasons over the geometry to
 /// find layout problems (edges behind nodes, overlaps, clipping) exactly,
 /// where staring at a rendered PNG is unreliable.
-public struct DiagramScene: Sendable {
-    public struct Node: Sendable {
+public struct DiagramScene: Sendable, Codable {
+    public struct Node: Sendable, Codable {
         public let id: String
         public let frame: CGRect
         /// A group / subgraph / composite container legitimately *contains*
@@ -23,7 +23,7 @@ public struct DiagramScene: Sendable {
         }
     }
 
-    public struct Edge: Sendable {
+    public struct Edge: Sendable, Codable {
         /// The routed polyline, endpoint to endpoint.
         public let polyline: [CGPoint]
         public let label: String?
@@ -36,7 +36,7 @@ public struct DiagramScene: Sendable {
     /// A *free-standing* label only — an edge label, axis label, legend entry,
     /// section title. A node's own centred label is implicit in its Node and
     /// must NOT be listed here (it can never "collide" with its own box).
-    public struct Label: Sendable {
+    public struct Label: Sendable, Codable {
         public let text: String
         public let frame: CGRect
         public init(text: String, frame: CGRect) {
