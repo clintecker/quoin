@@ -94,6 +94,10 @@ that way.
 
 ### Diagrams (Mermaid)
 
+**All 23 diagram types render natively** — zero JavaScript, zero network. See
+the **[diagram gallery](docs/diagram-gallery.md)** for a simple and a complex
+example of every type, each drawn by Quoin's own engine.
+
 | Type | Status | Notes |
 | :--- | :---: | :--- |
 | Flowchart / graph | ✅ | layered placement, fan-out attachment, back-edges routed around the band |
