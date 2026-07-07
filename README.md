@@ -113,7 +113,12 @@ that way.
 | Radar | ✅ | spoked graticule, overlaid curve polygons, legend |
 | Treemap | ✅ | squarified nested rectangles, group headers, values |
 | GitGraph | ✅ | commit lanes, branch/merge curves, tags |
-| requirement, C4, sankey, block, architecture, … | 🟡 | tidy labelled source card |
+| Requirement | ✅ | UML requirement/element boxes, verb-labelled relations |
+| Sankey | ✅ | depth-columned flow diagram, proportional bands |
+| C4 (Context/Container/…) | ✅ | person/system/external boxes, tagged relations |
+| Architecture | ✅ | grouped service boxes, side-anchored edges |
+| Block | ✅ | column grid, block shapes, connectors |
+| ZenUML | ✅ | UML sequence (alternate syntax) |
 
 ### Editor & app
 

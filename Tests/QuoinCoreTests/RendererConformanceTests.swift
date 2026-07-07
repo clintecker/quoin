@@ -144,6 +144,12 @@ final class RendererConformanceTests: XCTestCase {
         case .radar(let r): return DiagramLayoutEngine.layout(r, measure: measure).size
         case .treemap(let t): return DiagramLayoutEngine.layout(t, measure: measure).size
         case .gitGraph(let g): return DiagramLayoutEngine.layout(g, measure: measure).size
+        case .sankey(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
+        case .requirement(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
+        case .zenuml(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
+        case .c4(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
+        case .architecture(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
+        case .block(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
         }
     }
 

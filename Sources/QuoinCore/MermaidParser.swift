@@ -23,6 +23,12 @@ public enum MermaidDiagram: Hashable, Sendable {
     case radar(RadarChart)
     case treemap(Treemap)
     case gitGraph(GitGraph)
+    case sankey(SankeyDiagram)
+    case requirement(RequirementDiagram)
+    case zenuml(ZenUML)
+    case c4(C4Diagram)
+    case architecture(ArchitectureDiagram)
+    case block(BlockDiagram)
 }
 
 // MARK: - Parser
@@ -92,6 +98,24 @@ public enum MermaidParser {
         }
         if header.hasPrefix("gitGraph") {
             return parseGitGraph(body: Array(lines.dropFirst())).map { .gitGraph($0) }
+        }
+        if header.hasPrefix("sankey") {
+            return parseSankey(body: Array(lines.dropFirst())).map { .sankey($0) }
+        }
+        if header.hasPrefix("requirementDiagram") {
+            return parseRequirement(body: Array(lines.dropFirst())).map { .requirement($0) }
+        }
+        if header.hasPrefix("zenuml") {
+            return parseZenUML(body: Array(lines.dropFirst())).map { .zenuml($0) }
+        }
+        if header.hasPrefix("C4") {
+            return parseC4(body: Array(lines.dropFirst())).map { .c4($0) }
+        }
+        if header.hasPrefix("architecture") {
+            return parseArchitecture(body: Array(lines.dropFirst())).map { .architecture($0) }
+        }
+        if header.hasPrefix("block-beta") {
+            return parseBlock(body: Array(lines.dropFirst())).map { .block($0) }
         }
         return nil
     }

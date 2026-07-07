@@ -246,6 +246,79 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("requirement", """
+        requirementDiagram
+            requirement commonmark_core {
+              id: R-CORE-001
+              text: Preserve CommonMark block and inline semantics.
+              risk: high
+              verifymethod: test
+            }
+            functionalRequirement gfm_tables {
+              id: R-GFM-002
+              text: Support GFM tables and task lists.
+              risk: medium
+              verifymethod: inspection
+            }
+            element renderer {
+              type: simulation
+            }
+            renderer - satisfies -> commonmark_core
+            gfm_tables - derives -> commonmark_core
+        """),
+        ("sankey", """
+        sankey-beta
+        Source Markdown,Parse Blocks,35
+        Source Markdown,Parse Inline,25
+        Parse Blocks,GFM Extensions,12
+        Parse Blocks,Mermaid Render,18
+        Parse Inline,MathJax Typeset,16
+        GFM Extensions,Sanitize,10
+        Mermaid Render,Sanitize,15
+        MathJax Typeset,Sanitize,13
+        Sanitize,DOM Commit,30
+        """),
+        ("block", """
+        block-beta
+            columns 4
+            source["Markdown source"] parser["Parser"] ast(("AST")) planner["Render planner"]
+            mermaid["Mermaid"] mathjax["MathJax"] html["HTML"] css["CSS"]
+            source --> parser
+            parser --> ast
+            ast --> planner
+            planner --> mermaid
+            planner --> mathjax
+        """),
+        ("architecture", """
+        architecture-beta
+            group app(cloud)[Renderer Application]
+            group data(database)[Local Data]
+            service ui(server)[Preview UI] in app
+            service worker(server)[Parser Worker] in app
+            service cache(database)[Preview Cache] in data
+            service files(disk)[Markdown Files] in data
+            ui:R --> L:worker
+            worker:B --> T:cache
+            files:T --> B:worker
+        """),
+        ("zenuml", """
+        zenuml
+            title Order Service
+            @Actor Client
+            Client->OrderService.create()
+            OrderService->DB.save()
+            DB->OrderService: ok
+            OrderService->Client: created
+        """),
+        ("c4", """
+        C4Context
+            title System Context — Internet Banking
+            Person(customer, "Banking Customer", "A customer of the bank")
+            System(banking, "Internet Banking", "Lets customers view accounts")
+            System_Ext(email, "E-mail System", "Sendmail")
+            Rel(customer, banking, "Uses")
+            Rel(banking, email, "Sends mail", "SMTP")
+        """),
         ("gitgraph", """
         gitGraph
             commit id: "init"

@@ -133,9 +133,9 @@ final class MathAndDiagramTests: XCTestCase {
     func testUnsupportedDiagramReturnsNilSoRendererFallsBack() {
         // A dialect the parser doesn't model returns nil from the parser, so
         // the renderer keeps the fenced source card.
-        XCTAssertNil(MermaidParser.parse("sankey-beta\n  A,B,5"))
+        XCTAssertNil(MermaidParser.parse("nonesuchDiagram\n  a --> b"))
         XCTAssertNil(DiagramRenderer.attachmentString(
-            source: "sankey-beta\n  A,B,5", theme: theme
+            source: "nonesuchDiagram\n  a --> b", theme: theme
         ), "an unmodeled dialect must return nil so the renderer keeps the source card")
     }
 
@@ -156,8 +156,8 @@ final class MathAndDiagramTests: XCTestCase {
 
         let fallback = renderer.render(MarkdownConverter.parse("""
         ```mermaid
-        sankey-beta
-            A,B,5
+        nonesuchDiagram
+            a --> b
         ```
         """))
         assertHasCodeCanvas(fallback.attributed, label: "unsupported diagram fallback")

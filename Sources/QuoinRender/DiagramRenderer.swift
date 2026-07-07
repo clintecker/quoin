@@ -117,6 +117,30 @@ enum DiagramRenderer {
                 size = layout.size
                 edgePolylines = layout.edges.map { [$0.from, $0.to] }
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .sankey(let d):
+                let layout = DiagramLayoutEngine.layout(d, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .requirement(let d):
+                let layout = DiagramLayoutEngine.layout(d, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .zenuml(let d):
+                let layout = DiagramLayoutEngine.layout(d, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .c4(let d):
+                let layout = DiagramLayoutEngine.layout(d, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .architecture(let d):
+                let layout = DiagramLayoutEngine.layout(d, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .block(let d):
+                let layout = DiagramLayoutEngine.layout(d, measure: measure)
+                size = layout.size
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 
