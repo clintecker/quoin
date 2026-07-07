@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a requirement layout to the common scene IR: requirement and
+    /// element blocks are plain nodes, relationships are orthogonal edges,
+    /// and each verb becomes a free-standing Label at the route's arc-length
+    /// midpoint, clamped on-canvas.
     static func from(_ layout: RequirementLayout) -> DiagramScene {
         // Each requirement / element block is a visible box (stereotype + name +
         // detail rows). A box does not *contain* other diagram nodes, so it is a

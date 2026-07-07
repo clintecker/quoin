@@ -8,6 +8,7 @@ import CoreGraphics
 /// cluster, and orthogonal wires routed between named sides. Pure geometry.
 public struct ArchitectureLayout: Sendable {
 
+    /// A service box (or a small junction dot when `isJunction`).
     public struct ServiceBox: Sendable {
         public let frame: CGRect
         public let label: String
@@ -17,6 +18,7 @@ public struct ArchitectureLayout: Sendable {
         public let colorIndex: Int
     }
 
+    /// A tinted group container drawn behind its member services.
     public struct GroupBox: Sendable {
         public let frame: CGRect
         /// Header baseline anchor (left edge, vertical center of the title row).
@@ -26,9 +28,11 @@ public struct ArchitectureLayout: Sendable {
         public let colorIndex: Int
     }
 
+    /// A wire between two services.
     public struct Edge: Sendable {
         /// Orthogonal polyline, border anchor to border anchor.
         public let points: [CGPoint]
+        /// Draw an arrowhead at the last point.
         public let arrow: Bool
     }
 
@@ -40,6 +44,11 @@ public struct ArchitectureLayout: Sendable {
 
 extension DiagramLayoutEngine {
 
+    /// Lays out an architecture diagram: group containers row-wrapped across
+    /// the canvas with member services grid-packed inside each (ungrouped
+    /// services form a borderless cluster), and wires routed by an
+    /// obstacle-avoiding orthogonal A* so no segment crosses a non-endpoint
+    /// box. Pure geometry — the renderer only draws.
     public static func layout(_ diagram: ArchitectureDiagram, measure: DiagramTextMeasurer) -> ArchitectureLayout {
         let margin: CGFloat = 16
         let groupGap: CGFloat = 30

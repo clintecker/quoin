@@ -4,6 +4,9 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers an ER layout to the common scene IR: entity boxes are plain
+    /// nodes, relationships are orthogonal edges, and each relationship verb
+    /// becomes a free-standing Label at the route's arc-length midpoint.
     static func from(_ layout: ERLayout) -> DiagramScene {
         // Each entity is a visible box (name compartment + attribute rows). It
         // does not *contain* other diagram nodes, so it is a plain node subject

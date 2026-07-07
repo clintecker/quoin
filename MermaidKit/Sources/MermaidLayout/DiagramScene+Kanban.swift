@@ -4,6 +4,9 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a kanban layout to the common scene IR: column header bands are
+    /// containers and cards are plain nodes. All text is node-internal, so
+    /// there are no edges and no free-standing labels.
     static func from(_ layout: KanbanLayout) -> DiagramScene {
         var nodes: [DiagramScene.Node] = []
 

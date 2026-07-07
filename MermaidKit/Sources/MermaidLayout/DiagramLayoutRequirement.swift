@@ -10,6 +10,7 @@ import CoreGraphics
 /// only draws.
 public struct RequirementLayout: Sendable {
 
+    /// A requirement or element box.
     public struct Box: Sendable {
         public let frame: CGRect
         /// Stereotype line, e.g. "«requirement»" or "«element»".
@@ -21,13 +22,16 @@ public struct RequirementLayout: Sendable {
         public let colorIndex: Int
     }
 
+    /// A relation connector, labelled with its verb (e.g. "satisfies").
     public struct Edge: Sendable {
         /// The routed orthogonal polyline, source-box edge to dest-box edge,
         /// threaded through the empty channels between node rows/columns so it
         /// never crosses a non-endpoint box.
         public let points: [CGPoint]
         public let label: String
+        /// First route point, on the source box's edge.
         public var from: CGPoint { points.first ?? .zero }
+        /// Last route point, on the dest box's edge.
         public var to: CGPoint { points.last ?? .zero }
     }
 
@@ -38,6 +42,10 @@ public struct RequirementLayout: Sendable {
 
 extension DiagramLayoutEngine {
 
+    /// Lays out a requirement diagram: requirement then element boxes in a
+    /// grid of at most three columns, relations routed through the clear
+    /// row/column gutters with the relation verb as the edge label. Pure
+    /// geometry — the renderer only draws.
     public static func layout(_ diagram: RequirementDiagram, measure: DiagramTextMeasurer) -> RequirementLayout {
         let margin: CGFloat = 16
         let boxWidth: CGFloat = 204

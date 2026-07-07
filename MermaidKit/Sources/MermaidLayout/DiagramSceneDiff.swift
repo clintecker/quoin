@@ -11,18 +11,28 @@ import CoreGraphics
 /// (which sees a heatmap but no meaning) and above a rendered PNG (which I
 /// read unreliably).
 public struct SceneDelta: Sendable {
+    /// Nodes present in both scenes whose centers moved more than
+    /// `moveEpsilon`; `delta` is the center displacement in points.
     public var movedNodes: [(id: String, delta: CGVector)] = []
+    /// Node ids present only in the after scene.
     public var addedNodes: [String] = []
+    /// Node ids present only in the before scene.
     public var removedNodes: [String] = []
+    /// Count of index-matched edges whose polylines differ: a vertex moved
+    /// more than `moveEpsilon`, or the vertex count changed.
     public var reroutedEdges: Int = 0
+    /// Canvas size of the before scene, in points.
     public var sizeBefore: CGSize
+    /// Canvas size of the after scene, in points.
     public var sizeAfter: CGSize
 
+    /// True when nothing moved, appeared, disappeared, rerouted, or resized.
     public var isEmpty: Bool {
         movedNodes.isEmpty && addedNodes.isEmpty && removedNodes.isEmpty
             && reroutedEdges == 0 && sizeBefore == sizeAfter
     }
 
+    /// One-line human summary, e.g. "+2 nodes · 3 nodes moved (max 14pt)".
     public var summary: String {
         if isEmpty { return "no scene change" }
         var parts: [String] = []
@@ -40,14 +50,20 @@ public struct SceneDelta: Sendable {
     }
 }
 
+/// The lint-violation change between two scenes — which layout problems a
+/// code change fixed and which it introduced.
 public struct LintDelta: Sendable {
     /// Violations present before but gone after — fixes.
     public let cleared: [LayoutViolation]
     /// Violations present after but not before — regressions.
     public let introduced: [LayoutViolation]
+    /// Error-severity violation count in the before scene.
     public let errorsBefore: Int
+    /// Error-severity violation count in the after scene.
     public let errorsAfter: Int
 
+    /// One-line judgment on error counts alone: fixed (now zero), regressed
+    /// (new errors introduced), improved (some cleared), or no error change.
     public var verdict: String {
         let clearedErr = cleared.filter { $0.severity == .error }.count
         let newErr = introduced.filter { $0.severity == .error }.count
@@ -60,6 +76,8 @@ public struct LintDelta: Sendable {
 
 extension DiagramScene {
     /// Structured scene diff, matching nodes by id and edges by index.
+    /// Movement at or below `moveEpsilon` (points, default 1) is ignored,
+    /// both for node centers and edge vertices.
     public func delta(to after: DiagramScene, moveEpsilon: CGFloat = 1) -> SceneDelta {
         var d = SceneDelta(sizeBefore: size, sizeAfter: after.size)
         let beforeByID = Dictionary(nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })

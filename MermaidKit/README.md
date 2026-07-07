@@ -70,7 +70,8 @@ docs' primary examples, which is what the dense fixtures in
 mermaid.js, and the failure mode is deliberate:
 
 - **Unknown diagram dialects** → `MermaidParser.parse` returns `nil`; hosts
-  show the fenced source (that's what `MermaidView` does).
+  show the fenced source (that's what `MermaidView` does), and
+  `MermaidParser.diagnose` explains why — with a did-you-mean for typos.
 - **Styling/interaction directives** (`%%{init:}%%`, `classDef`/`class`,
   `style`, `linkStyle`, `click`) → **ignored, not fatal**: the diagram still
   parses and renders with MermaidKit's own theme. Ditto comments (`%%`).
@@ -178,6 +179,8 @@ layout. Contributions welcome.
   want layout or lint geometry to match the render exactly.
 - `MermaidParser.parse(_:)`, `MermaidDiagram.typeName`, and the per-type
   layout engines are public for hosts that want geometry without pixels.
+- `MermaidParser.diagnose(_:)` — why a source failed to parse, with line
+  numbers and did-you-mean suggestions for typo'd headers.
 
 ## Documentation
 

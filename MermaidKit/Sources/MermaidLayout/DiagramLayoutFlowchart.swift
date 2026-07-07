@@ -22,6 +22,12 @@ extension DiagramLayoutEngine {
     /// Track spacing for concurrent edge jogs crossing the same layer gap.
     private static let flowchartJogTrack: CGFloat = 10
 
+    /// Lays out a flowchart with the layered (Sugiyama/dagre-style) pipeline:
+    /// cycle-safe layer assignment, dummy-node channels for long edges,
+    /// barycenter ordering, Brandes–Köpf cross coordinates, orthogonal edge
+    /// routing, and collision-scored edge-label placement. Layers stack
+    /// top-down, or left-to-right for an LR/RL chart. Pure geometry — the
+    /// renderer only draws.
     public static func layout(_ chart: Flowchart, measure: DiagramTextMeasurer) -> FlowchartLayout {
         let horizontal = chart.direction == .leftRight || chart.direction == .rightLeft
 
@@ -262,20 +268,17 @@ extension DiagramLayoutEngine {
         return (frames, mainOffset - layerGap + margin, crossExtent)
     }
 
-    /// Routes each edge as a polyline. Forward edges attach at points
-    /// distributed across each node's face — fanned out by the other
-    /// endpoint's cross position so sibling edges never share a stub — and
-    /// projected onto the node's actual outline (diamonds/circles) so they
-    /// don't float off a bounding-box corner. Back edges (cycles) route around
-    /// the node band in a private lane so they never overwrite the forward
-    /// flow; that lane can push the cross dimension out, so the grown
-    /// `crossLimit` is returned alongside the edges.
     /// Routes every edge through its dummy-node waypoint chain. The exit/enter
     /// faces and direction come from the chain's geometry, so forward edges
     /// leave the bottom and enter the top while back edges go the other way;
     /// intermediate dummy centers become the bend points. Because the dummies
     /// reserved channel space in placement, the resulting polyline runs
-    /// between the nodes it crosses rather than under them.
+    /// between the nodes it crosses rather than under them. Attach points are
+    /// fanned across each node face so sibling edges never share a stub, and
+    /// projected onto the node's actual outline (diamonds/circles) so they
+    /// don't float off a bounding-box corner. Routes can push the cross
+    /// dimension out, so the grown `crossLimit` is returned alongside the
+    /// edges.
     private static func routeChains(
         chart: Flowchart,
         chains: [[String]],
@@ -642,6 +645,10 @@ extension DiagramLayoutEngine {
 
     // MARK: Sequence
 
+    /// Lays out a sequence diagram: participant heads across the top (columns
+    /// widened for adjacent-participant message labels), one message arrow per
+    /// row below, self-messages as loops. Pure geometry — the renderer only
+    /// draws.
     public static func layout(_ diagram: SequenceDiagram, measure: DiagramTextMeasurer) -> SequenceLayout {
         let margin: CGFloat = 12
         let headPaddingX: CGFloat = 14
@@ -706,6 +713,10 @@ extension DiagramLayoutEngine {
 
     // MARK: Pie
 
+    /// Lays out a pie chart: slice angles from the value fractions (clockwise
+    /// from 12 o'clock), a legend column right of the disk, and left padding
+    /// reserved so a title wider than the disk never clips. Pure geometry —
+    /// the renderer only draws.
     public static func layout(_ pie: PieChart, measure: DiagramTextMeasurer) -> PieLayout {
         let margin: CGFloat = 14
         let radius: CGFloat = 76

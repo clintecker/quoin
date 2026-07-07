@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a user-journey layout to the common scene IR: section tint
+    /// bands are containers, each task's score badge is a small node, and
+    /// section names, task labels, and actor lists are free-standing labels.
+    /// A journey has no connectors, so `edges` is empty.
     static func from(_ layout: JourneyLayout) -> DiagramScene {
         var nodes: [Node] = []
         var labels: [Label] = []

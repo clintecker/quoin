@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a ZenUML layout to the common scene IR: participant head boxes
+    /// are the only nodes (lifelines are guides), each message is an edge
+    /// along its row — self-calls as a right-side loop — and message text
+    /// chips are free-standing labels.
     static func from(_ layout: ZenUMLLayout) -> DiagramScene {
         DiagramScene(
             name: "zenuml",

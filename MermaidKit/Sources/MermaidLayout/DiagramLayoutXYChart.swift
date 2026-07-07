@@ -113,6 +113,8 @@ extension DiagramLayoutEngine {
         return niceFraction * magnitude
     }
 
+    /// Axis tick text: whole numbers plain, otherwise one decimal place;
+    /// em-dash for a non-finite value.
     static func formatAxisValue(_ value: Double) -> String {
         guard value.isFinite else { return "\u{2014}" }
         return value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)

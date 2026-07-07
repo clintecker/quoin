@@ -53,7 +53,17 @@ imageView.image = image   // NSImage on macOS, UIImage elsewhere
 ```
 
 `image(source:theme:)` returns `nil` for unrecognized sources — branch to
-your own fallback (most apps show the fenced source).
+your own fallback (most apps show the fenced source). To tell the user *why*
+it failed, ask for diagnostics:
+
+```swift
+if MermaidRenderer.image(source: source, theme: theme) == nil {
+    for d in MermaidParser.diagnose(source) {
+        print(d.line.map { "line \($0): " } ?? "", d.message)
+        // line 1: unknown diagram type 'flowchar' — did you mean 'flowchart'?
+    }
+}
+```
 
 ## What parses, what doesn't
 

@@ -5,12 +5,19 @@ import CoreGraphics
 /// The full color surface a Mermaid diagram render needs — the sole external
 /// seam. Host apps build one (or use the light/dark presets).
 public struct DiagramTheme: Sendable {
+    /// Primary text and stroke color (node borders, arrows, main labels).
     public let ink: PlatformColor
+    /// De-emphasized text: member rows, message text, legend entries.
     public let secondaryTextColor: PlatformColor
+    /// Most-muted text: tick captions, section headers, bit indices.
     public let tertiaryTextColor: PlatformColor
+    /// The diagram background fill.
     public let canvas: PlatformColor
+    /// Highlight color: node fills (at low alpha), markers, single-hue accents.
     public let accent: PlatformColor
+    /// Thin rules: gridlines, lifelines, box dividers.
     public let hairline: PlatformColor
+    /// Whether the theme targets a dark canvas (drives tint/contrast choices).
     public let prefersDark: Bool
     /// Categorical accents — the colors data series actually wear: node
     /// tints, pie slices, sankey bands, gantt sections, git branches.
@@ -53,6 +60,8 @@ public struct DiagramTheme: Sendable {
         return palette[((index % count) + count) % count]
     }
 
+    /// Memberwise init for a fully custom theme; parameters mirror the stored
+    /// properties. `palette` defaults to `defaultPalette`.
     public init(ink: PlatformColor, secondaryTextColor: PlatformColor,
                 tertiaryTextColor: PlatformColor, canvas: PlatformColor,
                 accent: PlatformColor, hairline: PlatformColor, prefersDark: Bool,
@@ -63,6 +72,9 @@ public struct DiagramTheme: Sendable {
         self.palette = palette
     }
 
+    /// The built-in preset: a near-black (light) or near-white (dark) ink
+    /// ramp at 100/55/38% alpha, white or near-black canvas, the system
+    /// accent color, 12% hairlines, and the default palette.
     public init(prefersDark: Bool) {
         let fg: UInt32 = prefersDark ? 0xF2F2F4 : 0x1D1D1F
         #if canImport(AppKit)

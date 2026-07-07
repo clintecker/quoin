@@ -2,6 +2,9 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses a full `kanban` source (raw, since indentation is significant):
+    /// shallowest-indent lines become columns; deeper lines become cards of
+    /// the latest column (`id[Text]@{ ticket: T-1, priority: 'High' }`).
     static func parseKanban(source: String) -> KanbanBoard? {
         // Columns sit at the shallowest indent; cards are indented under them.
         var entries: [(indent: Int, line: String)] = []

@@ -7,12 +7,14 @@ import CoreGraphics
 /// orthogonally-routed edges between their borders. Pure geometry — the
 /// renderer only draws.
 public struct BlockLayout: Sendable {
+    /// A block with its grid-cell frame.
     public struct Node: Sendable {
         public let frame: CGRect
         public let label: String
         public let shape: BlockDiagram.Shape
         /// Palette index (by grid row) for a subtle categorical tint.
         public let colorIndex: Int
+        /// Creates a placed block.
         public init(frame: CGRect, label: String, shape: BlockDiagram.Shape, colorIndex: Int) {
             self.frame = frame
             self.label = label
@@ -21,10 +23,12 @@ public struct BlockLayout: Sendable {
         }
     }
 
+    /// A connection between two blocks.
     public struct Edge: Sendable {
         /// Border-to-border route; the arrowhead sits at the last point.
         public let points: [CGPoint]
         public let label: String?
+        /// Creates a routed edge.
         public init(points: [CGPoint], label: String?) {
             self.points = points
             self.label = label
@@ -35,6 +39,7 @@ public struct BlockLayout: Sendable {
     public let nodes: [Node]
     public let edges: [Edge]
 
+    /// Creates a block layout.
     public init(size: CGSize, nodes: [Node], edges: [Edge]) {
         self.size = size
         self.nodes = nodes
@@ -44,6 +49,11 @@ public struct BlockLayout: Sendable {
 
 extension DiagramLayoutEngine {
 
+    /// Lays out a `block-beta` diagram: blocks fill a uniform grid (the
+    /// declared column count, clamped) in declaration order — `space` blocks
+    /// leave their cell empty — and edges route orthogonally through the
+    /// empty gap channels between cells so they never cross a non-endpoint
+    /// block. Pure geometry — the renderer only draws.
     public static func layout(_ diagram: BlockDiagram, measure: DiagramTextMeasurer) -> BlockLayout {
         let margin: CGFloat = 18
         let gapX: CGFloat = 30

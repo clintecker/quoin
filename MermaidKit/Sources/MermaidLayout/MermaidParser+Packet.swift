@@ -2,6 +2,9 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `packet` body lines: an optional `title`, then bit-field rows —
+    /// `0-15: "Source Port"` or single-bit `16: "Flag"`. Reversed ranges are
+    /// normalised. Nil when no field parses.
     static func parsePacket(body: [String]) -> PacketDiagram? {
         var title: String?
         var fields: [PacketDiagram.Field] = []

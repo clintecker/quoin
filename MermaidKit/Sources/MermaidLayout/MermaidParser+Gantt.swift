@@ -2,6 +2,11 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `gantt` body lines: `title` / `section` directives and task rows
+    /// (`Label : done, t1, 2024-01-01, 3d`), whose comma tokens — status tags,
+    /// an optional id, a start (ISO date or `after <id>`), and a duration or
+    /// end date — may appear in any order. Starts resolve to absolute day
+    /// offsets, then shift so the earliest task sits at day 0.
     static func parseGantt(body: [String]) -> GanttChart? {
         var title: String?
         var currentSection = ""

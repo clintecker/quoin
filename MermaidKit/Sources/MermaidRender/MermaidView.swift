@@ -31,6 +31,8 @@ public struct MermaidView: View {
         self.explicitTheme = theme
     }
 
+    /// The rendered diagram image (scaled down to fit, never up), or the
+    /// monospaced raw-source fallback when the source isn't recognized.
     public var body: some View {
         let theme = explicitTheme ?? DiagramTheme(prefersDark: colorScheme == .dark)
         if let image = MermaidRenderer.image(source: source, theme: theme) {

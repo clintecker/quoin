@@ -25,6 +25,7 @@ lintable, and consumable by backends other than CoreGraphics.
 
 - ``MermaidParser``
 - ``MermaidDiagram``
+- ``ParseDiagnostic``
 
 ### Layout
 

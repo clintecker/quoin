@@ -17,6 +17,8 @@ public struct RequirementDiagram: Hashable, Sendable {
         case designConstraint = "designConstraint"
     }
 
+    /// One requirement box, keyed by `name`. All body properties are nil
+    /// when the block omits them.
     public struct Requirement: Hashable, Sendable {
         public let name: String
         public let kind: Kind
@@ -24,6 +26,7 @@ public struct RequirementDiagram: Hashable, Sendable {
         public let text: String?
         public let risk: String?
         public let verifyMethod: String?
+        /// Memberwise initializer.
         public init(name: String, kind: Kind, id: String?, text: String?,
                     risk: String?, verifyMethod: String?) {
             self.name = name
@@ -35,10 +38,13 @@ public struct RequirementDiagram: Hashable, Sendable {
         }
     }
 
+    /// One element box (a design artifact that relations tie to
+    /// requirements), keyed by `name`; `type`/`docRef` are nil when omitted.
     public struct Element: Hashable, Sendable {
         public let name: String
         public let type: String?
         public let docRef: String?
+        /// Memberwise initializer.
         public init(name: String, type: String?, docRef: String?) {
             self.name = name
             self.type = type
@@ -46,14 +52,18 @@ public struct RequirementDiagram: Hashable, Sendable {
         }
     }
 
+    /// The relationship verb; the raw value is drawn as the arrow label.
     public enum RelationKind: String, Hashable, Sendable {
         case satisfies, traces, derives, refines, contains, copies, verifies
     }
 
+    /// A verb-labelled arrow; `source`/`dest` are requirement or element
+    /// names.
     public struct Relation: Hashable, Sendable {
         public let source: String
         public let dest: String
         public let kind: RelationKind
+        /// Memberwise initializer.
         public init(source: String, dest: String, kind: RelationKind) {
             self.source = source
             self.dest = dest
@@ -65,6 +75,7 @@ public struct RequirementDiagram: Hashable, Sendable {
     public var elements: [Element]
     public var relations: [Relation]
 
+    /// Memberwise initializer.
     public init(requirements: [Requirement], elements: [Element], relations: [Relation]) {
         self.requirements = requirements
         self.elements = elements

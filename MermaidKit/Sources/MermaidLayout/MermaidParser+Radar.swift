@@ -2,6 +2,11 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `radar` body lines: `axis k1["Label"], k2`, curves
+    /// (`curve name["Label"]{k1: 10, k2: 20}`), and `max` / `min` / `ticks`
+    /// directives (defaults 100 / 0 / 5). Curve values are re-aligned to axis
+    /// order, with unscored axes falling to `min`. Nil without at least one
+    /// axis and one curve.
     static func parseRadar(body: [String]) -> RadarChart? {
         var title: String?
         var axes: [RadarChart.Axis] = []

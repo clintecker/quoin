@@ -6,6 +6,7 @@ import Foundation
 /// flattened for v1 — their grouped elements are kept, the grouping frame is
 /// dropped.
 public struct C4Diagram: Hashable, Sendable {
+    /// Which C4 element flavour a box is; drives its styling.
     public enum ElementKind: Hashable, Sendable {
         case person
         case system
@@ -13,17 +14,22 @@ public struct C4Diagram: Hashable, Sendable {
         case component
     }
 
+    /// One person/system/container/component box, keyed by `alias`.
     public struct Element: Hashable, Sendable, Identifiable {
+        /// Same as `alias`.
         public var id: String { alias }
         public let alias: String
+        /// Display name; falls back to `alias`.
         public let label: String
         /// Technology stack (Container/Component), else nil.
         public let technology: String?
+        /// Description text; nil when omitted.
         public let descr: String?
         public let kind: ElementKind
         /// `_Ext` variants: external systems drawn with a muted tint.
         public let external: Bool
 
+        /// Memberwise initializer.
         public init(alias: String, label: String, technology: String?,
                     descr: String?, kind: ElementKind, external: Bool) {
             self.alias = alias
@@ -35,12 +41,15 @@ public struct C4Diagram: Hashable, Sendable {
         }
     }
 
+    /// A labelled arrow between two element aliases in `elements`.
     public struct Relation: Hashable, Sendable {
         public let from: String
         public let to: String
         public let label: String
+        /// Technology annotation (4th `Rel` argument); nil when omitted.
         public let technology: String?
 
+        /// Memberwise initializer.
         public init(from: String, to: String, label: String, technology: String?) {
             self.from = from
             self.to = to
@@ -53,6 +62,7 @@ public struct C4Diagram: Hashable, Sendable {
     public var elements: [Element]
     public var relations: [Relation]
 
+    /// Memberwise initializer.
     public init(title: String?, elements: [Element], relations: [Relation]) {
         self.title = title
         self.elements = elements
@@ -62,6 +72,10 @@ public struct C4Diagram: Hashable, Sendable {
 
 extension MermaidParser {
 
+    /// Parses a C4 body: element calls (`Person(alias, "Label", "descr")`,
+    /// `Container(alias, "Label", "tech", "descr")`, `_Ext` variants) and
+    /// `Rel(from, to, "label"[, "tech"])` lines. Boundary/Node frames are
+    /// skipped; duplicate aliases keep the first. Nil when no element parses.
     static func parseC4(body: [String]) -> C4Diagram? {
         var title: String?
         var elements: [C4Diagram.Element] = []

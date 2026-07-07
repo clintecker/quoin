@@ -2,6 +2,11 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `gitGraph` body commands: `commit [id: "…"] [tag: "…"]`,
+    /// `branch <name>` (starts at the current head and becomes current),
+    /// `checkout`/`switch <name>`, and `merge <name>` (two-parent commit).
+    /// Branches keep creation order; ones that never receive a commit are
+    /// dropped. Nil when there are no commits.
     static func parseGitGraph(body: [String]) -> GitGraph? {
         let main = "main"
         var branches = [main]

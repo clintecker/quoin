@@ -15,10 +15,14 @@ public struct ArchitectureDiagram: Hashable, Sendable {
         case bottom = "B"
     }
 
+    /// A tinted frame that services may sit inside (via `Service.group`).
     public struct Group: Hashable, Sendable, Identifiable {
         public let id: String
+        /// Icon name from `(…)`; "" when omitted.
         public let icon: String
+        /// Display text from `[…]`; falls back to `id`.
         public let label: String
+        /// Memberwise initializer.
         public init(id: String, icon: String, label: String) {
             self.id = id
             self.icon = icon
@@ -26,14 +30,19 @@ public struct ArchitectureDiagram: Hashable, Sendable {
         }
     }
 
+    /// A service box, or a junction dot when `isJunction` is set (junctions
+    /// carry empty `icon`/`label`).
     public struct Service: Hashable, Sendable, Identifiable {
         public let id: String
+        /// Icon name from `(…)`; "" when omitted.
         public let icon: String
+        /// Display text from `[…]`; falls back to `id`.
         public let label: String
         /// Owning group id, or nil when the service floats at the top level.
         public let group: String?
         /// Junctions are anonymous routing points drawn as a small dot.
         public let isJunction: Bool
+        /// Memberwise initializer.
         public init(id: String, icon: String, label: String, group: String?, isJunction: Bool) {
             self.id = id
             self.icon = icon
@@ -43,12 +52,17 @@ public struct ArchitectureDiagram: Hashable, Sendable {
         }
     }
 
+    /// An orthogonal wire between two service/junction ids in `services`.
     public struct Edge: Hashable, Sendable {
         public let from: String
+        /// Border the wire leaves `from` by (default right).
         public let fromSide: Side
         public let to: String
+        /// Border the wire enters `to` by (default left).
         public let toSide: Side
+        /// True when the connector carries `<` or `>`.
         public let arrow: Bool
+        /// Memberwise initializer.
         public init(from: String, fromSide: Side, to: String, toSide: Side, arrow: Bool) {
             self.from = from
             self.fromSide = fromSide
@@ -63,6 +77,7 @@ public struct ArchitectureDiagram: Hashable, Sendable {
     public var services: [Service]
     public var edges: [Edge]
 
+    /// Memberwise initializer.
     public init(groups: [Group], services: [Service], edges: [Edge]) {
         self.groups = groups
         self.services = services
@@ -72,6 +87,9 @@ public struct ArchitectureDiagram: Hashable, Sendable {
 
 extension MermaidParser {
 
+    /// Parses `architecture-beta` body lines: `group`/`service`/`junction`
+    /// declarations (`service db(database)[DB] in api`) plus `a:R --> L:b`
+    /// edges. Nil when no service or junction parses.
     static func parseArchitecture(body: [String]) -> ArchitectureDiagram? {
         var groups: [ArchitectureDiagram.Group] = []
         var services: [ArchitectureDiagram.Service] = []

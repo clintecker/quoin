@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a sequence layout to the common scene IR: participant head
+    /// boxes are the only nodes (lifelines are guides, not obstacles), each
+    /// message is an edge along its row — self-messages as a right-side loop
+    /// — and message text chips are free-standing labels.
     static func from(_ layout: SequenceLayout) -> DiagramScene {
         // Loop depth used to synthesize a polyline for a self-message, whose
         // layout stores only a single y and an outbound `toX`.

@@ -4,6 +4,9 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers an architecture layout to the common scene IR: group tint bands
+    /// are containers, services and junction dots are plain nodes, and edges
+    /// are unlabeled orthogonal wires.
     static func from(_ layout: ArchitectureLayout) -> DiagramScene {
         var nodes: [DiagramScene.Node] = []
 

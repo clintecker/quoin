@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a flowchart layout to the common scene IR: every placed box is
+    /// a plain node (subgraphs are flattened by the parser), connectors keep
+    /// their orthogonal routes, and each |label| becomes a free-standing
+    /// Label at the layout's labelPoint (endpoint midpoint fallback).
     static func from(_ layout: FlowchartLayout) -> DiagramScene {
         DiagramScene(
             name: "flowchart",

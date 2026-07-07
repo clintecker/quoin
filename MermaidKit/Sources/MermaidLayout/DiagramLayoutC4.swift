@@ -10,6 +10,7 @@ import CoreGraphics
 /// carry a small drawn "head" (the renderer adds it above the box top). Pure
 /// geometry — the renderer only draws.
 public struct C4Layout: Sendable {
+    /// One C4 element box.
     public struct Box: Sendable {
         public let frame: CGRect
         /// e.g. «Person», «External System», «Container».
@@ -23,6 +24,7 @@ public struct C4Layout: Sendable {
         public let colorIndex: Int
     }
 
+    /// A labelled relationship arrow.
     public struct Edge: Sendable {
         /// Orthogonal routed polyline, endpoint to endpoint (>= 2 points). The
         /// route threads the empty channels between rows (and, for edges that
@@ -33,8 +35,9 @@ public struct C4Layout: Sendable {
         /// Where the label is drawn — a point on the route that lies in a clear
         /// channel band, so it doesn't sit on a box.
         public let labelPoint: CGPoint
-        /// First/last route points, kept for callers that want the endpoints.
+        /// First route point, kept for callers that want the endpoints.
         public var from: CGPoint { points.first ?? .zero }
+        /// Last route point (the arrowhead end).
         public var to: CGPoint { points.last ?? .zero }
     }
 
@@ -46,6 +49,11 @@ public struct C4Layout: Sendable {
 
 extension DiagramLayoutEngine {
 
+    /// Lays out a C4 diagram: elements as uniform-width boxes in
+    /// relationship-layered, horizontally centered rows; arrows thread the
+    /// empty channels between rows (multi-row hops via side-gutter lanes) and
+    /// same-channel labels fan out vertically. Pure geometry — the renderer
+    /// only draws.
     public static func layout(_ diagram: C4Diagram, measure: DiagramTextMeasurer) -> C4Layout {
         let margin: CGFloat = 16
         let titleHeight: CGFloat = diagram.title == nil ? 0 : 24

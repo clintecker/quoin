@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers an xychart layout to the common scene IR: the plot rect and the
+    /// bars are containers (a line series legitimately overlays a bar), line
+    /// series are edges, and tick/category captions plus axis titles are
+    /// free-standing labels (the y-axis title as a rotated vertical strip).
     static func from(_ layout: XYChartLayout) -> DiagramScene {
         // A synthesized frame for a label stored only as a center point.
         func labelFrame(_ text: String, _ center: CGPoint) -> CGRect {

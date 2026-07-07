@@ -2,6 +2,9 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `journey` body lines: `title`, `section <name>`, and
+    /// `Task name: <score>: Actor1, Actor2` tasks (score clamped to 1…5,
+    /// defaulting to 3; actors optional). Nil when no task parses.
     static func parseJourney(body: [String]) -> UserJourney? {
         var title: String?
         var currentSection = ""

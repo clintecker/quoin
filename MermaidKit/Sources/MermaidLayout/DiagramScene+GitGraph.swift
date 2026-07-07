@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a git graph to the common scene IR: each commit becomes a
+    /// dot-sized node around its centre, parent→child connectors become
+    /// two-point edges, and branch lane names plus commit tags become
+    /// free-standing labels.
     static func from(_ layout: GitGraphLayout) -> DiagramScene {
         // The real dot radius used by DiagramLayoutEngine.layout(_ :GitGraph:).
         let dotRadius: CGFloat = 7

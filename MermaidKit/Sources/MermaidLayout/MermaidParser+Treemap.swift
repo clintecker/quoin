@@ -2,6 +2,10 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses a full `treemap` source (raw, since indentation is significant):
+    /// `"Label": value` leaves and `"Label"` branches, nested by indent.
+    /// Internal nodes get the sum of their children; nil when the tree's
+    /// total weight is 0.
     static func parseTreemap(source: String) -> Treemap? {
         // (indent, label, value?) for each content line after the header.
         var entries: [(indent: Int, label: String, value: Double?)] = []

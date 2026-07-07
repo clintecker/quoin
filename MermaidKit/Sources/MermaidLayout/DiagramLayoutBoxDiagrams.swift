@@ -14,6 +14,11 @@ extension DiagramLayoutEngine {
     static let compartmentRowHeight: CGFloat = 17
     static let compartmentPadX: CGFloat = 12
 
+    /// Lays out a class diagram: boxes sized to their name/member rows,
+    /// layered so parents sit above children (inheritance/realization edges
+    /// are flipped for layering only; relations route in their real
+    /// direction so markers land on the parent), routed via `layeredRoutes`.
+    /// Pure geometry — the renderer only draws.
     public static func layout(_ diagram: ClassDiagram, measure: DiagramTextMeasurer) -> ClassLayout {
         // Layer by the relation graph so hierarchies read top-down: for
         // inheritance/realization the parsed edge points child → parent;
@@ -71,6 +76,10 @@ extension DiagramLayoutEngine {
 
     // MARK: ER
 
+    /// Lays out an ER diagram: entity boxes sized to their attribute rows,
+    /// layered by relation direction and routed via `layeredRoutes`, with the
+    /// canvas grown so route-midpoint relationship labels never clip. Pure
+    /// geometry — the renderer only draws.
     public static func layout(_ diagram: ERDiagram, measure: DiagramTextMeasurer) -> ERLayout {
         var boxSizes: [String: CGSize] = [:]
         for entity in diagram.entities {
@@ -131,6 +140,10 @@ extension DiagramLayoutEngine {
     static let stateTitleHeight: CGFloat = 22
     static let stateInset: CGFloat = 14
 
+    /// Lays out a state diagram, recursing into composite states (each is
+    /// laid out first and becomes a fixed-size box in its parent's layered
+    /// layout) and flattening everything into absolute coordinates. Pure
+    /// geometry — the renderer only draws.
     public static func layout(_ diagram: StateDiagram, measure: DiagramTextMeasurer) -> StateLayout {
         let result = layoutStateScope(diagram, depth: 0, measure: measure)
         return StateLayout(

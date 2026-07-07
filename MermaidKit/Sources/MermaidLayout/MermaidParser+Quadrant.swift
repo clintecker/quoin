@@ -2,6 +2,9 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `quadrantChart` body lines: `title`, `x-axis Low --> High`,
+    /// `y-axis Low --> High`, `quadrant-1…4 Name`, and `"Label": [x, y]`
+    /// points (coordinates clamped to 0…1). Nil when no point parses.
     static func parseQuadrant(body: [String]) -> QuadrantChart? {
         var title: String?
         var xLeft: String?, xRight: String?, yBottom: String?, yTop: String?

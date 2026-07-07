@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a quadrant chart to the common scene IR: the plot square and
+    /// four tint quarters are containers, each data dot is a small node, and
+    /// point, quadrant, and axis captions are free-standing labels (y-axis
+    /// labels as rotated tall-narrow boxes). No connectors, so `edges` is empty.
     static func from(_ layout: QuadrantLayout) -> DiagramScene {
         var nodes: [Node] = []
 

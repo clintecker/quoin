@@ -10,12 +10,17 @@ import CoreGraphics
 /// find layout problems (edges behind nodes, overlaps, clipping) exactly,
 /// where staring at a rendered PNG is unreliable.
 public struct DiagramScene: Sendable, Codable {
+    /// One laid-out box — a node, head, bar, card, dot, or container band.
     public struct Node: Sendable, Codable {
+        /// Stable identifier used in lint reports: the node's label text, or a
+        /// synthesized fallback when there is none.
         public let id: String
+        /// The box's frame in canvas coordinates.
         public let frame: CGRect
         /// A group / subgraph / composite container legitimately *contains*
         /// other nodes, so it is exempt from overlap and occlusion checks.
         public let isContainer: Bool
+        /// Creates a node; `isContainer` defaults to false (a plain checked box).
         public init(id: String, frame: CGRect, isContainer: Bool = false) {
             self.id = id
             self.frame = frame
@@ -23,10 +28,14 @@ public struct DiagramScene: Sendable, Codable {
         }
     }
 
+    /// One routed connector between nodes.
     public struct Edge: Sendable, Codable {
         /// The routed polyline, endpoint to endpoint.
         public let polyline: [CGPoint]
+        /// The edge's caption, if any (its placed chip is lowered separately
+        /// as a free-standing `Label`; this copy names the edge in reports).
         public let label: String?
+        /// Creates an edge from its route and optional caption.
         public init(polyline: [CGPoint], label: String? = nil) {
             self.polyline = polyline
             self.label = label
@@ -37,20 +46,29 @@ public struct DiagramScene: Sendable, Codable {
     /// section title. A node's own centred label is implicit in its Node and
     /// must NOT be listed here (it can never "collide" with its own box).
     public struct Label: Sendable, Codable {
+        /// The label's text.
         public let text: String
+        /// The label's frame in canvas coordinates.
         public let frame: CGRect
+        /// Creates a free-standing label.
         public init(text: String, frame: CGRect) {
             self.text = text
             self.frame = frame
         }
     }
 
+    /// The diagram type ("flowchart", "pie", …); heads lint reports.
     public let name: String
+    /// The canvas size; content extending past it is flagged off-canvas.
     public let size: CGSize
+    /// All boxes, containers included.
     public let nodes: [Node]
+    /// All routed connectors.
     public let edges: [Edge]
+    /// All free-standing labels (never a node's own centred label).
     public let labels: [Label]
 
+    /// Creates a scene; `edges`/`labels` default empty for connector-less types.
     public init(name: String, size: CGSize, nodes: [Node],
                 edges: [Edge] = [], labels: [Label] = []) {
         self.name = name
@@ -61,11 +79,17 @@ public struct DiagramScene: Sendable, Codable {
     }
 }
 
+/// One layout defect found by `DiagramLayoutLinter`.
 public struct LayoutViolation: Sendable, Equatable {
+    /// `error` = unambiguous geometric defect; `warning` = quality smell.
     public enum Severity: String, Sendable { case error, warning }
+    /// How bad it is (see `Severity`).
     public let severity: Severity
+    /// Machine-readable check name, e.g. "edge-occludes-node".
     public let kind: String
+    /// Human-readable specifics: which nodes/edges/labels, and by how much.
     public let detail: String
+    /// Creates a violation.
     public init(_ severity: Severity, _ kind: String, _ detail: String) {
         self.severity = severity
         self.kind = kind
@@ -79,6 +103,27 @@ public struct LayoutViolation: Sendable, Equatable {
 /// cramped spacing).
 public enum DiagramLayoutLinter {
 
+    /// Runs every check and returns the deduplicated violations, in check order.
+    ///
+    /// Errors:
+    /// - `edge-occludes-node`: a wire's length inside a non-container box's
+    ///   interior (inset 3pt, so border touches don't count) exceeds half the
+    ///   box's short side, with an 18pt floor so wires meeting tiny nodes
+    ///   (git-commit dots) at centre aren't flagged.
+    /// - `nodes-overlap`: two non-container boxes intersect by more than 2pt
+    ///   in both axes; full containment is excluded.
+    /// - `off-canvas`: a node or label extends outside the canvas (±1pt).
+    /// - `mark-escapes-plot`: when the largest container covers >35% of the
+    ///   canvas (a chart plot), an edge vertex lies more than 2pt outside it.
+    ///
+    /// Warnings:
+    /// - `labels-overlap`: two labels share more than 4pt² of area.
+    /// - `label-over-node`: a label covers a non-container box by more than
+    ///   half the label's own area.
+    /// - `edge-crossings`: pairwise crossings exceed max(2, edges/3).
+    ///
+    /// `isContainer` nodes are exempt from occlusion and overlap (they
+    /// legitimately hold other nodes) but still bound the plot for check 5.
     public static func lint(_ scene: DiagramScene) -> [LayoutViolation] {
         var out: [LayoutViolation] = []
         let occlusionInset: CGFloat = 3
@@ -194,12 +239,15 @@ public enum DiagramLayoutLinter {
 
     // MARK: - Geometry
 
+    /// True when either end of the edge lands within `margin` of the node's frame.
     static func isEndpoint(_ node: DiagramScene.Node, of edge: DiagramScene.Edge, margin: CGFloat = 6) -> Bool {
         guard let first = edge.polyline.first, let last = edge.polyline.last else { return false }
         let padded = node.frame.insetBy(dx: -margin, dy: -margin)
         return padded.contains(first) || padded.contains(last)
     }
 
+    /// True when segments a–b and c–d properly cross (shared endpoints and
+    /// collinear touches don't count).
     static func segmentsCross(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint) -> Bool {
         func cross(_ p: CGPoint, _ q: CGPoint, _ r: CGPoint) -> CGFloat {
             (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y)
@@ -232,6 +280,8 @@ public enum DiagramLayoutLinter {
         return max(0, t1 - t0) * hypot(dx, dy)
     }
 
+    /// True when segment a→b has an endpoint inside rect `r` or crosses one
+    /// of its sides.
     static func segmentIntersectsRect(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> Bool {
         if r.contains(a) || r.contains(b) { return true }
         let tl = CGPoint(x: r.minX, y: r.minY), tr = CGPoint(x: r.maxX, y: r.minY)
@@ -240,11 +290,13 @@ public enum DiagramLayoutLinter {
             || segmentsCross(a, b, br, bl) || segmentsCross(a, b, bl, tl)
     }
 
+    /// Intersection area of two rects; 0 when disjoint.
     static func overlapArea(_ a: CGRect, _ b: CGRect) -> CGFloat {
         let ov = a.intersection(b)
         return ov.isNull ? 0 : ov.width * ov.height
     }
 
+    /// True when any segment of e1 properly crosses any segment of e2.
     static func edgesCross(_ e1: DiagramScene.Edge, _ e2: DiagramScene.Edge) -> Bool {
         for s1 in zip(e1.polyline, e1.polyline.dropFirst()) {
             for s2 in zip(e2.polyline, e2.polyline.dropFirst()) {

@@ -4,6 +4,10 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a state layout to the common scene IR: simple and pseudo states
+    /// are plain nodes, composite-state boxes are containers, transitions are
+    /// edges (routed polyline, straight start→end fallback), and transition
+    /// labels are free-standing at the route's arc-length midpoint.
     static func from(_ layout: StateLayout) -> DiagramScene {
         // Every simple/start/end/choice/fork/join node keeps its exact frame.
         // Layout already sizes point-like nodes (start/end dots, choice/fork/

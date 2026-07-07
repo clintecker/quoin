@@ -4,6 +4,9 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a block diagram to the common scene IR: every cell is a plain
+    /// node, edges keep their routes, and each edge caption becomes a
+    /// free-standing Label at the route's arc-length midpoint.
     static func from(_ layout: BlockLayout) -> DiagramScene {
         DiagramScene(
             name: "block",

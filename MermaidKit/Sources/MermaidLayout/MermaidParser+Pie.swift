@@ -2,6 +2,9 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses a `pie` chart: an optional `title` (on the header line or the
+    /// next), then `"Label" : 42.5` slice rows (non-negative values).
+    /// Nil when no valid slice parses.
     static func parsePie(header: String, body: [String]) -> PieChart? {
         var title: String?
         var lines = body

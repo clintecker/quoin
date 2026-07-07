@@ -5,14 +5,18 @@ import Foundation
 /// and from message endpoints, in first-appearance order. Messages are the
 /// interactions between participants (including self-calls).
 public struct ZenUML: Hashable, Sendable {
+    /// Declared participant stereotype (`@Actor`, `@Database`, …);
+    /// `plain` when undeclared.
     public enum ParticipantKind: String, Hashable, Sendable {
         case actor, boundary, control, entity, database, plain
     }
 
+    /// A lifeline; `id` and `name` both hold the participant's name.
     public struct Participant: Hashable, Sendable, Identifiable {
         public let id: String
         public let name: String
         public let kind: ParticipantKind
+        /// Memberwise initializer.
         public init(id: String, name: String, kind: ParticipantKind) {
             self.id = id
             self.name = name
@@ -20,11 +24,15 @@ public struct ZenUML: Hashable, Sendable {
         }
     }
 
+    /// One interaction between participant ids in `participants`.
     public struct Message: Hashable, Sendable {
         public let from: String
         public let to: String
+        /// Message text or called method; "" when the line names no call.
         public let text: String
+        /// True for self-calls (`from == to`).
         public let isSelf: Bool
+        /// Memberwise initializer.
         public init(from: String, to: String, text: String, isSelf: Bool) {
             self.from = from
             self.to = to
@@ -34,9 +42,12 @@ public struct ZenUML: Hashable, Sendable {
     }
 
     public var title: String?
+    /// Participants in first-appearance order (declared or first messaged).
     public var participants: [Participant]
+    /// Messages in source order.
     public var messages: [Message]
 
+    /// Memberwise initializer.
     public init(title: String?, participants: [Participant], messages: [Message]) {
         self.title = title
         self.participants = participants
@@ -46,6 +57,10 @@ public struct ZenUML: Hashable, Sendable {
 
 extension MermaidParser {
 
+    /// Parses `zenuml` body lines: `title`, `@Kind Name` participant
+    /// declarations, `A->B: text` / `A->B.method()` messages, and
+    /// `A.method()` self-calls. Nil without at least one participant and
+    /// one message.
     static func parseZenUML(body: [String]) -> ZenUML? {
         var title: String?
         var order: [String] = []

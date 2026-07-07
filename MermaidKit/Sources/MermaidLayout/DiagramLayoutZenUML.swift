@@ -8,20 +8,29 @@ import CoreGraphics
 /// lifelines stacked top-to-bottom. Self-calls draw a small return loop to the
 /// right of their lifeline. Pure geometry — the renderer only draws.
 public struct ZenUMLLayout: Sendable {
+    /// A participant box and the extent of its lifeline.
     public struct Participant: Sendable {
         public let frame: CGRect
         public let name: String
         /// A `«Actor»`-style stereotype, or nil for a plain participant.
         public let stereotype: String?
+        /// X of the box center and the lifeline.
         public let centerX: CGFloat
+        /// Y where the lifeline starts (bottom of the box).
         public let lifelineTop: CGFloat
+        /// Y where the lifeline ends (shared by all participants).
         public let lifelineBottom: CGFloat
+        /// Cycled palette slot (participant order), not a color.
         public let colorIndex: Int
     }
 
+    /// A message arrow drawn at `y` between two lifelines.
     public struct Arrow: Sendable {
+        /// Sender's lifeline x.
         public let fromX: CGFloat
+        /// Recipient's lifeline x; for a self-call, the loop's right extent.
         public let toX: CGFloat
+        /// Y the arrow is drawn at.
         public let y: CGFloat
         public let label: String
         public let isSelf: Bool
@@ -37,6 +46,9 @@ public struct ZenUMLLayout: Sendable {
 
 extension DiagramLayoutEngine {
 
+    /// Lays out a ZenUML sequence diagram: participant boxes left to right
+    /// (gaps widened for adjacent message labels and self-call loops), one
+    /// message per row below. Pure geometry — the renderer only draws.
     public static func layout(_ d: ZenUML, measure: DiagramTextMeasurer) -> ZenUMLLayout {
         let margin: CGFloat = 14
         let titleHeight: CGFloat = d.title == nil ? 0 : 26

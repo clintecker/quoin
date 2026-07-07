@@ -4,6 +4,9 @@ import CoreGraphics
 #endif
 
 extension DiagramScene {
+    /// Lowers a treemap to the common scene IR: leaf cells are plain nodes,
+    /// internal group rects are containers, and ids are disambiguated by
+    /// depth and position. No edges and no free-standing labels.
     static func from(_ layout: TreemapLayout) -> DiagramScene {
         DiagramScene(
             name: "treemap",

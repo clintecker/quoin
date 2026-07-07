@@ -9,17 +9,27 @@ import CoreGraphics
 /// layout engines stay platform-free and unit-testable.
 public typealias DiagramTextMeasurer = (_ text: String, _ fontSize: Double) -> CGSize
 
-/// Geometry produced by the layout engines; the renderer only draws.
+/// Placed flowchart geometry — produced by the layout engine; the renderer
+/// only draws. As for every `*Layout` struct in this module: coordinates are
+/// points in a top-left-origin space (y increases downward), and `size` is
+/// the canvas the whole layout fits in.
 public struct FlowchartLayout: Sendable {
+    /// A node with its final bounding box; the shape outline is inscribed in
+    /// `frame`.
     public struct PlacedNode: Sendable {
+        /// Node identifier from the Mermaid source.
         public let id: String
         public let label: String
         public let shape: Flowchart.NodeShape
         public let frame: CGRect
     }
 
+    /// An edge with its resolved orthogonal route.
     public struct PlacedEdge: Sendable {
+        /// Route start, on the source node's outline.
         public let start: CGPoint
+        /// Route end, on the target node's outline (arrowhead here when
+        /// `hasArrow`).
         public let end: CGPoint
         /// Full polyline route (orthogonal between offset nodes); always
         /// begins at `start` and ends at `end`.
@@ -32,6 +42,8 @@ public struct FlowchartLayout: Sendable {
         /// the route midpoint if it is somehow absent.
         public let labelPoint: CGPoint?
 
+        /// Creates a placed edge; omitting `points` yields the straight
+        /// two-point route `[start, end]`.
         public init(start: CGPoint, end: CGPoint, points: [CGPoint]? = nil,
                     label: String?, dashed: Bool, hasArrow: Bool, labelPoint: CGPoint? = nil) {
             self.start = start
@@ -44,27 +56,38 @@ public struct FlowchartLayout: Sendable {
         }
     }
 
+    /// Canvas the whole layout fits in.
     public let size: CGSize
     public let nodes: [PlacedNode]
     public let edges: [PlacedEdge]
 }
 
+/// Placed sequence diagram: participant head boxes across the top, lifelines
+/// dropping to `lifelineBottom`, and message arrows stacked top to bottom.
+/// Top-left-origin points; `size` is the canvas.
 public struct SequenceLayout: Sendable {
+    /// A participant's header box; its lifeline drops from `lifelineX`.
     public struct Head: Sendable {
         public let label: String
         public let frame: CGRect
+        /// X of the participant's vertical lifeline (the head's center).
         public var lifelineX: CGFloat { frame.midX }
     }
 
+    /// A message arrow drawn at `y` between two lifelines.
     public struct Arrow: Sendable {
+        /// Sender's lifeline x.
         public let fromX: CGFloat
+        /// Recipient's lifeline x; for a self-message, the loop's right extent.
         public let toX: CGFloat
+        /// Y the arrow is drawn at.
         public let y: CGFloat
         public let text: String
         public let dashed: Bool
         /// Message to the same participant: drawn as a small loop.
         public let isSelfMessage: Bool
 
+        /// Creates an arrow; defaults to a normal (non-self) message.
         public init(fromX: CGFloat, toX: CGFloat, y: CGFloat, text: String, dashed: Bool, isSelfMessage: Bool = false) {
             self.fromX = fromX
             self.toX = toX
@@ -76,30 +99,44 @@ public struct SequenceLayout: Sendable {
     }
 
     public let size: CGSize
+    /// Participant heads in declaration order.
     public let heads: [Head]
+    /// Y where every lifeline ends.
     public let lifelineBottom: CGFloat
+    /// Message arrows in source order, top to bottom.
     public let arrows: [Arrow]
 }
 
+/// Placed pie chart: a disk of slices with a legend column to its right.
+/// Top-left-origin points; `size` is the canvas.
 public struct PieLayout: Sendable {
+    /// One wedge; consecutive slices share boundary angles.
     public struct Slice: Sendable {
         public let label: String
         public let value: Double
+        /// Share of the total, 0…1.
         public let fraction: Double
         public let startAngle: Double // radians, 12 o'clock = -π/2, clockwise
         public let endAngle: Double
+        /// Cycled palette slot (slice order), not a color.
         public let colorIndex: Int
     }
 
     public let size: CGSize
+    /// Center of the disk.
     public let center: CGPoint
     public let radius: CGFloat
     public let title: String?
     public let slices: [Slice]
+    /// Top-left anchor of the legend; one row per slice stacks downward.
     public let legendOrigin: CGPoint
 }
 
+/// Placed Gantt chart: a task-label gutter on the left, section tint bands,
+/// day-tick gridlines, and one bar (or milestone diamond) per task row.
+/// Top-left-origin points; `size` is the canvas.
 public struct GanttLayout: Sendable {
+    /// One task's bar row.
     public struct Bar: Sendable {
         public let label: String
         /// The bar rectangle, or the milestone diamond's bounding box.
@@ -111,13 +148,16 @@ public struct GanttLayout: Sendable {
         public let status: GanttChart.Status
     }
 
+    /// Tint band behind one section's rows.
     public struct SectionBand: Sendable {
         public let name: String
         /// Full-width tint band spanning the section's consecutive rows.
         public let frame: CGRect
+        /// Cycled palette slot (section order), not a color.
         public let colorIndex: Int
     }
 
+    /// A vertical day gridline spanning `top`…`bottom` at `x`.
     public struct Tick: Sendable {
         public let x: CGFloat
         public let label: String   // day index
@@ -134,7 +174,11 @@ public struct GanttLayout: Sendable {
     public let ticks: [Tick]
 }
 
+/// Placed timeline: a vertical spine with one dot per period, period labels
+/// in a left gutter, and event cards stacked right of each dot.
+/// Top-left-origin points; `size` is the canvas.
 public struct TimelineLayout: Sendable {
+    /// One event card.
     public struct Event: Sendable {
         public let text: String
         public let frame: CGRect
@@ -142,6 +186,7 @@ public struct TimelineLayout: Sendable {
         public let colorIndex: Int
     }
 
+    /// A period: its dot on the spine, gutter label anchor, and event cards.
     public struct Period: Sendable {
         public let label: String
         /// Right-aligned anchor for the period label: right edge at vertical
@@ -152,6 +197,7 @@ public struct TimelineLayout: Sendable {
         public let events: [Event]
     }
 
+    /// Tint band behind one section's periods.
     public struct SectionBand: Sendable {
         public let name: String
         /// Full-width tint band spanning the section's consecutive periods.
@@ -163,22 +209,28 @@ public struct TimelineLayout: Sendable {
     public let title: String?
     /// X of the vertical spine the period dots sit on.
     public let spineX: CGFloat
+    /// Y of the first period's dot.
     public let spineTop: CGFloat
+    /// Y of the last period's dot.
     public let spineBottom: CGFloat
     public let periods: [Period]
     public let sections: [SectionBand]
 }
 
+/// Placed mindmap: a left-to-right tree — root at the left, one column per
+/// depth, siblings stacked vertically. Top-left-origin points; `size` is the
+/// canvas.
 public struct MindmapLayout: Sendable {
     public struct Node: Sendable {
         public let label: String
         public let frame: CGRect
-        /// 0 = root; deeper nodes inherit their branch's index.
+        /// Tree depth; 0 = root, increasing rightward (one column per depth).
         public let depth: Int
         /// Categorical tint index: which top-level branch this node belongs to.
         public let colorIndex: Int
     }
 
+    /// Parent→child connector.
     public struct Edge: Sendable {
         /// Right-center of the parent node.
         public let from: CGPoint
@@ -193,7 +245,11 @@ public struct MindmapLayout: Sendable {
     public let edges: [Edge]
 }
 
+/// Placed user journey: one row per task (score badge, label, actor list),
+/// grouped into section tint bands. Top-left-origin points; `size` is the
+/// canvas.
 public struct JourneyLayout: Sendable {
+    /// One task row.
     public struct Task: Sendable {
         public let label: String
         /// Left-aligned anchor at the row's vertical center.
@@ -206,27 +262,35 @@ public struct JourneyLayout: Sendable {
         public let actorsPoint: CGPoint
     }
 
+    /// Full-width tint band behind one section's consecutive rows.
     public struct SectionBand: Sendable {
         public let name: String
         public let frame: CGRect
+        /// Cycled palette slot (section order), not a color.
         public let colorIndex: Int
     }
 
     public let size: CGSize
     public let title: String?
+    /// Diameter of every score badge (`Task.scoreCenter` is its center).
     public let scoreDiameter: CGFloat
     public let tasks: [Task]
     public let sections: [SectionBand]
 }
 
+/// Placed quadrant chart: a square 2×2 plot with tinted quarters, plotted
+/// points, and axis-end labels. Top-left-origin points; `size` is the canvas.
 public struct QuadrantLayout: Sendable {
+    /// A plotted data point.
     public struct Point: Sendable {
         public let label: String
+        /// Dot center, inside `plotRect`.
         public let position: CGPoint
         /// Left-aligned anchor for the point's label (right of the dot).
         public let labelPoint: CGPoint
     }
 
+    /// A text label anchored at its center point.
     public struct Label: Sendable {
         public let text: String
         public let center: CGPoint
@@ -234,12 +298,16 @@ public struct QuadrantLayout: Sendable {
 
     public let size: CGSize
     public let title: String?
+    /// The square plot area the four quadrant quarters tile.
     public let plotRect: CGRect
+    /// Radius of every point dot.
     public let dotRadius: CGFloat
     public let points: [Point]
     /// One tint quarter per quadrant [q1 TR, q2 TL, q3 BL, q4 BR].
     public let quadrantRects: [CGRect]
-    /// Quadrant name labels centered in their quarter (colorIndex = quadrant).
+    /// Quadrant name labels, centered horizontally in their quarter and pushed
+    /// toward its outer edge (clear of points near the center lines); unnamed
+    /// quadrants are omitted.
     public let quadrantLabels: [Label]
     /// x-axis end labels (below the plot), horizontal.
     public let xAxisLabels: [Label]
@@ -247,6 +315,9 @@ public struct QuadrantLayout: Sendable {
     public let yAxisLabels: [Label]
 }
 
+/// Placed packet diagram: field boxes on a `bitsPerRow`-bit grid; a field
+/// crossing a row boundary is split into multiple `segments`.
+/// Top-left-origin points; `size` is the canvas.
 public struct PacketLayout: Sendable {
     /// How a segment's label fits: horizontally, rotated vertically (for narrow
     /// single-/few-bit fields like TCP flags), or not at all.
@@ -260,26 +331,37 @@ public struct PacketLayout: Sendable {
         public let frame: CGRect
         public let startBit: Int
         public let endBit: Int
+        /// Cycled palette slot per source field (a wrapped field's segments
+        /// share one slot), not a color.
         public let colorIndex: Int
     }
 
     public let size: CGSize
     public let title: String?
+    /// Bits per grid row (32).
     public let bitsPerRow: Int
     public let segments: [Segment]
 }
 
+/// Placed xy chart: grouped bar and/or line series over shared x categories,
+/// with a value axis on the left. Top-left-origin points; `size` is the
+/// canvas.
 public struct XYChartLayout: Sendable {
+    /// One bar of a bar series.
     public struct Bar: Sendable {
         public let frame: CGRect
+        /// The owning series' index in the chart's series list (palette slot).
         public let colorIndex: Int
     }
 
+    /// A line series' polyline through the category centers.
     public struct Line: Sendable {
         public let points: [CGPoint]
+        /// The owning series' index in the chart's series list (palette slot).
         public let colorIndex: Int
     }
 
+    /// A text label anchored at its center point.
     public struct Label: Sendable {
         public let text: String
         public let center: CGPoint
@@ -287,6 +369,7 @@ public struct XYChartLayout: Sendable {
 
     public let size: CGSize
     public let title: String?
+    /// The data plot area.
     public let plotRect: CGRect
     public let bars: [Bar]
     public let lines: [Line]
@@ -300,18 +383,24 @@ public struct XYChartLayout: Sendable {
     public let xAxisTitle: Label?
 }
 
+/// Placed kanban board: tinted column headers over vertical stacks of cards.
+/// Top-left-origin points; `size` is the canvas.
 public struct KanbanLayout: Sendable {
+    /// One card; its frame reserves a row for the ticket line when present.
     public struct Card: Sendable {
         /// Pre-wrapped text lines.
         public let lines: [String]
         public let ticket: String?
         public let frame: CGRect
+        /// The owning column's index into `columns` (palette slot).
         public let colorIndex: Int
     }
 
+    /// A column header; the column's cards carry the same `colorIndex`.
     public struct Column: Sendable {
         public let title: String
         public let headerFrame: CGRect
+        /// Cycled palette slot (column order), not a color.
         public let colorIndex: Int
     }
 
@@ -320,26 +409,37 @@ public struct KanbanLayout: Sendable {
     public let cards: [Card]
 }
 
+/// Placed radar chart: spokes from `center`, a concentric graticule of rings,
+/// one polygon per data curve, and a legend below. Top-left-origin points;
+/// `size` is the canvas.
 public struct RadarLayout: Sendable {
+    /// A data curve's polygon: one vertex per axis, in axis order.
     public struct Curve: Sendable {
         public let points: [CGPoint]
+        /// Cycled palette slot (curve order); matches its legend entry.
         public let colorIndex: Int
     }
 
+    /// One concentric graticule polygon (a vertex per axis).
     public struct Ring: Sendable {
         public let points: [CGPoint]
     }
 
+    /// An axis line from `center` to `end`, labelled just beyond the rim.
     public struct Spoke: Sendable {
         public let end: CGPoint
         public let label: String
+        /// Label anchor, outward of `end` along the spoke.
         public let labelPoint: CGPoint
     }
 
+    /// One legend row: a color swatch and the curve's label.
     public struct LegendEntry: Sendable {
         public let label: String
         public let swatchCenter: CGPoint
+        /// Left-aligned anchor for the label text.
         public let labelPoint: CGPoint
+        /// Cycled palette slot; index into `curves`.
         public let colorIndex: Int
     }
 
@@ -352,7 +452,10 @@ public struct RadarLayout: Sendable {
     public let legend: [LegendEntry]
 }
 
+/// Placed treemap (squarified). Top-left-origin points; `size` is the canvas.
 public struct TreemapLayout: Sendable {
+    /// One rectangle: a leaf value cell, or an internal group drawn as an
+    /// outline + header behind its children.
     public struct Cell: Sendable {
         public let label: String
         public let value: Double
@@ -360,6 +463,7 @@ public struct TreemapLayout: Sendable {
         /// Categorical tint by top-level branch.
         public let colorIndex: Int
         public let isLeaf: Bool
+        /// Nesting depth (top-level branches are 1).
         public let depth: Int
     }
 
@@ -369,23 +473,34 @@ public struct TreemapLayout: Sendable {
     public let cells: [Cell]
 }
 
+/// Placed git graph, left to right: commits advance along x in history order
+/// and each branch occupies a horizontal lane. Top-left-origin points; `size`
+/// is the canvas.
 public struct GitGraphLayout: Sendable {
+    /// A commit dot.
     public struct Commit: Sendable {
         public let center: CGPoint
+        /// The commit's lane: index into `laneLabels`, and its palette slot.
         public let colorIndex: Int
         public let id: String
         public let tag: String?
         public let isMerge: Bool
     }
 
+    /// One straight, axis-aligned leg. A same-lane connection is a single
+    /// horizontal leg; a cross-lane connection (branch point or merge) is
+    /// emitted as two legs sharing a right-angle corner.
     public struct Edge: Sendable {
         public let from: CGPoint
         public let to: CGPoint
+        /// The child commit's lane palette slot.
         public let colorIndex: Int
     }
 
+    /// A branch name anchored at the left edge of its lane.
     public struct LaneLabel: Sendable {
         public let name: String
+        /// Left-aligned anchor on the lane's y.
         public let point: CGPoint
         public let colorIndex: Int
     }
@@ -396,7 +511,10 @@ public struct GitGraphLayout: Sendable {
     public let laneLabels: [LaneLabel]
 }
 
+/// Placed class diagram: compartmented class boxes and orthogonally routed
+/// relation edges. Top-left-origin points; `size` is the canvas.
 public struct ClassLayout: Sendable {
+    /// A class box: name compartment on top, then attribute and method rows.
     public struct Box: Sendable {
         public let name: String
         public let attributes: [String]
@@ -404,9 +522,11 @@ public struct ClassLayout: Sendable {
         public let frame: CGRect
         /// Height of the name compartment; member rows follow below.
         public let nameHeight: CGFloat
+        /// Height of each attribute/method row.
         public let rowHeight: CGFloat
     }
 
+    /// A relation routed between two boxes; the kind's marker sits at `end`.
     public struct Edge: Sendable {
         public let start: CGPoint      // at the `from` box border
         public let end: CGPoint        // at the `to` box border, marker here
@@ -422,24 +542,34 @@ public struct ClassLayout: Sendable {
     public let edges: [Edge]
 }
 
+/// Placed entity-relationship diagram: entity boxes with attribute rows and
+/// crow's-foot relationship edges. Top-left-origin points; `size` is the
+/// canvas.
 public struct ERLayout: Sendable {
+    /// An entity box: name compartment on top, one row per attribute below.
     public struct Box: Sendable {
         public let name: String
         public let attributes: [ERDiagram.Attribute]
         public let frame: CGRect
+        /// Height of the name compartment; attribute rows follow below.
         public let nameHeight: CGFloat
+        /// Height of each attribute row.
         public let rowHeight: CGFloat
     }
 
+    /// A relationship; cardinality markers sit at both ends.
     public struct Edge: Sendable {
         public let start: CGPoint
         public let end: CGPoint
         /// Orthogonal route from `start` to `end`; crow's-foot markers orient
         /// along the first and last segments.
         public let points: [CGPoint]
+        /// Cardinality marker drawn at the `start` end.
         public let fromCard: ERDiagram.Cardinality
+        /// Cardinality marker drawn at the `end` end.
         public let toCard: ERDiagram.Cardinality
         public let label: String
+        /// Identifying relationship (Mermaid `--`) vs non-identifying (`..`).
         public let identifying: Bool
     }
 
@@ -448,9 +578,15 @@ public struct ERLayout: Sendable {
     public let edges: [Edge]
 }
 
+/// Placed state diagram in absolute (flattened) coordinates: leaf state
+/// nodes, composite-state container boxes, and transition edges.
+/// Top-left-origin points; `size` is the canvas.
 public struct StateLayout: Sendable {
+    /// Node glyph: plain state box, initial/final dot, choice diamond, or
+    /// fork/join bar.
     public enum NodeKind: Sendable { case simple, start, end, choice, fork, join }
 
+    /// A leaf (non-composite) state; composites appear as `Container`s.
     public struct Node: Sendable {
         public let id: String
         public let label: String
@@ -467,6 +603,7 @@ public struct StateLayout: Sendable {
         public let depth: Int
     }
 
+    /// A transition; `points` is the orthogonal route from `start` to `end`.
     public struct Edge: Sendable {
         public let start: CGPoint
         public let end: CGPoint
@@ -476,15 +613,24 @@ public struct StateLayout: Sendable {
 
     public let size: CGSize
     public let nodes: [Node]
+    /// Composite boxes; a parent always precedes its nested children, so
+    /// drawing in order paints outer boxes behind inner ones.
     public let containers: [Container]
     public let edges: [Edge]
 }
 
 // MARK: - Engine
 
+/// The pure layout engines: one `layout(_:measure:)` overload per diagram
+/// type (spread across the DiagramLayout*.swift files). Geometry only —
+/// platform-free and deterministic, with all text measurement injected via
+/// `DiagramTextMeasurer`.
 public enum DiagramLayoutEngine {
 
+    /// Font size the engines measure primary node/box labels at; renderers
+    /// must draw them at the same size for the measured geometry to fit.
     public static let nodeFontSize: Double = 12
+    /// Font size for secondary text: edge labels, detail rows, axis ticks.
     public static let labelFontSize: Double = 10.5
     /// Minimum separation between a pair of antiparallel box-diagram edges, and
     /// the floor `separateRuns` enforces between any two coincident box runs.

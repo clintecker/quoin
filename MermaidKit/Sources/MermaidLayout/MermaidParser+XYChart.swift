@@ -2,6 +2,10 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `xychart-beta` body lines: `title`, `x-axis "Title" [a, b, c]`
+    /// (title and bracket each optional), `y-axis "Title" lo --> hi`, and
+    /// `bar [..]` / `line [..]` series. Categories default to 1-based indices
+    /// when the x-axis lists none. Nil when no series parses.
     static func parseXYChart(body: [String]) -> XYChart? {
         var title: String?
         var xAxisTitle: String?

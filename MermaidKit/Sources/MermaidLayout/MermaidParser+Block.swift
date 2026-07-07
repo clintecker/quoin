@@ -5,6 +5,7 @@ import Foundation
 /// directed edges. Shapes: `id["…"]` rectangle, `id("…")` rounded,
 /// `id(("…"))` circle. `space` tokens occupy an empty cell.
 public struct BlockDiagram: Hashable, Sendable {
+    /// Block outline, from the bracket style around the label.
     public enum Shape: Hashable, Sendable {
         case rectangle      // id["Label"]
         case rounded        // id("Label")
@@ -12,10 +13,13 @@ public struct BlockDiagram: Hashable, Sendable {
         case space          // a blank grid cell
     }
 
+    /// One grid cell. `space` cells carry empty `id`/`label`.
     public struct Block: Hashable, Sendable, Identifiable {
         public let id: String
+        /// Display text; falls back to `id` when no label is given.
         public let label: String
         public let shape: Shape
+        /// Memberwise initializer.
         public init(id: String, label: String, shape: Shape) {
             self.id = id
             self.label = label
@@ -23,10 +27,13 @@ public struct BlockDiagram: Hashable, Sendable {
         }
     }
 
+    /// A directed connection between two block ids in `blocks`.
     public struct Edge: Hashable, Sendable {
         public let from: String
         public let to: String
+        /// Optional `|label|` text.
         public let label: String?
+        /// Creates an edge; `label` defaults to nil.
         public init(from: String, to: String, label: String? = nil) {
             self.from = from
             self.to = to
@@ -40,6 +47,7 @@ public struct BlockDiagram: Hashable, Sendable {
     public let blocks: [Block]
     public let edges: [Edge]
 
+    /// Memberwise initializer.
     public init(columns: Int, blocks: [Block], edges: [Edge]) {
         self.columns = columns
         self.blocks = blocks
@@ -49,6 +57,10 @@ public struct BlockDiagram: Hashable, Sendable {
 
 extension MermaidParser {
 
+    /// Parses `block-beta` body lines: an optional `columns N`, rows of block
+    /// tokens (`a["Label"] b space c`), and `a --> b` edge lines. Without a
+    /// `columns` directive the first row's cell count sets the grid width.
+    /// Nil when no real (non-space) block parses.
     static func parseBlock(body: [String]) -> BlockDiagram? {
         var columns = 0
         var blocks: [BlockDiagram.Block] = []

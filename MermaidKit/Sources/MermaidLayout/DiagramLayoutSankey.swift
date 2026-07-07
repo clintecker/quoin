@@ -340,20 +340,32 @@ extension DiagramLayoutEngine {
     }
 }
 
+/// Placed Sankey geometry: node bars in columns plus flow bands between them.
+/// Top-left-origin points; `size` is the canvas.
 public struct SankeyLayout: Sendable {
+    /// A node's bar (fixed thickness; height proportional to its total flow).
     public struct Node: Sendable {
         public let label: String
         public let rect: CGRect
+        /// Cycled palette slot — the node's index in the diagram's node list.
         public let colorIndex: Int
+        /// Center of the name label: left of the bar for first-column nodes,
+        /// right of it otherwise.
         public let labelCenter: CGPoint
     }
 
-    /// A flow band; the renderer fills the region between the two cubic edges.
+    /// A flow band; the renderer draws a cubic band between the two edges
+    /// defined by the four corner points (band thickness = flow value).
     public struct Link: Sendable {
+        /// Band top on the source bar's right edge.
         public let sourceTop: CGPoint
+        /// Band bottom on the source bar's right edge.
         public let sourceBottom: CGPoint
+        /// Band top on the target bar's left edge.
         public let targetTop: CGPoint
+        /// Band bottom on the target bar's left edge.
         public let targetBottom: CGPoint
+        /// The source node's palette slot — bands take their source's color.
         public let colorIndex: Int
         /// The band's centerline as a routed polyline (source edge → target
         /// edge). For links spanning more than one column it detours through the

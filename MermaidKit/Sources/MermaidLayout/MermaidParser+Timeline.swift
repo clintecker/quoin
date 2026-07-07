@@ -2,6 +2,9 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses `timeline` body lines: `title`, `section` headers, and period
+    /// rows (`2024 : event : event`). A row starting with `:` appends its
+    /// events to the previous period. Nil when no period parses.
     static func parseTimeline(body: [String]) -> Timeline? {
         var title: String?
         var currentSection = ""

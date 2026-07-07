@@ -2,6 +2,9 @@ import Foundation
 
 extension MermaidParser {
 
+    /// Parses a full `mindmap` source (raw, since indentation is significant)
+    /// into a single-rooted tree; shape wrappers (`((…))`, `[…]`) reduce to
+    /// label text and `::icon`/`:::class` decorations are skipped.
     static func parseMindmap(source: String) -> Mindmap? {
         // Collect (indentation, label) for every content line after the header,
         // preserving leading whitespace (which trimmed `lines` has discarded).
