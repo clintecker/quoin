@@ -73,7 +73,7 @@ extension DiagramRenderer {
 
         // Participant boxes on top so lifelines/arrows tuck under them.
         for p in layout.participants {
-            let color = categoricalColor(p.colorIndex)
+            let color = theme.categoricalColor(p.colorIndex)
             fillStrokeBox(p.frame, radius: 6,
                           fill: color.withAlphaComponent(0.14),
                           stroke: color.withAlphaComponent(0.6), in: context)

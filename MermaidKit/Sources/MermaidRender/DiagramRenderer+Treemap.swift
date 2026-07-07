@@ -14,7 +14,7 @@ extension DiagramRenderer {
 
     static func draw(_ layout: TreemapLayout, theme: DiagramTheme, in context: CGContext) {
         for cell in layout.cells {
-            let tint = categoricalColor(cell.colorIndex)
+            let tint = theme.categoricalColor(cell.colorIndex)
             if cell.isLeaf {
                 context.saveGState()
                 context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.30)))

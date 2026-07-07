@@ -15,7 +15,7 @@ extension DiagramRenderer {
     static func draw(_ layout: KanbanLayout, theme: DiagramTheme, in context: CGContext) {
         // Column headers: tinted pill with the column title.
         for column in layout.columns {
-            let tint = categoricalColor(column.colorIndex)
+            let tint = theme.categoricalColor(column.colorIndex)
             context.saveGState()
             context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.22)))
             context.addPath(CGPath(roundedRect: column.headerFrame, cornerWidth: 6, cornerHeight: 6, transform: nil))
@@ -29,7 +29,7 @@ extension DiagramRenderer {
         // Cards: a subtle card body with a coloured left rail, wrapped text,
         // and an optional ticket chip at the bottom.
         for card in layout.cards {
-            let tint = categoricalColor(card.colorIndex)
+            let tint = theme.categoricalColor(card.colorIndex)
             context.saveGState()
             context.setFillColor(resolvedCGColor(theme.ink.withAlphaComponent(0.05)))
             context.addPath(CGPath(roundedRect: card.frame, cornerWidth: 6, cornerHeight: 6, transform: nil))

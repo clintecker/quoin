@@ -167,6 +167,9 @@ layout. Contributions welcome.
 
 - `MermaidView(source, theme:)` — SwiftUI drop-in; theme defaults to the
   environment color scheme.
+- `DiagramTheme` — 7 colors + a categorical `palette` (node tints, pie
+  slices, sankey bands…); override the palette to re-skin all 23 types at
+  once. See the Theming article in the DocC docs.
 - `MermaidRenderer.image(source:theme:)` — one-shot render, auto-sized.
 - `MermaidRenderer.attachmentString(source:theme:)` — the diagram as a
   single-attachment `NSAttributedString` for embedding in text views.
@@ -175,6 +178,20 @@ layout. Contributions welcome.
   want layout or lint geometry to match the render exactly.
 - `MermaidParser.parse(_:)`, `MermaidDiagram.typeName`, and the per-type
   layout engines are public for hosts that want geometry without pixels.
+
+## Documentation
+
+DocC catalogs ship with the package (Xcode: Product → Build Documentation;
+Swift Package Index hosts them):
+
+- **MermaidRender** — Getting Started · Theming (brand themes, palettes,
+  canvas rules) · Embedding in Text Views
+- **MermaidLayout** — Headless Layout (measurer injection, other backends,
+  programmatic diagrams) · Scene Geometry and Linting · **Adding a Diagram
+  Type** (the full five-file walkthrough)
+
+Plus [CONTRIBUTING.md](CONTRIBUTING.md) for the review rules (geometry-first)
+and the most-wanted list.
 
 ## FAQ
 

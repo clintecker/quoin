@@ -18,7 +18,7 @@ extension DiagramRenderer {
         // Tint quarters (Mermaid quadrant order → categorical palette).
         for (index, rect) in layout.quadrantRects.enumerated() {
             context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(index).withAlphaComponent(0.08)))
+            context.setFillColor(resolvedCGColor(theme.categoricalColor(index).withAlphaComponent(0.08)))
             context.fill(rect)
             context.restoreGState()
         }

@@ -18,7 +18,7 @@ extension DiagramRenderer {
         // Section tint bands behind everything, in the section's palette color.
         for band in layout.sections {
             context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
+            context.setFillColor(resolvedCGColor(theme.categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
             context.fill(band.frame)
             context.restoreGState()
         }

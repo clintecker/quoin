@@ -35,7 +35,7 @@ extension DiagramRenderer {
 
         // Boxes.
         for box in layout.boxes {
-            let tint = categoricalColor(box.colorIndex)
+            let tint = theme.categoricalColor(box.colorIndex)
             let fill = tint.withAlphaComponent(box.external ? 0.06 : 0.14)
             let border = tint.withAlphaComponent(box.external ? 0.45 : 0.65)
 

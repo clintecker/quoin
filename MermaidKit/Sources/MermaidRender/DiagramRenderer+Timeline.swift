@@ -18,7 +18,7 @@ extension DiagramRenderer {
         // Section tint bands (and their names) behind the spine and cards.
         for band in layout.sections {
             context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
+            context.setFillColor(resolvedCGColor(theme.categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
             context.addPath(CGPath(roundedRect: band.frame, cornerWidth: 6, cornerHeight: 6, transform: nil))
             context.fillPath()
             context.restoreGState()
@@ -67,7 +67,7 @@ extension DiagramRenderer {
 
             // Event cards, tinted by section (else by period).
             for event in period.events {
-                let tint = categoricalColor(event.colorIndex)
+                let tint = theme.categoricalColor(event.colorIndex)
                 context.saveGState()
                 context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.16)))
                 context.addPath(CGPath(roundedRect: event.frame, cornerWidth: 5, cornerHeight: 5, transform: nil))

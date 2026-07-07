@@ -15,7 +15,7 @@ extension DiagramRenderer {
     static func draw(_ layout: SankeyLayout, theme: DiagramTheme, in context: CGContext) {
         // Flow bands first, so the solid node bars and labels sit on top.
         for link in layout.links {
-            let color = categoricalColor(link.colorIndex)
+            let color = theme.categoricalColor(link.colorIndex)
             let cx = (link.sourceTop.x + link.targetTop.x) / 2
             let path = CGMutablePath()
             path.move(to: link.sourceTop)
@@ -37,7 +37,7 @@ extension DiagramRenderer {
 
         // Node bars: solid tinted rectangles with a firmer border.
         for node in layout.nodes {
-            let color = categoricalColor(node.colorIndex)
+            let color = theme.categoricalColor(node.colorIndex)
             fillStrokeBox(node.rect, radius: 2,
                           fill: color.withAlphaComponent(0.9), stroke: color, in: context)
         }

@@ -16,7 +16,7 @@ extension DiagramRenderer {
         drawDiagramTitle(layout.title, width: layout.size.width, theme: theme, in: context)
 
         for segment in layout.segments {
-            let tint = categoricalColor(segment.colorIndex)
+            let tint = theme.categoricalColor(segment.colorIndex)
             context.saveGState()
             context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.16)))
             context.addPath(CGPath(roundedRect: segment.frame, cornerWidth: 3, cornerHeight: 3, transform: nil))

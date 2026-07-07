@@ -25,7 +25,7 @@ extension DiagramRenderer {
         // the center; a single line per boundary keeps the hub clean.
         for slice in layout.slices {
             context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(slice.colorIndex)))
+            context.setFillColor(resolvedCGColor(theme.categoricalColor(slice.colorIndex)))
             context.beginPath()
             context.move(to: layout.center)
             context.addArc(
@@ -57,7 +57,7 @@ extension DiagramRenderer {
         for slice in layout.slices {
             let swatch = CGRect(x: layout.legendOrigin.x, y: y + 4, width: 10, height: 10)
             context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(slice.colorIndex)))
+            context.setFillColor(resolvedCGColor(theme.categoricalColor(slice.colorIndex)))
             context.addPath(CGPath(roundedRect: swatch, cornerWidth: 2, cornerHeight: 2, transform: nil))
             context.fillPath()
             context.restoreGState()

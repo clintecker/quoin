@@ -44,7 +44,7 @@ extension DiagramRenderer {
         // Bars.
         for bar in layout.bars {
             context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(bar.colorIndex).withAlphaComponent(0.75)))
+            context.setFillColor(resolvedCGColor(theme.categoricalColor(bar.colorIndex).withAlphaComponent(0.75)))
             context.addPath(CGPath(roundedRect: bar.frame, cornerWidth: 2, cornerHeight: 2, transform: nil))
             context.fillPath()
             context.restoreGState()
@@ -52,7 +52,7 @@ extension DiagramRenderer {
 
         // Line series: stroked polyline with a dot per point.
         for line in layout.lines {
-            let color = categoricalColor(line.colorIndex)
+            let color = theme.categoricalColor(line.colorIndex)
             context.saveGState()
             context.setStrokeColor(resolvedCGColor(color))
             context.setLineWidth(2)

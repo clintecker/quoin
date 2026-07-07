@@ -27,7 +27,7 @@ enum DiagramRenderer {
     static func attachmentString(source: String, theme: DiagramTheme) -> NSAttributedString? {
         guard let diagram = MermaidParser.parse(source) else { return nil }
 
-        let key = "mermaid|\(theme.prefersDark ? "dark" : "light")|\(source)" as NSString
+        let key = "mermaid|\(theme.fingerprint)|\(source)" as NSString
         let entry: Entry
         if let cached = cache.object(forKey: key) {
             entry = cached
@@ -189,18 +189,6 @@ enum DiagramRenderer {
     }
 
     // MARK: - Pie
-
-    /// A categorical palette for charts (pie slices, gantt section bands).
-    /// More saturated and distinct than the text-highlight pastels so slices
-    /// read as separate data series; tuned to sit well on light and dark.
-    static let categoricalPalette: [PlatformColor] = [
-        rgbStatic(0x5B8FF9), // blue
-        rgbStatic(0x5AD8A6), // green
-        rgbStatic(0xF6BD16), // gold
-        rgbStatic(0xE8684A), // coral
-        rgbStatic(0x6DC8EC), // sky
-        rgbStatic(0x9270CA), // purple
-    ]
 
     // MARK: - Gantt
 

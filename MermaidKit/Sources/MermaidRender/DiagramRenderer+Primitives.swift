@@ -89,10 +89,6 @@ extension DiagramRenderer {
                  size: 12.5, weight: .semibold, color: theme.ink, in: context)
     }
 
-    static func categoricalColor(_ index: Int) -> PlatformColor {
-        categoricalPalette[index % categoricalPalette.count]
-    }
-
     /// Draws text rotated 90° (reading bottom-to-top) centered on `center`,
     /// for vertical y-axis labels.
     static func drawTextRotated(

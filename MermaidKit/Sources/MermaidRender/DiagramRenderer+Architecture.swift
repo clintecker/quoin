@@ -15,7 +15,7 @@ extension DiagramRenderer {
     static func draw(_ layout: ArchitectureLayout, theme: DiagramTheme, in context: CGContext) {
         // Group containers first (behind everything).
         for group in layout.groups {
-            let tint = categoricalColor(group.colorIndex)
+            let tint = theme.categoricalColor(group.colorIndex)
             fillStrokeBox(group.frame, radius: 8,
                           fill: tint.withAlphaComponent(theme.prefersDark ? 0.12 : 0.08),
                           stroke: tint.withAlphaComponent(0.55), in: context)
@@ -50,7 +50,7 @@ extension DiagramRenderer {
 
         // Service boxes / junctions on top.
         for svc in layout.services {
-            let tint = categoricalColor(svc.colorIndex)
+            let tint = theme.categoricalColor(svc.colorIndex)
             if svc.isJunction {
                 let f = svc.frame
                 context.saveGState()

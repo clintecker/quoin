@@ -39,7 +39,7 @@ extension DiagramRenderer {
         let lineH: CGFloat = 15
 
         for box in layout.boxes {
-            let tint = categoricalColor(box.colorIndex)
+            let tint = theme.categoricalColor(box.colorIndex)
             let fill = tint.withAlphaComponent(box.isElement ? 0.10 : 0.14)
             let stroke = tint.withAlphaComponent(0.6)
             fillStrokeBox(box.frame, radius: 6, fill: fill, stroke: stroke, in: context)

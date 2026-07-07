@@ -18,7 +18,7 @@ extension DiagramRenderer {
         for edge in layout.edges {
             let dx = max((edge.to.x - edge.from.x) * 0.5, 8)
             context.saveGState()
-            context.setStrokeColor(resolvedCGColor(categoricalColor(edge.colorIndex).withAlphaComponent(0.55)))
+            context.setStrokeColor(resolvedCGColor(theme.categoricalColor(edge.colorIndex).withAlphaComponent(0.55)))
             context.setLineWidth(2)
             context.setLineCap(.round)
             context.beginPath()
@@ -40,7 +40,7 @@ extension DiagramRenderer {
                 context.addPath(CGPath(roundedRect: node.frame, cornerWidth: 8, cornerHeight: 8, transform: nil))
                 context.fillPath()
             } else {
-                let tint = categoricalColor(node.colorIndex)
+                let tint = theme.categoricalColor(node.colorIndex)
                 context.setFillColor(resolvedCGColor(tint.withAlphaComponent(0.16)))
                 context.addPath(CGPath(roundedRect: node.frame, cornerWidth: 7, cornerHeight: 7, transform: nil))
                 context.fillPath()

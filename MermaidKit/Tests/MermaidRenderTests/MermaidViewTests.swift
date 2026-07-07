@@ -36,6 +36,22 @@ final class MermaidViewTests: XCTestCase {
         XCTAssertGreaterThan(image.size.height, 10)
     }
 
+    /// A custom palette must actually change the rendered pixels — the
+    /// end-to-end guarantee behind "override palette to re-skin every type".
+    func testCustomPaletteChangesRender() throws {
+        let source = "pie title P\n \"a\": 3\n \"b\": 2\n \"c\": 1"
+        let stock = DiagramTheme(prefersDark: false)
+        let mono = DiagramTheme(
+            ink: stock.ink, secondaryTextColor: stock.secondaryTextColor,
+            tertiaryTextColor: stock.tertiaryTextColor, canvas: stock.canvas,
+            accent: stock.accent, hairline: stock.hairline, prefersDark: false,
+            palette: [PlatformColor.systemIndigo]
+        )
+        let a = try XCTUnwrap(MermaidRenderer.image(source: source, theme: stock)?.tiffRepresentation)
+        let b = try XCTUnwrap(MermaidRenderer.image(source: source, theme: mono)?.tiffRepresentation)
+        XCTAssertNotEqual(a, b, "palette override must change the output")
+    }
+
     func testTypeNameCoversAllCases() throws {
         let flowchart = try XCTUnwrap(MermaidParser.parse("flowchart TD\n  A --> B"))
         XCTAssertEqual(flowchart.typeName, "flowchart")

@@ -16,7 +16,7 @@ extension DiagramRenderer {
         // Edges behind the dots: straight within a lane, a horizontal-tangent
         // curve when crossing lanes (branch point or merge).
         for edge in layout.edges {
-            let color = categoricalColor(edge.colorIndex)
+            let color = theme.categoricalColor(edge.colorIndex)
             context.saveGState()
             context.setStrokeColor(resolvedCGColor(color.withAlphaComponent(0.8)))
             context.setLineWidth(2.5)
@@ -38,13 +38,13 @@ extension DiagramRenderer {
         // Lane labels.
         for label in layout.laneLabels {
             drawTextLeft(label.name, at: label.point, size: 10.5, weight: .semibold,
-                         color: categoricalColor(label.colorIndex), in: context)
+                         color: theme.categoricalColor(label.colorIndex), in: context)
         }
 
         // Commit nodes: a filled dot (a ring for a merge), the tag above, the
         // id below.
         for commit in layout.commits {
-            let color = categoricalColor(commit.colorIndex)
+            let color = theme.categoricalColor(commit.colorIndex)
             let r = commit.isMerge ? 5.5 : 6.5
             context.saveGState()
             context.setFillColor(resolvedCGColor(color))

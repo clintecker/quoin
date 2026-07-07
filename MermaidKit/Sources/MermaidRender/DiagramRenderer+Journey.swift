@@ -17,7 +17,7 @@ extension DiagramRenderer {
 
         for band in layout.sections {
             context.saveGState()
-            context.setFillColor(resolvedCGColor(categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
+            context.setFillColor(resolvedCGColor(theme.categoricalColor(band.colorIndex).withAlphaComponent(0.10)))
             context.addPath(CGPath(roundedRect: band.frame, cornerWidth: 6, cornerHeight: 6, transform: nil))
             context.fillPath()
             context.restoreGState()

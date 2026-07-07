@@ -49,7 +49,7 @@ extension DiagramRenderer {
 
         // Curve polygons: translucent fill + stroked outline + vertex dots.
         for curve in layout.curves {
-            let color = categoricalColor(curve.colorIndex)
+            let color = theme.categoricalColor(curve.colorIndex)
             context.saveGState()
             context.setFillColor(resolvedCGColor(color.withAlphaComponent(0.14)))
             context.beginPath()
@@ -70,7 +70,7 @@ extension DiagramRenderer {
 
         // Legend.
         for entry in layout.legend {
-            let color = categoricalColor(entry.colorIndex)
+            let color = theme.categoricalColor(entry.colorIndex)
             context.saveGState()
             context.setFillColor(resolvedCGColor(color))
             context.fillEllipse(in: CGRect(x: entry.swatchCenter.x - 4, y: entry.swatchCenter.y - 4, width: 8, height: 8))

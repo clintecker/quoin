@@ -15,7 +15,7 @@ extension DiagramRenderer {
     static func draw(_ layout: BlockLayout, theme: DiagramTheme, in context: CGContext) {
         // Blocks: subtle categorical tint per row, hairline border, ink label.
         for node in layout.nodes where node.shape != .space {
-            let tint = categoricalColor(node.colorIndex)
+            let tint = theme.categoricalColor(node.colorIndex)
             let fill = tint.withAlphaComponent(theme.prefersDark ? 0.22 : 0.13)
             let stroke = tint.withAlphaComponent(0.6)
 
