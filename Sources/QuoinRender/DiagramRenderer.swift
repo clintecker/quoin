@@ -112,6 +112,11 @@ enum DiagramRenderer {
                 let layout = DiagramLayoutEngine.layout(treemap, measure: measure)
                 size = layout.size
                 draw = { context in Self.draw(layout, theme: theme, in: context) }
+            case .gitGraph(let graph):
+                let layout = DiagramLayoutEngine.layout(graph, measure: measure)
+                size = layout.size
+                edgePolylines = layout.edges.map { [$0.from, $0.to] }
+                draw = { context in Self.draw(layout, theme: theme, in: context) }
             }
             guard size.width > 0, size.height > 0, size.width < 4000, size.height < 4000 else { return nil }
 

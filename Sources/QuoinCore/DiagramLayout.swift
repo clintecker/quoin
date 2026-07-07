@@ -369,6 +369,33 @@ public struct TreemapLayout: Sendable {
     public let cells: [Cell]
 }
 
+public struct GitGraphLayout: Sendable {
+    public struct Commit: Sendable {
+        public let center: CGPoint
+        public let colorIndex: Int
+        public let id: String
+        public let tag: String?
+        public let isMerge: Bool
+    }
+
+    public struct Edge: Sendable {
+        public let from: CGPoint
+        public let to: CGPoint
+        public let colorIndex: Int
+    }
+
+    public struct LaneLabel: Sendable {
+        public let name: String
+        public let point: CGPoint
+        public let colorIndex: Int
+    }
+
+    public let size: CGSize
+    public let commits: [Commit]
+    public let edges: [Edge]
+    public let laneLabels: [LaneLabel]
+}
+
 public struct ClassLayout: Sendable {
     public struct Box: Sendable {
         public let name: String

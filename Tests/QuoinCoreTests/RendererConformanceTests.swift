@@ -143,6 +143,7 @@ final class RendererConformanceTests: XCTestCase {
         case .kanban(let k): return DiagramLayoutEngine.layout(k, measure: measure).size
         case .radar(let r): return DiagramLayoutEngine.layout(r, measure: measure).size
         case .treemap(let t): return DiagramLayoutEngine.layout(t, measure: measure).size
+        case .gitGraph(let g): return DiagramLayoutEngine.layout(g, measure: measure).size
         }
     }
 

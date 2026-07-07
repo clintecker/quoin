@@ -467,3 +467,32 @@ public struct Treemap: Hashable, Sendable {
     public var root: TreemapNode
     public init(root: TreemapNode) { self.root = root }
 }
+
+/// A Mermaid `gitGraph`: an ordered commit history across branches, with
+/// branch/checkout/merge operations. Each commit records its branch, parents
+/// (indices into `commits`), and optional id/tag.
+public struct GitGraph: Hashable, Sendable {
+    public struct Commit: Hashable, Sendable {
+        public let id: String
+        public let branch: String
+        public let tag: String?
+        public let isMerge: Bool
+        /// Indices into `commits` of this commit's parents (0–2).
+        public let parents: [Int]
+        public init(id: String, branch: String, tag: String?, isMerge: Bool, parents: [Int]) {
+            self.id = id
+            self.branch = branch
+            self.tag = tag
+            self.isMerge = isMerge
+            self.parents = parents
+        }
+    }
+
+    public var commits: [Commit]
+    /// Branch names in creation order (their lane order).
+    public var branches: [String]
+    public init(commits: [Commit], branches: [String]) {
+        self.commits = commits
+        self.branches = branches
+    }
+}

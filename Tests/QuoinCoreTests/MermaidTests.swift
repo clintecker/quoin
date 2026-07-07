@@ -328,8 +328,34 @@ final class MermaidParserTests: XCTestCase {
         XCTAssertEqual(treemap.root.value, 55)
     }
 
+    func testGitGraphParsing() {
+        let diagram = MermaidParser.parse("""
+        gitGraph
+            commit id: "init"
+            branch gfm
+            checkout gfm
+            commit id: "tables"
+            checkout main
+            merge gfm tag: "v0.2"
+        """)
+        guard case .gitGraph(let graph) = diagram else { return XCTFail("expected gitGraph") }
+        XCTAssertEqual(graph.branches, ["main", "gfm"])
+        XCTAssertEqual(graph.commits.count, 3)
+        XCTAssertEqual(graph.commits[0].id, "init")
+        XCTAssertEqual(graph.commits[0].branch, "main")
+        // "tables" is on gfm, parented to init.
+        XCTAssertEqual(graph.commits[1].branch, "gfm")
+        XCTAssertEqual(graph.commits[1].parents, [0])
+        // The merge commit is on main with two parents (main head + gfm head).
+        let merge = graph.commits[2]
+        XCTAssertTrue(merge.isMerge)
+        XCTAssertEqual(merge.branch, "main")
+        XCTAssertEqual(Set(merge.parents), [0, 1])
+        XCTAssertEqual(merge.tag, "v0.2")
+    }
+
     func testUnsupportedTypeReturnsNil() {
-        XCTAssertNil(MermaidParser.parse("gitGraph\n  commit"))
+        XCTAssertNil(MermaidParser.parse("mindmap"))
         XCTAssertNil(MermaidParser.parse("not mermaid at all"))
     }
 }
@@ -968,5 +994,33 @@ final class DiagramLayoutTests: XCTestCase {
         XCTAssertEqual(ratio, 4, accuracy: 0.3)
         // Cells don't overlap (Big and Small are disjoint).
         XCTAssertFalse(big.frame.insetBy(dx: 1, dy: 1).intersects(small.frame.insetBy(dx: 1, dy: 1)))
+    }
+
+    func testGitGraphLayout() {
+        guard case .gitGraph(let graph)? = MermaidParser.parse("""
+        gitGraph
+            commit id: "a"
+            branch feature
+            checkout feature
+            commit id: "b"
+            checkout main
+            merge feature
+        """) else { return XCTFail("parse failed") }
+        let layout = DiagramLayoutEngine.layout(graph, measure: measure)
+
+        XCTAssertGreaterThan(layout.size.width, 0)
+        XCTAssertEqual(layout.commits.count, 3)
+        XCTAssertEqual(layout.laneLabels.map(\.name), ["main", "feature"])
+        // Commits advance left-to-right in history order.
+        XCTAssertLessThan(layout.commits[0].center.x, layout.commits[1].center.x)
+        XCTAssertLessThan(layout.commits[1].center.x, layout.commits[2].center.x)
+        // "feature" (lane 1) sits below "main" (lane 0).
+        let featureCommit = layout.commits[1]
+        let mainCommit = layout.commits[0]
+        XCTAssertGreaterThan(featureCommit.center.y, mainCommit.center.y)
+        // The merge commit is back on main's lane, and has two incoming edges.
+        XCTAssertEqual(layout.commits[2].center.y, mainCommit.center.y, accuracy: 0.5)
+        let mergeEdges = layout.edges.filter { abs($0.to.x - layout.commits[2].center.x) < 0.5 }
+        XCTAssertEqual(mergeEdges.count, 2)
     }
 }

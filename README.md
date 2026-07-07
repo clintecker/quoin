@@ -112,7 +112,8 @@ that way.
 | Kanban | ✅ | tinted columns, word-wrapped cards, ticket chips |
 | Radar | ✅ | spoked graticule, overlaid curve polygons, legend |
 | Treemap | ✅ | squarified nested rectangles, group headers, values |
-| gitGraph, requirement, C4, sankey, block, architecture, … | 🟡 | tidy labelled source card |
+| GitGraph | ✅ | commit lanes, branch/merge curves, tags |
+| requirement, C4, sankey, block, architecture, … | 🟡 | tidy labelled source card |
 
 ### Editor & app
 

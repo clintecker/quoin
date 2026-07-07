@@ -246,6 +246,23 @@ final class DiagramGalleryTests: XCTestCase {
               Plain .md files
               Local-only
         """),
+        ("gitgraph", """
+        gitGraph
+            commit id: "init"
+            commit id: "commonmark"
+            branch gfm
+            checkout gfm
+            commit id: "tables"
+            commit id: "tasks"
+            checkout main
+            merge gfm tag: "v0.2"
+            branch extensions
+            checkout extensions
+            commit id: "mermaid"
+            commit id: "mathjax"
+            checkout main
+            merge extensions tag: "v0.3"
+        """),
         ("treemap", """
         treemap-beta
             "Markdown Fixture"
