@@ -20,17 +20,18 @@ final class LayoutLintTests: XCTestCase {
     /// here makes its clean layout load-bearing.
     private let errorFree: Set<String> = [
         "flowchart", "sequence", "gantt", "journey", "kanban", "mindmap",
-        "packet", "radar", "timeline", "treemap", "zenuml", "er", "state",
-        // Fixed by the linter-driven fix pass (edge routing / canvas sizing /
-        // label spacing), each verified to 0 errors:
-        "architecture", "block", "c4", "gitgraph", "pie", "quadrant",
-        "requirement", "sankey", "xychart",
+        "packet", "radar", "timeline", "treemap", "zenuml", "state",
+        "block", "c4", "gitgraph", "pie", "quadrant", "requirement",
+        "sankey", "xychart",
     ]
 
-    /// Known layout debt — the linter's own to-fix list. Down to one: the class
-    /// diagram's shared layered router still passes one edge through a box.
+    /// Known layout debt — edges routed through their own endpoint boxes. These
+    /// were previously (wrongly) marked clean because the occlusion check
+    /// exempted endpoint boxes entirely; the honest length-based check exposes
+    /// them. The routing needs to connect on the side facing the target instead
+    /// of crossing the box to escape.
     private let knownIssues: Set<String> = [
-        "class",
+        "architecture", "class", "er",
     ]
 
     private var fixturesDir: URL {

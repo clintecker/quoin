@@ -84,16 +84,30 @@ public enum DiagramLayoutLinter {
         let occlusionInset: CGFloat = 3
         let overlapTolerance: CGFloat = 2
 
-        // 1. Edge–node occlusion: a segment crossing a node that isn't its
-        //    endpoint and isn't a container.
+        // 1. Edge–node occlusion, measured by how far a wire travels INSIDE a
+        //    box, not by mere intersection. This matters because an edge
+        //    legitimately touches its own endpoint box at the border — but a
+        //    route that enters a box and runs across its interior (even its own
+        //    endpoint box: a wire anchored on the wrong side that crosses the
+        //    box to escape) is a real defect. Exempting endpoints wholesale (as
+        //    the old check did) is exactly the blind spot that let an edge run
+        //    straight through the "Web Application Firewall" box unflagged. So:
+        //    sum the edge's length inside each box's interior and flag when it
+        //    exceeds a fraction of the box — a border touch is ~0, a crossing is
+        //    most of the width. Containers (groups/plots) are exempt.
         for (ei, edge) in scene.edges.enumerated() {
             let segs = Array(zip(edge.polyline, edge.polyline.dropFirst()))
-            for node in scene.nodes where !node.isContainer && !isEndpoint(node, of: edge) {
+            for node in scene.nodes where !node.isContainer {
                 let inner = node.frame.insetBy(dx: occlusionInset, dy: occlusionInset)
                 guard inner.width > 0, inner.height > 0 else { continue }
-                if segs.contains(where: { segmentIntersectsRect($0.0, $0.1, inner) }) {
+                let insideLength = segs.reduce(CGFloat(0)) { $0 + segmentInsideLength($1.0, $1.1, inner) }
+                // Flag a real traversal, not a connection stub: over half the
+                // box's short side AND at least an absolute floor, so a wire
+                // meeting a small node (a git-commit dot) at its centre isn't
+                // mistaken for a crossing.
+                if insideLength > max(0.5 * min(inner.width, inner.height), 18) {
                     out.append(.init(.error, "edge-occludes-node",
-                        "edge #\(ei)\(edge.label.map { " (\"\($0)\")" } ?? "") passes through node \"\(node.id)\""))
+                        "edge #\(ei)\(edge.label.map { " (\"\($0)\")" } ?? "") passes through node \"\(node.id)\" (\(Int(insideLength))pt inside)"))
                 }
             }
         }
@@ -192,6 +206,27 @@ public enum DiagramLayoutLinter {
         }
         let o1 = cross(a, b, c), o2 = cross(a, b, d), o3 = cross(c, d, a), o4 = cross(c, d, b)
         return (o1 > 0) != (o2 > 0) && (o3 > 0) != (o4 > 0)
+    }
+
+    /// Length of the portion of segment a→b lying inside rect `r`
+    /// (Liang–Barsky clip). 0 when the segment misses or only grazes the border.
+    static func segmentInsideLength(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        var t0: CGFloat = 0, t1: CGFloat = 1
+        let clip: [(CGFloat, CGFloat)] = [
+            (-dx, a.x - r.minX), (dx, r.maxX - a.x),
+            (-dy, a.y - r.minY), (dy, r.maxY - a.y),
+        ]
+        for (p, q) in clip {
+            if p == 0 {
+                if q < 0 { return 0 }               // parallel and outside
+            } else {
+                let t = q / p
+                if p < 0 { if t > t1 { return 0 }; if t > t0 { t0 = t } }
+                else { if t < t0 { return 0 }; if t < t1 { t1 = t } }
+            }
+        }
+        return max(0, t1 - t0) * hypot(dx, dy)
     }
 
     static func segmentIntersectsRect(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> Bool {
