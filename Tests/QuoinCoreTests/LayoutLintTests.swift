@@ -37,6 +37,22 @@ final class LayoutLintTests: XCTestCase {
             .appendingPathComponent("Fixtures/diagrams")
     }
 
+    /// Self-verification for a single type: `QUOIN_LINT_TYPE=architecture swift
+    /// test --filter testLintSingleType` lints only that fixture and FAILS with
+    /// the violation list unless it is error-free. The red/green a fix loop
+    /// iterates against — no rendering, no vision.
+    func testLintSingleType() throws {
+        guard let type = ProcessInfo.processInfo.environment["QUOIN_LINT_TYPE"] else {
+            throw XCTSkip("set QUOIN_LINT_TYPE=<type> to lint one fixture")
+        }
+        let source = try String(contentsOf: fixturesDir.appendingPathComponent("\(type).mmd"), encoding: .utf8)
+        guard let diagram = MermaidParser.parse(source) else { return XCTFail("\(type): did not parse") }
+        let violations = DiagramLayoutLinter.lint(DiagramScene.lower(diagram, measure: measure))
+        let errors = violations.filter { $0.severity == .error }
+        print(DiagramLayoutLinter.report(DiagramScene.lower(diagram, measure: measure)))
+        XCTAssertTrue(errors.isEmpty, "\(type): \(errors.count) layout errors remain")
+    }
+
     func testFixtureLayoutsAreClean() throws {
         let files = try FileManager.default.contentsOfDirectory(at: fixturesDir, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "mmd" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
