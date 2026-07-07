@@ -1,0 +1,21 @@
+kanban
+  backlog[Backlog]
+    card1[Audit third-party OAuth scopes before the SOC2 window closes]@{ ticket: SEC-482, priority: 'High' }
+    card2[Migrate the legacy notifications table off the shared Postgres box]@{ ticket: INF-119, priority: 'Medium' }
+    card3[Spike: evaluate replacing Redis pub/sub with NATS JetStream]@{ ticket: ARCH-77, priority: 'Low' }
+    card4[Write onboarding docs for the new import pipeline]@{ ticket: DOC-204 }
+  todo[Selected for Dev]
+    card5[Add retry-with-backoff to the webhook dispatcher]@{ ticket: PLAT-903, priority: 'High' }
+    card6[Fix timezone drift in the recurring-billing scheduler]@{ ticket: BILL-31, priority: 'Critical' }
+    card7[Expose per-tenant rate limits in the admin dashboard]@{ ticket: ADM-56, priority: 'Medium' }
+  doing[In Progress]
+    card8[Rework the search indexer to stream results instead of buffering]@{ ticket: SRCH-12, priority: 'High' }
+    card9[Instrument cold-start latency across the edge worker fleet]@{ ticket: OBS-40, priority: 'Medium' }
+  review[In Review]
+    card10[PR: harden CSRF tokens on the session-refresh endpoint]@{ ticket: SEC-501, priority: 'High' }
+    card11[PR: paginate the audit-log export so it stops OOMing]@{ ticket: INF-133, priority: 'Critical' }
+    card12[PR: dark-mode contrast fixes for the settings panels]@{ ticket: UI-88, priority: 'Low' }
+  done[Shipped]
+    card13[Rolled out the multi-region read replicas]@{ ticket: INF-90 }
+    card14[Deprecated the v1 REST API with sunset headers]@{ ticket: API-17, priority: 'Medium' }
+    card15[Enabled MFA enforcement for all admin accounts]@{ ticket: SEC-410, priority: 'High' }

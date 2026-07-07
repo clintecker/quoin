@@ -1,0 +1,40 @@
+sankey-beta
+
+Coal,Electricity Grid,58
+Natural Gas,Electricity Grid,72
+Natural Gas,Industrial Heat,41
+Nuclear,Electricity Grid,34
+Hydro,Electricity Grid,22
+Wind,Electricity Grid,28
+Solar PV,Electricity Grid,19
+Biomass,Industrial Heat,12
+Biomass,Electricity Grid,7
+Crude Oil,Refined Fuels,96
+Refined Fuels,Road Transport,54
+Refined Fuels,Aviation,18
+Refined Fuels,Shipping,14
+Refined Fuels,Industrial Heat,10
+Electricity Grid,Residential,64
+Electricity Grid,Commercial,49
+Electricity Grid,Industry,71
+Electricity Grid,Grid Losses,9
+Industrial Heat,Industry,52
+Industrial Heat,Commercial,11
+Residential,Useful Energy,48
+Commercial,Useful Energy,44
+Industry,Useful Energy,89
+Road Transport,Useful Energy,21
+Road Transport,Waste Heat,33
+Aviation,Useful Energy,7
+Industry,Waste Heat,34
+</complexExample>
+<parameter name="notes">Read DiagramScene.swift (IR + linter), DiagramLayoutSankey.swift (SankeyLayout struct: Node{label,rect,colorIndex,labelCenter}, Link{sourceTop,sourceBottom,targetTop,targetBottom,colorIndex}), and MermaidParser+Sankey.swift (parser: CSV source,target,value lines; nodes in first-appearance order).
+
+Lowering decisions:
+- nodes: one Node per SankeyLayout.Node, id=label, frame=rect, isContainer:false (flow bars contain no nodes).
+- edges: one Edge per Link. Link stores four band-corner points; I lower to the band centerline [sourceCenter -> targetCenter] where each center is the midpoint of the top/bottom pair at that bar's edge. This gives the linter a real flow route for crossing/occlusion checks. label:nil (sankey links carry no text label in this layout).
+- labels: sankey node labels are outboard (labelCenter is beside the bar, NOT centered on it), so they are genuinely free-standing and can collide with adjacent columns' bars/labels — I list them with a synthesized frame from labelCenter (w = label.count*6, h=14). This is the one subtlety: unlike most types where the node's own centered label is implicit, sankey labels sit outside the frame and belong in labels[].
+
+Verified with `swift build` — QuoinCore compiles clean.
+
+Example: a global energy-balance sankey. 22 distinct nodes across ~6 depth columns (primary sources -> carriers -> sectors -> useful/waste energy), 27 weighted links, multiple fan-in/fan-out hubs (Electricity Grid, Industrial Heat, Refined Fuels), long labels ("Electricity Grid", "Road Transport"). Dense enough to stress column stacking, band packing, and outboard-label collisions.

@@ -1,0 +1,35 @@
+gantt
+    title Quoin 4.0 Release Program
+    dateFormat YYYY-MM-DD
+    axisFormat %m-%d
+
+    section Research & Spec
+    Competitive teardown of editors      :done,    r1, 2026-01-05, 8d
+    Native diagram-engine spike          :done,    r2, after r1, 6d
+    TRD amendment & sign-off             :done,    r3, after r2, 4d
+    Design-doc handoff freeze            :milestone, m1, after r3, 0d
+
+    section Core Engine
+    Layout linter IR                     :done,    c1, after m1, 5d
+    Gantt & timeline lowering            :active,  c2, after c1, 7d
+    Sequence & class lowering            :active,  c3, after c1, 9d
+    Occlusion + overlap invariants       :crit,    c4, after c2, 6d
+    Cross-type regression corpus         :         c5, after c4, 5d
+    Engine feature complete              :milestone, m2, after c5, 0d
+
+    section Rendering
+    TextKit 2 decoration audit           :active,  d1, after m1, 10d
+    Syntax-reveal edge cases             :crit,    d2, after d1, 8d
+    Diagram frame drawing pass           :         d3, after c3, 7d
+    Dark-mode & retina screenshot diffs  :         d4, after d3, 4d
+
+    section Hardening
+    Torture-test pathological inputs     :crit,    h1, after m2, 6d
+    Performance budget verification      :         h2, after h1, 5d
+    Byte-lossless round-trip audit       :         h3, after h1, 7d
+    Beta cut                             :milestone, m3, after h3, 0d
+
+    section Release
+    Docs & support-matrix sync           :         x1, after m3, 4d
+    App Store submission & review        :crit,    x2, after x1, 9d
+    4.0 ship                             :milestone, m4, after x2, 0d

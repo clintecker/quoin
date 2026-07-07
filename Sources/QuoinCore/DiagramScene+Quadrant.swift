@@ -1,0 +1,60 @@
+import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
+extension DiagramScene {
+    static func from(_ layout: QuadrantLayout) -> DiagramScene {
+        var nodes: [Node] = []
+
+        // The plot square and the four tint quarters legitimately contain the
+        // data dots, so they are containers (exempt from overlap/occlusion).
+        nodes.append(Node(id: "plot", frame: layout.plotRect, isContainer: true))
+        for (index, rect) in layout.quadrantRects.enumerated() {
+            nodes.append(Node(id: "quadrant-\(index + 1)", frame: rect, isContainer: true))
+        }
+
+        // Each data point is a real box: a small frame around its dot.
+        let r = layout.dotRadius
+        for point in layout.points {
+            let frame = CGRect(x: point.position.x - r, y: point.position.y - r,
+                               width: r * 2, height: r * 2)
+            nodes.append(Node(id: point.label, frame: frame))
+        }
+
+        // Quadrant charts have no connectors.
+
+        // Free-standing labels that can collide: each dot's right-anchored
+        // label, the quadrant names, and the axis-end labels.
+        var labels: [Label] = []
+        func leftAnchored(_ text: String, at anchor: CGPoint) -> Label {
+            let w = CGFloat(text.count) * 6
+            return Label(text: text, frame: CGRect(x: anchor.x, y: anchor.y - 7, width: w, height: 14))
+        }
+        func centered(_ text: String, at c: CGPoint) -> Label {
+            let w = CGFloat(text.count) * 6
+            return Label(text: text, frame: CGRect(x: c.x - w / 2, y: c.y - 7, width: w, height: 14))
+        }
+
+        for point in layout.points {
+            labels.append(leftAnchored(point.label, at: point.labelPoint))
+        }
+        for q in layout.quadrantLabels {
+            labels.append(centered(q.text, at: q.center))
+        }
+        for x in layout.xAxisLabels {
+            labels.append(centered(x.text, at: x.center))
+        }
+        for y in layout.yAxisLabels {
+            labels.append(centered(y.text, at: y.center))
+        }
+
+        return DiagramScene(
+            name: "quadrant",
+            size: layout.size,
+            nodes: nodes,
+            edges: [],
+            labels: labels
+        )
+    }
+}

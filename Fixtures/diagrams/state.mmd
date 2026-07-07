@@ -1,0 +1,40 @@
+stateDiagram-v2
+    direction TB
+    [*] --> Draft
+    state "Draft (author editing)" as Draft
+    Draft --> Submitted : submit for review
+    Submitted --> reviewFork
+
+    state reviewFork <<fork>>
+    reviewFork --> LegalReview
+    reviewFork --> TechReview
+    reviewFork --> EditorialReview
+
+    state "In Review" as ReviewGroup {
+        LegalReview --> reviewJoin : approved
+        TechReview --> reviewJoin : approved
+        EditorialReview --> reviewJoin : approved
+        LegalReview --> Draft : legal rejection
+        TechReview --> Draft : needs rework
+    }
+    state reviewJoin <<join>>
+
+    reviewJoin --> gate
+    state gate <<choice>>
+    gate --> Approved : all sign-offs present
+    gate --> Draft : revisions requested
+
+    state "Publishing Pipeline" as Approved {
+        [*] --> Staging
+        Staging --> Building : trigger build
+        Building --> Staging : build failed
+        Building --> Canary : artifacts ready
+        Canary --> RollingOut : metrics healthy
+        Canary --> Staging : canary regressed
+        RollingOut --> Live : 100% traffic
+        Live --> [*]
+    }
+
+    Approved --> Archived : superseded
+    Approved --> Draft : hotfix reopen
+    Archived --> [*]

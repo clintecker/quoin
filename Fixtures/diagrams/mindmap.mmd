@@ -1,0 +1,37 @@
+mindmap
+  root((Quoin Editor Architecture))
+    Core Engine
+      Parsing
+        swift-markdown
+        cmark-gfm bridge
+        AST reconciliation
+      DocumentSession
+        Source of truth is markdown
+        Byte-lossless round-trip
+        Undo and redo coalescing
+      Search and Stats
+        Full-text indexer
+        Reading-time estimator
+    Rendering Pipeline
+      AttributedRenderer projection
+        Block ID tagging
+        BlockDecoration chrome
+      Syntax reveal
+        MarkdownSourceStyler
+        Hidden delimiters stay 1pt
+      Diagram engine
+        Layout geometry
+        DiagramScene linter
+        23 native chart types
+    Platform Layers
+      AppKit macOS editor
+        QuoinTextView subclass
+        ReaderCoordinator
+      UIKit iOS reader
+        MarkdownReaderViewIOS
+      Not Catalyst-safe yet
+    Testing and CI
+      PerformanceTests budgets
+      TortureTests pathological inputs
+      Screenshot automation
+      swift test on macOS runner

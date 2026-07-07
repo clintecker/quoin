@@ -1,0 +1,23 @@
+block-beta
+columns 5
+    ingest["Ingest Gateway"] kafka(("Kafka Bus")) space validate["Schema Validator"] deadletter["Dead-Letter Queue"]
+    raw["Raw Landing (S3)"] stream("Stream Processor") enrich("Enrichment Service") dedupe["Dedup Cache"] space
+    space curated["Curated Store"] features("Feature Builder") warehouse["Warehouse"] metrics["Metrics Sink"]
+    api["Serving API"] cache(("Redis Cache")) space dashboards["BI Dashboards"] alerts["Alerting"]
+    ingest -->|events| kafka
+    kafka -->|persist| raw
+    kafka -->|consume| stream
+    stream --> validate
+    validate -->|reject| deadletter
+    validate -->|ok| enrich
+    enrich --> dedupe
+    stream --> curated
+    curated --> features
+    features --> warehouse
+    warehouse -->|serve| api
+    api --> cache
+    warehouse --> metrics
+    warehouse --> dashboards
+    metrics -->|threshold| alerts
+    dedupe -->|reprocess| stream
+    features --> dashboards

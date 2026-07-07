@@ -1,0 +1,23 @@
+zenuml
+    title Checkout & Payment Authorization Flow
+    @Actor Shopper
+    @Boundary WebApp
+    @Control CheckoutService
+    @Control InventoryService
+    @Entity Cart
+    @Control PaymentGateway
+    @Database OrdersDB
+    Shopper->WebApp: Click "Place Order"
+    WebApp->CheckoutService: submitOrder(cartId)
+    CheckoutService->Cart: loadItems(cartId)
+    CheckoutService.validateShippingAddress()
+    CheckoutService->InventoryService: reserveStock(items)
+    InventoryService.checkAvailability()
+    InventoryService->OrdersDB: writeReservation()
+    InventoryService->CheckoutService: reservationConfirmed
+    CheckoutService->PaymentGateway: authorize(amount, token)
+    PaymentGateway.runFraudChecks()
+    PaymentGateway->CheckoutService: authApproved(authId)
+    CheckoutService->OrdersDB: persistOrder(status=CONFIRMED)
+    CheckoutService->WebApp: orderConfirmation(orderId)
+    WebApp->Shopper: Show receipt & tracking number

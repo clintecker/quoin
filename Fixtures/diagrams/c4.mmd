@@ -1,0 +1,39 @@
+C4Container
+    title Container diagram for the Internet Banking Platform
+
+    Person(customer, "Personal Banking Customer", "A retail customer of the bank with one or more personal accounts")
+    Person_Ext(support, "Support Agent", "Staffs the customer contact centre and resolves disputes")
+
+    System_Boundary(banking, "Internet Banking Platform") {
+        Container(spa, "Single-Page Application", "TypeScript, React", "Delivers all banking features to the customer's web browser")
+        Container(mobile, "Mobile App", "Kotlin Multiplatform", "Delivers a subset of banking features to customers on the go")
+        Container(web, "Web Application", "Java, Spring MVC", "Serves static content and the single-page application shell")
+        Container(api, "API Application", "Java, Spring Boot", "Provides banking functionality over a secure JSON/HTTPS API")
+        ContainerDb(db, "Database", "PostgreSQL", "Stores user profiles, account balances, and audited transactions")
+        ContainerDb(cache, "Session Cache", "Redis", "Holds ephemeral session tokens and rate-limiting counters")
+        Container(queue, "Event Bus", "Apache Kafka", "Streams domain events to downstream analytics and fraud services")
+        Container(fraud, "Fraud Detection Worker", "Python, scikit-learn", "Scores transactions for fraud risk in near real time")
+    }
+
+    System_Ext(mainframe, "Mainframe Banking System", "The core banking system of record for accounts and ledgers")
+    System_Ext(email, "E-mail System", "The corporate Microsoft Exchange e-mail system")
+    System_Ext(sms, "SMS Gateway", "Third-party provider used for one-time passcodes")
+
+    Rel(customer, spa, "Views balances and makes payments using", "HTTPS")
+    Rel(customer, mobile, "Views balances and makes payments using")
+    Rel(support, api, "Looks up customer records using", "HTTPS")
+
+    Rel(spa, web, "Downloads the SPA bundle from", "HTTPS")
+    Rel(spa, api, "Makes API calls to", "JSON/HTTPS")
+    Rel(mobile, api, "Makes API calls to", "JSON/HTTPS")
+
+    Rel(api, db, "Reads from and writes to", "JDBC/TLS")
+    Rel(api, cache, "Reads and writes session tokens", "RESP/TLS")
+    Rel(api, mainframe, "Makes API calls to", "XML/HTTPS")
+    Rel(api, queue, "Publishes transaction events to", "Kafka protocol")
+    Rel(api, email, "Sends account notifications using", "SMTP")
+    Rel(api, sms, "Sends one-time passcodes using", "REST")
+
+    Rel(queue, fraud, "Delivers transaction events to", "Kafka protocol")
+    Rel(fraud, db, "Writes fraud scores to", "JDBC/TLS")
+    Rel(fraud, mainframe, "Requests account history from", "XML/HTTPS")

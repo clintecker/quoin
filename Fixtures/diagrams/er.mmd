@@ -1,0 +1,80 @@
+erDiagram
+    CUSTOMER {
+        uuid id PK
+        string email
+        string full_name
+        string phone
+        datetime created_at
+    }
+    ADDRESS {
+        uuid id PK
+        uuid customer_id FK
+        string line1
+        string city
+        string postal_code
+        string country
+    }
+    ORDER {
+        uuid id PK
+        uuid customer_id FK
+        string status
+        decimal total_amount
+        datetime placed_at
+    }
+    ORDER_LINE {
+        uuid id PK
+        uuid order_id FK
+        uuid product_id FK
+        int quantity
+        decimal unit_price
+    }
+    PRODUCT {
+        uuid id PK
+        string sku
+        string name
+        decimal list_price
+        int stock_quantity
+    }
+    CATEGORY {
+        uuid id PK
+        string name
+        uuid parent_id FK
+    }
+    SUPPLIER {
+        uuid id PK
+        string company_name
+        string contact_email
+    }
+    PAYMENT {
+        uuid id PK
+        uuid order_id FK
+        string method
+        decimal amount
+        string status
+    }
+    SHIPMENT {
+        uuid id PK
+        uuid order_id FK
+        string carrier
+        string tracking_number
+        datetime shipped_at
+    }
+    REVIEW {
+        uuid id PK
+        uuid customer_id FK
+        uuid product_id FK
+        int rating
+        string body
+    }
+    CUSTOMER ||--o{ ADDRESS : "has"
+    CUSTOMER ||--o{ ORDER : "places"
+    CUSTOMER ||--o{ REVIEW : "writes"
+    ORDER ||--|{ ORDER_LINE : "contains"
+    ORDER ||--o{ PAYMENT : "settled by"
+    ORDER ||--o| SHIPMENT : "fulfilled by"
+    PRODUCT ||--o{ ORDER_LINE : "appears in"
+    PRODUCT ||--o{ REVIEW : "receives"
+    PRODUCT }o--|| CATEGORY : "classified as"
+    CATEGORY ||--o{ CATEGORY : "subcategory of"
+    SUPPLIER ||--o{ PRODUCT : "supplies"
+    ADDRESS ||--o| SHIPMENT : "ships to"

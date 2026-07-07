@@ -1,0 +1,26 @@
+flowchart TD
+    Dev([Developer pushes commit]) --> Hook{Pre-commit hook passes?}
+    Hook -->|no| Reject[/Reject push locally/]
+    Hook -->|yes| PR[Open pull request]
+    PR --> CI{CI pipeline green?}
+    CI -->|lint fails| Lint[Report lint errors]
+    CI -->|tests fail| Tests[Report failing tests]
+    Lint -.-> PR
+    Tests -.-> PR
+    CI -->|all checks pass| Review{Two approvals?}
+    Review -->|changes requested| PR
+    Review -->|approved| Merge[[Squash and merge to main]]
+    Merge --> Build[Build release artifact]
+    Build --> Store[(Artifact registry)]
+    Store --> Stage[Deploy to staging]
+    Stage --> Smoke{Smoke tests pass?}
+    Smoke -->|no| Rollback[Roll back staging]
+    Rollback -.-> Store
+    Smoke -->|yes| Canary[Canary rollout 5 percent]
+    Canary --> Metrics{Error rate under threshold?}
+    Metrics -->|regression detected| Halt[Halt and page on-call]
+    Halt -.->|incident opened| Rollback
+    Metrics -->|healthy| Full[Promote to full production]
+    Full --> Notify[Notify release channel]
+    Notify --> Done((Release complete))
+    Halt -->|postmortem| Retro[/Schedule retrospective/]

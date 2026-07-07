@@ -1,0 +1,24 @@
+timeline
+    title Quoin — Native Diagram Engine Roadmap
+    section Foundations
+        2023 Q3 : Fork cmark-gfm and swift-markdown into QuoinCore
+                : Establish byte-lossless round-trip invariant
+        2023 Q4 : TextKit 2 projection with per-block decoration passes
+                : Syntax reveal via MarkdownSourceStyler
+                : First flowchart layout (layered, cycle-safe)
+    section Diagram Breadth
+        2024 Q1 : Sequence and class diagrams : State machine layout
+        2024 Q2 : ER diagrams with crow's-foot cardinality
+                : Gantt charts with dependency edges
+                : Pie and quadrant charts
+        2024 Q3 : Mindmap, journey, and timeline engines
+                : Radar, kanban, and treemap rendering
+        2024 Q4 : gitGraph with branch swimlanes : Packet byte-field diagrams
+    section Layout Quality
+        2025 Q1 : DiagramScene common IR for all 23 types
+                : Geometry linter — edge occlusion and node overlap
+        2025 Q2 : Label collision and crossing-budget warnings
+                : Regression corpus of pathological diagrams
+    section Beyond macOS
+        2025 Q3 : iOS and iPadOS reader parity : visionOS spatial canvas
+        2026 Q1 : Incremental relayout on edit : Export to SVG and PDF

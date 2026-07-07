@@ -1,0 +1,37 @@
+gitGraph
+    commit id: "init" tag: "v0.1.0"
+    commit id: "scaffold"
+    branch develop
+    checkout develop
+    commit id: "dev-setup"
+    branch feature/auth
+    checkout feature/auth
+    commit id: "auth-model"
+    commit id: "auth-login"
+    commit id: "auth-tests"
+    checkout develop
+    branch feature/search
+    checkout feature/search
+    commit id: "search-index"
+    commit id: "search-query"
+    checkout develop
+    merge feature/auth id: "merge-auth" tag: "auth-done"
+    commit id: "dev-cleanup"
+    merge feature/search id: "merge-search"
+    branch release/1.0
+    checkout release/1.0
+    commit id: "rc-bump"
+    commit id: "rc-fixes"
+    checkout main
+    merge release/1.0 id: "release-1.0" tag: "v1.0.0"
+    checkout develop
+    merge release/1.0 id: "backmerge-1.0"
+    checkout main
+    branch hotfix/1.0.1
+    checkout hotfix/1.0.1
+    commit id: "hotfix-patch"
+    checkout main
+    merge hotfix/1.0.1 id: "release-1.0.1" tag: "v1.0.1"
+    checkout develop
+    merge hotfix/1.0.1 id: "backmerge-hotfix"
+    commit id: "dev-next"

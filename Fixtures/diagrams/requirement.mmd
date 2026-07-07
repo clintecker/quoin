@@ -1,0 +1,99 @@
+requirementDiagram
+
+requirement flight_control_system {
+    id: SYS-1
+    text: The flight control system shall stabilise the airframe across the full operating envelope without pilot input
+    risk: high
+    verifymethod: analysis
+}
+
+functionalRequirement attitude_hold {
+    id: FUN-1.1
+    text: The autopilot shall maintain the commanded pitch and roll attitude within two degrees
+    risk: medium
+    verifymethod: test
+}
+
+functionalRequirement waypoint_navigation {
+    id: FUN-1.2
+    text: The system shall follow a loaded flight plan and sequence waypoints automatically
+    risk: medium
+    verifymethod: demonstration
+}
+
+performanceRequirement control_loop_rate {
+    id: PRF-2.1
+    text: The inner control loop shall execute at no less than two hundred hertz under worst case load
+    risk: high
+    verifymethod: analysis
+}
+
+performanceRequirement sensor_latency {
+    id: PRF-2.2
+    text: End to end sensor to actuator latency shall not exceed twelve milliseconds
+    risk: high
+    verifymethod: test
+}
+
+interfaceRequirement pilot_input_bus {
+    id: IFC-3.1
+    text: The sidestick interface shall publish normalised commands over the redundant avionics bus
+    risk: low
+    verifymethod: inspection
+}
+
+physicalRequirement actuator_redundancy {
+    id: PHY-4.1
+    text: Each primary control surface shall be driven by two independent actuators
+    risk: high
+    verifymethod: inspection
+}
+
+designConstraint mil_std_compliance {
+    id: CON-5.1
+    text: All flight critical software shall conform to the applicable airworthiness standard
+    risk: medium
+    verifymethod: inspection
+}
+
+element flight_computer {
+    type: hardware
+    docref: HW-Spec-FC-2200
+}
+
+element control_law_module {
+    type: software
+    docref: SW-CLM-rev-C
+}
+
+element imu_sensor_array {
+    type: hardware
+    docref: HW-IMU-9x
+}
+
+element hydraulic_actuator {
+    type: hardware
+    docref: HW-ACT-Delta
+}
+
+element verification_test_plan {
+    type: document
+    docref: VTP-Master-2026
+}
+
+attitude_hold - derives -> flight_control_system
+waypoint_navigation - derives -> flight_control_system
+control_loop_rate - refines -> attitude_hold
+sensor_latency - refines -> attitude_hold
+pilot_input_bus - traces -> waypoint_navigation
+actuator_redundancy - traces -> flight_control_system
+control_law_module - satisfies -> attitude_hold
+control_law_module - satisfies -> waypoint_navigation
+flight_computer - satisfies -> control_loop_rate
+imu_sensor_array - satisfies -> sensor_latency
+hydraulic_actuator - satisfies -> actuator_redundancy
+flight_computer - contains -> control_law_module
+verification_test_plan - verifies -> attitude_hold
+verification_test_plan - verifies -> sensor_latency
+control_law_module - copies -> mil_std_compliance
+imu_sensor_array - traces -> pilot_input_bus

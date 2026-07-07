@@ -1,0 +1,42 @@
+architecture-beta
+group public(cloud)[Public Edge]
+group services(server)[Application Services]
+group data(database)[Data Platform]
+group observ(logging)[Observability]
+
+service dns(internet)[Route 53 DNS] in public
+service cdn(disk)[CloudFront CDN] in public
+service waf(server)[Web Application Firewall] in public
+
+service gateway(server)[API Gateway] in services
+service auth(server)[Auth Service] in services
+service orders(server)[Orders Service] in services
+service billing(server)[Billing Service] in services
+service notify(server)[Notification Worker] in services
+
+service primary(database)[Postgres Primary] in data
+service replica(database)[Postgres Read Replica] in data
+service cache(disk)[Redis Session Cache] in data
+service queue(server)[Kafka Event Broker] in data
+
+service metrics(server)[Prometheus] in observ
+service logs(logging)[Loki Log Store] in observ
+
+junction fanout in services
+
+dns:B --> T:cdn
+cdn:B --> T:waf
+waf:R --> L:gateway
+gateway:B --> T:auth
+gateway:B --> T:orders
+gateway:R --> L:fanout
+fanout:B --> T:billing
+fanout:B --> T:notify
+auth:B --> T:cache
+orders:B --> T:primary
+billing:B --> T:primary
+primary:R --> L:replica
+notify:B --> T:queue
+orders:R --> L:queue
+metrics:L <-- R:gateway
+logs:L <-- R:notify

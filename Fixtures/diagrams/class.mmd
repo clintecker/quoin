@@ -1,0 +1,82 @@
+classDiagram
+    class PaymentProcessor {
+        <<interface>>
+        +authorize(Money amount) AuthResult
+        +capture(String txnId) Receipt
+        +refund(String txnId, Money amount) Receipt
+    }
+    class StripeGateway {
+        -String apiKey
+        -HttpClient client
+        +authorize(Money amount) AuthResult
+        +capture(String txnId) Receipt
+        +refund(String txnId, Money amount) Receipt
+    }
+    class Customer {
+        +UUID id
+        +String email
+        +String displayName
+        +LoyaltyTier tier
+        +placeOrder(Cart cart) Order
+    }
+    class Order {
+        +UUID id
+        +OrderStatus status
+        +DateTime placedAt
+        +Money grandTotal()
+        +cancel(String reason) void
+    }
+    class LineItem {
+        +int quantity
+        +Money unitPrice
+        +Money subtotal()
+    }
+    class Product {
+        +SKU sku
+        +String title
+        +Money listPrice
+        +int stockOnHand
+    }
+    class Cart {
+        +addItem(Product p, int qty) void
+        +removeItem(SKU sku) void
+        +Money estimatedTotal()
+    }
+    class Address {
+        +String line1
+        +String city
+        +String postalCode
+        +String country
+    }
+    class Warehouse {
+        +String code
+        +reserve(SKU sku, int qty) Reservation
+    }
+    class ShipmentPlanner {
+        +plan(Order order) Shipment
+    }
+    class Shipment {
+        +TrackingNumber tracking
+        +Carrier carrier
+    }
+    class LoyaltyTier {
+        <<enumeration>>
+        BRONZE
+        SILVER
+        GOLD
+    }
+
+    PaymentProcessor <|.. StripeGateway : implements
+    Customer "1" --> "*" Order : places
+    Customer "1" *-- "1" Address : billing
+    Order "1" *-- "1..*" LineItem : contains
+    LineItem "*" --> "1" Product : references
+    Cart "1" o-- "*" LineItem : holds
+    Customer "1" --> "0..1" Cart : owns
+    Order ..> PaymentProcessor : charges via
+    ShipmentPlanner ..> Order : reads
+    ShipmentPlanner --> Shipment : produces
+    Shipment "*" --> "1" Warehouse : ships from
+    Warehouse "1" o-- "*" Product : stocks
+    Customer --> LoyaltyTier : has
+    Order <-- ShipmentPlanner : fulfills
