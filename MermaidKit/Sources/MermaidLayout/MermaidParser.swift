@@ -65,9 +65,26 @@ public enum MermaidDiagram: Hashable, Sendable {
 
 public enum MermaidParser {
 
+    /// Parses a number that is safe to lay out. `Double.init` happily accepts
+    /// "NaN"/"inf", and astronomically large finite values (1e308) overflow to
+    /// infinity in span arithmetic — either poisons layout geometry and traps
+    /// in Int conversions. Rejects non-finite input and clamps magnitude.
+    static func finiteDouble(_ text: some StringProtocol) -> Double? {
+        guard let value = Double(text), value.isFinite else { return nil }
+        return min(max(value, -1e12), 1e12)
+    }
+
+    /// Input bounds, mirroring mermaid.js's own defaults (`maxTextSize`,
+    /// `maxEdges`). Oversized sources return nil FAST instead of feeding a
+    /// quadratic layout for tens of seconds; hosts fall back to showing the
+    /// fenced source.
+    public static let maxTextSize = 50_000
+    public static let maxEdges = 500
+
     /// Parses D1 diagram types; nil for unsupported types or unparseable
     /// input (the caller falls back to styled source).
     public static func parse(_ source: String) -> MermaidDiagram? {
+        guard source.count <= maxTextSize else { return nil }
         let lines = source
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -76,7 +93,7 @@ public enum MermaidParser {
 
         if header.hasPrefix("graph") || header.hasPrefix("flowchart") {
             return parseFlowchart(header: header, body: Array(lines.dropFirst()))
-                .map { .flowchart($0) }
+                .flatMap { $0.edges.count <= maxEdges ? .flowchart($0) : nil }
         }
         if header.hasPrefix("sequenceDiagram") {
             return parseSequence(body: Array(lines.dropFirst())).map { .sequence($0) }

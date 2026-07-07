@@ -52,7 +52,7 @@ extension MermaidParser {
         let coords = line[line.index(after: open)..<close]
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-        guard coords.count == 2, let x = Double(coords[0]), let y = Double(coords[1]) else { return nil }
+        guard coords.count == 2, let x = MermaidParser.finiteDouble(coords[0]), let y = MermaidParser.finiteDouble(coords[1]) else { return nil }
         return QuadrantChart.Point(label: label, x: min(max(x, 0), 1), y: min(max(y, 0), 1))
     }
 }

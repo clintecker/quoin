@@ -45,7 +45,7 @@ extension DiagramScene {
         // Each row is a 10×10 swatch followed by a "Label (NN%)" chip.
         var y = layout.legendOrigin.y
         for slice in layout.slices {
-            let percent = Int((slice.fraction * 100).rounded())
+            let percent = slice.fraction.isFinite ? Int((slice.fraction * 100).rounded()) : 0
             let text = "\(slice.label) (\(percent)%)"
             let textWidth = DiagramScene.estimatedLabelSize(text).width
             labels.append(Label(

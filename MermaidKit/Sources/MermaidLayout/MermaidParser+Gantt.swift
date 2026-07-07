@@ -116,7 +116,7 @@ extension MermaidParser {
     static func durationInDays(_ text: String) -> Double? {
         guard let unit = text.last else { return nil }
         if let bare = Double(text) { return bare }  // "30" → 30 days
-        let value = Double(text.dropLast())
+        let value = MermaidParser.finiteDouble(text.dropLast())
         guard let value, value >= 0 else { return nil }
         switch unit {
         case "d": return value

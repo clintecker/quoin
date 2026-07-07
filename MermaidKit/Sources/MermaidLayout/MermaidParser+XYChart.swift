@@ -22,7 +22,7 @@ extension MermaidParser {
         /// A numeric value, tolerating a `value:"label"` point annotation.
         func number(_ token: String) -> Double? {
             let head = token.split(separator: ":").first.map(String.init) ?? token
-            return Double(head.trimmingCharacters(in: .whitespaces))
+            return MermaidParser.finiteDouble(head.trimmingCharacters(in: .whitespaces))
         }
 
         for line in body {
@@ -47,8 +47,8 @@ extension MermaidParser {
                     // `… lo --> hi`: the numbers on either side of the arrow.
                     let before = spec[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
                     let after = spec[range.upperBound...].trimmingCharacters(in: .whitespaces)
-                    yMax = Double(after.split(separator: " ").last.map(String.init) ?? after)
-                    if let lo = before.split(separator: " ").last.map(String.init), let v = Double(lo) {
+                    yMax = MermaidParser.finiteDouble(after.split(separator: " ").last.map(String.init) ?? after)
+                    if let lo = before.split(separator: " ").last.map(String.init), let v = MermaidParser.finiteDouble(lo) {
                         yMin = v
                         spec = String(before.dropLast(lo.count))
                     }

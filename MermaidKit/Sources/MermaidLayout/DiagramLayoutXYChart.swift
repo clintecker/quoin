@@ -79,7 +79,7 @@ extension DiagramLayoutEngine {
         let divisions = 4
         for step in 0...divisions {
             let value = yMin + (span) * Double(step) / Double(divisions)
-            let text = abs(value) >= 100 ? String(Int(value.rounded())) : formatAxisValue(value)
+            let text = (abs(value) >= 100 && value.isFinite) ? String(Int(value.rounded())) : formatAxisValue(value)
             yLabels.append(XYChartLayout.Label(text: text, center: CGPoint(x: plotRect.minX - 6, y: y(value))))
         }
 
@@ -114,6 +114,7 @@ extension DiagramLayoutEngine {
     }
 
     static func formatAxisValue(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+        guard value.isFinite else { return "\u{2014}" }
+        return value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
     }
 }

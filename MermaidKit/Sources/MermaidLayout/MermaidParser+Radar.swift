@@ -37,14 +37,14 @@ extension MermaidParser {
                 if let open = spec.firstIndex(of: "{"), let close = spec.lastIndex(of: "}"), open < close {
                     for pair in spec[spec.index(after: open)..<close].split(separator: ",") {
                         let kv = pair.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-                        if kv.count == 2, let v = Double(kv[1]) { byKey[kv[0]] = v }
+                        if kv.count == 2, let v = MermaidParser.finiteDouble(kv[1]) { byKey[kv[0]] = v }
                     }
                 }
                 rawCurves.append((label, byKey))
             } else if line.hasPrefix("max ") {
-                maxValue = Double(line.dropFirst(4).trimmingCharacters(in: .whitespaces)) ?? maxValue
+                maxValue = MermaidParser.finiteDouble(line.dropFirst(4).trimmingCharacters(in: .whitespaces)) ?? maxValue
             } else if line.hasPrefix("min ") {
-                minValue = Double(line.dropFirst(4).trimmingCharacters(in: .whitespaces)) ?? minValue
+                minValue = MermaidParser.finiteDouble(line.dropFirst(4).trimmingCharacters(in: .whitespaces)) ?? minValue
             } else if line.hasPrefix("ticks ") {
                 ticks = Int(line.dropFirst(6).trimmingCharacters(in: .whitespaces)) ?? ticks
             }

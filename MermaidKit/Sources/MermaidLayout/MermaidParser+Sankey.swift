@@ -45,7 +45,7 @@ extension MermaidParser {
             let source = fields[0].trimmingCharacters(in: .whitespaces)
             let target = fields[1].trimmingCharacters(in: .whitespaces)
             let valueText = fields[2].trimmingCharacters(in: .whitespaces)
-            guard let value = Double(valueText), value > 0,
+            guard let value = MermaidParser.finiteDouble(valueText), value > 0,
                   !source.isEmpty, !target.isEmpty else { continue }
             note(source)
             note(target)

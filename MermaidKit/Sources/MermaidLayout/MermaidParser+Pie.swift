@@ -21,7 +21,7 @@ extension MermaidParser {
             let rawLabel = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
             let label = rawLabel.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             let valueText = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-            guard !label.isEmpty, let value = Double(valueText), value >= 0 else { continue }
+            guard !label.isEmpty, let value = MermaidParser.finiteDouble(valueText), value >= 0 else { continue }
             slices.append(PieChart.Slice(label: label, value: value))
         }
         guard !slices.isEmpty else { return nil }

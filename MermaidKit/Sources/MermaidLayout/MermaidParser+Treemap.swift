@@ -19,7 +19,7 @@ extension MermaidParser {
             var value: Double?
             if let colon = trimmed.lastIndex(of: ":") {
                 let after = trimmed[trimmed.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-                if let v = Double(after) {
+                if let v = MermaidParser.finiteDouble(after) {
                     value = v
                     label = String(trimmed[..<colon])
                 }
