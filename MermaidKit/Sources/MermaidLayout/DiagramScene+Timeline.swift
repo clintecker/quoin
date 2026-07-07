@@ -31,7 +31,7 @@ extension DiagramScene {
             ))
             // The section name sits in the reserved header strip along the top
             // edge of the band, left-aligned at the band's left inset.
-            let w = CGFloat(max(section.name.count, 1)) * 6
+            let w = DiagramScene.estimatedLabelSize(section.name).width
             labels.append(DiagramScene.Label(
                 text: section.name,
                 frame: CGRect(x: section.frame.minX + 6,
@@ -54,7 +54,7 @@ extension DiagramScene {
 
             // Period label: right-aligned, its right edge at labelPoint.x,
             // vertically centred on labelPoint.y.
-            let w = CGFloat(max(period.label.count, 1)) * 6
+            let w = DiagramScene.estimatedLabelSize(period.label).width
             labels.append(DiagramScene.Label(
                 text: period.label,
                 frame: CGRect(x: period.labelPoint.x - w,

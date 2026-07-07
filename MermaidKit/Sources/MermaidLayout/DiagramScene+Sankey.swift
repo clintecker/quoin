@@ -22,7 +22,7 @@ extension DiagramScene {
             // Node labels sit outboard of their bars (not centered on them), so
             // they are free-standing and can collide with neighbouring columns.
             labels: layout.nodes.map { node in
-                let w = CGFloat(node.label.count) * 6
+                let w = DiagramScene.estimatedLabelSize(node.label).width
                 return Label(
                     text: node.label,
                     frame: CGRect(

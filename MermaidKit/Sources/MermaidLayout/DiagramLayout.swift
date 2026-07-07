@@ -658,7 +658,6 @@ public enum DiagramLayoutEngine {
 
         // Route each edge through its chain waypoints.
         var routes: [[CGPoint]] = []
-        var maxX = crossExtent + margin
         for chain in chains {
             guard chain.count >= 2, let fromFrame = frames[chain[0]], let toFrame = frames[chain[chain.count - 1]] else {
                 routes.append([.zero, .zero]); continue
@@ -671,7 +670,6 @@ public enum DiagramLayoutEngine {
                 let ext: CGFloat = 24
                 let yHi = f.midY - min(f.height * 0.24, 13)
                 let yLo = f.midY + min(f.height * 0.24, 13)
-                maxX = max(maxX, f.maxX + ext)
                 routes.append([
                     CGPoint(x: f.maxX, y: yHi),
                     CGPoint(x: f.maxX + ext, y: yHi),
@@ -723,7 +721,6 @@ public enum DiagramLayoutEngine {
                 }
                 let start = CGPoint(x: x, y: down ? fromFrame.maxY : fromFrame.minY)
                 let end = CGPoint(x: x, y: down ? toFrame.minY : toFrame.maxY)
-                for p in [start, end] { maxX = max(maxX, p.x) }
                 routes.append([start, end])
                 continue
             }
@@ -735,7 +732,6 @@ public enum DiagramLayoutEngine {
             let start = attach(fromFrame, towardX: firstNext.x, bottom: firstNext.y >= fromFrame.midY)
             let end = attach(toFrame, towardX: lastPrev.x, bottom: lastPrev.y > toFrame.midY)
             let points = routePolyline([start] + dummyCenters + [end], horizontal: false)
-            for p in points { maxX = max(maxX, p.x) }
             routes.append(points)
         }
 
@@ -977,7 +973,7 @@ public enum DiagramLayoutEngine {
         // right} packing. Right passes reverse each layer and negate the result
         // (the standard trick, so the symmetric case reuses the same code).
         func run(up: Bool, left: Bool) -> [String: CGFloat] {
-            var ordering = up ? layers : layers.reversed().map { $0 }
+            var ordering = up ? layers : Array(layers.reversed())
             if !left { ordering = ordering.map { $0.reversed() } }
             let neighbor = up ? upN : downN
             let alignment = verticalAlignment(ordering, neighbor: neighbor)

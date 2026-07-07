@@ -65,29 +65,16 @@ extension DiagramRenderer {
         context.addLine(to: points.last!)
     }
 
-    /// Point at `fraction` of the arc length along the polyline (0 = start,
-    /// 1 = end). `0.5` is the midpoint where an edge label sits by default;
-    /// other fractions let sibling labels slide apart along their edges.
+    /// Point at `fraction` of arc length — forwards to the canonical
+    /// implementation in MermaidLayout so drawn label anchors and linted
+    /// scene labels can never disagree.
     static func polylinePoint(_ points: [CGPoint], fraction: CGFloat) -> CGPoint {
-        guard points.count > 1 else { return points.first ?? .zero }
-        var total: CGFloat = 0
-        for i in 1..<points.count { total += hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y) }
-        var remaining = total * min(max(fraction, 0), 1)
-        for i in 1..<points.count {
-            let seg = hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y)
-            if remaining <= seg || i == points.count - 1 {
-                let t = seg == 0 ? 0 : remaining / seg
-                return CGPoint(x: points[i-1].x + (points[i].x - points[i-1].x) * t,
-                               y: points[i-1].y + (points[i].y - points[i-1].y) * t)
-            }
-            remaining -= seg
-        }
-        return points.last!
+        DiagramScene.polylinePoint(points, fraction: fraction)
     }
 
-    /// Midpoint by arc length along the polyline — where an edge label sits.
+    /// Arc-length midpoint — forwards to the canonical implementation.
     static func polylineMidpoint(_ points: [CGPoint]) -> CGPoint {
-        polylinePoint(points, fraction: 0.5)
+        DiagramScene.polylineMidpoint(points)
     }
 
     /// A filled arrowhead at `tip`. The head fills the canvas color first to
@@ -116,15 +103,6 @@ extension DiagramRenderer {
         context.restoreGState()
     }
 
-    /// Draws an edge label centered on `mid` over a canvas-colored pad so the
-    /// routed line doesn't show through. Callers pick `mid` themselves — the
-    /// flowchart uses an index midpoint, box diagrams use `polylineMidpoint`.
-    /// Picks an anchor for an edge label that avoids the node boxes and any
-    /// labels already placed — the draw-time counterpart of the flowchart
-    /// layout's placement pass, for the box diagrams (class/ER/state) whose
-    /// layouts don't compute a labelPoint. Scores segment midpoints plus small
-    /// sideways nudges by overlap and keeps the cheapest; records the choice in
-    /// `placed` so sibling labels spread apart.
     /// Thin bounding rects along a polyline's segments — used as soft obstacles
     /// so an edge label avoids sitting on *another* edge's line (which, for an
     /// antiparallel pair, pushes each label onto the correct outer side).
@@ -137,11 +115,17 @@ extension DiagramRenderer {
         }
     }
 
+    /// Picks an anchor for an edge label that avoids the node boxes and any
+    /// labels already placed — the draw-time counterpart of the flowchart
+    /// layout's placement pass, for the box diagrams (class/ER/state) whose
+    /// layouts don't compute a labelPoint. Prefers seating a label on a
+    /// horizontal run that can contain it (or beside a vertical run), scored
+    /// by overlap; records the choice in `placed` so sibling labels spread.
     static func labelAnchor(
         for points: [CGPoint], label: String, bounds: CGSize,
         obstacles: [CGRect], placed: inout [CGRect]
     ) -> CGPoint {
-        let size = measure(label, size: 10.5)
+        let size = measure(label, size: labelSize)
         let w = size.width + 6, h = size.height + 2
         // Keep the whole label inside the canvas so a sideways nudge can't push
         // it off the edge and clip.
@@ -199,15 +183,18 @@ extension DiagramRenderer {
         return best
     }
 
+    /// Draws an edge label centered on `mid` over a canvas-colored pad so the
+    /// routed line doesn't show through. Callers pick `mid` themselves — via
+    /// `labelAnchor` or the layout's own label point.
     static func drawEdgeLabel(_ label: String, at mid: CGPoint, theme: DiagramTheme, in context: CGContext) {
-        let size = measure(label, size: 10.5)
+        let size = measure(label, size: labelSize)
         let pad: CGFloat = 3
         context.setFillColor(resolvedCGColor(theme.canvas))
         context.fill(CGRect(
             x: mid.x - size.width / 2 - pad, y: mid.y - size.height / 2 - pad,
             width: size.width + pad * 2, height: size.height + pad * 2
         ))
-        drawText(label, center: mid, size: 10.5, color: theme.secondaryTextColor, in: context)
+        drawText(label, center: mid, size: labelSize, color: theme.secondaryTextColor, in: context)
     }
 
     /// Fills a node/box shape and strokes its border — the shared body for

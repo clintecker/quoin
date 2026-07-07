@@ -28,7 +28,7 @@ extension DiagramScene {
         let labels: [Label] = layout.edges.compactMap { edge in
             guard !edge.label.isEmpty else { return nil }
             let mid = polylineMidpoint(edge.points)
-            let w = CGFloat(edge.label.count) * 6
+            let w = DiagramScene.estimatedLabelSize(edge.label).width
             var x = mid.x - w / 2
             var yTop = mid.y - 7
             x = max(0, min(x, layout.size.width - w))
@@ -45,27 +45,4 @@ extension DiagramScene {
         )
     }
 
-    /// The point halfway along a polyline by cumulative segment length.
-    private static func polylineMidpoint(_ points: [CGPoint]) -> CGPoint {
-        guard let first = points.first else { return .zero }
-        guard points.count > 1 else { return first }
-        var lengths: [CGFloat] = []
-        var total: CGFloat = 0
-        for (a, b) in zip(points, points.dropFirst()) {
-            let d = (b.x - a.x).magnitude + (b.y - a.y).magnitude
-            lengths.append(d)
-            total += d
-        }
-        guard total > 0 else { return first }
-        var acc: CGFloat = 0
-        for (i, seg) in lengths.enumerated() {
-            if acc + seg >= total / 2 {
-                let t = seg > 0 ? (total / 2 - acc) / seg : 0
-                let a = points[i], b = points[i + 1]
-                return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            }
-            acc += seg
-        }
-        return points[points.count / 2]
-    }
 }

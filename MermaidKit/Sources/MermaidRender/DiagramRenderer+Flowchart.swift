@@ -38,19 +38,9 @@ extension DiagramRenderer {
             if edge.dashed { dashedShafts.append(points) } else { solidShafts.append(points) }
         }
 
-        func strokeGroup(_ shafts: [[CGPoint]], dashed: Bool) {
-            guard !shafts.isEmpty else { return }
-            context.saveGState()
-            context.setStrokeColor(resolvedCGColor(stroke))
-            context.setLineWidth(1)
-            if dashed { context.setLineDash(phase: 0, lengths: [4, 3]) }
-            context.beginPath()
-            for shaft in shafts { appendRoundedPolyline(shaft, to: context) }
-            context.strokePath()
-            context.restoreGState()
-        }
-        strokeGroup(solidShafts, dashed: false)
-        strokeGroup(dashedShafts, dashed: true)
+        strokeEdgeShafts(
+            solidShafts.map { ($0, false) } + dashedShafts.map { ($0, true) },
+            color: stroke, in: context)
 
         for arrow in arrows {
             drawArrowhead(at: arrow.tip, from: arrow.from, color: stroke, canvas: theme.canvas, in: context)

@@ -28,11 +28,11 @@ extension DiagramScene {
         // label, the quadrant names, and the axis-end labels.
         var labels: [Label] = []
         func leftAnchored(_ text: String, at anchor: CGPoint) -> Label {
-            let w = CGFloat(text.count) * 6
+            let w = DiagramScene.estimatedLabelSize(text).width
             return Label(text: text, frame: CGRect(x: anchor.x, y: anchor.y - 7, width: w, height: 14))
         }
         func centered(_ text: String, at c: CGPoint) -> Label {
-            let w = CGFloat(text.count) * 6
+            let w = DiagramScene.estimatedLabelSize(text).width
             return Label(text: text, frame: CGRect(x: c.x - w / 2, y: c.y - 7, width: w, height: 14))
         }
         // y-axis labels are painted rotated 90° in the narrow left gutter, so
@@ -40,7 +40,7 @@ extension DiagramScene {
         // text length) — lowering them as horizontal boxes made them spill off
         // the left edge of the canvas.
         func rotatedCentered(_ text: String, at c: CGPoint) -> Label {
-            let h = CGFloat(text.count) * 6
+            let h = DiagramScene.estimatedLabelSize(text).width
             return Label(text: text, frame: CGRect(x: c.x - 7, y: c.y - h / 2, width: 14, height: h))
         }
 

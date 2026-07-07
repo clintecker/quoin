@@ -13,10 +13,7 @@ import UIKit
 extension DiagramRenderer {
 
     static func draw(_ layout: PacketLayout, theme: DiagramTheme, in context: CGContext) {
-        if let title = layout.title {
-            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
-                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
-        }
+        drawDiagramTitle(layout.title, width: layout.size.width, theme: theme, in: context)
 
         for segment in layout.segments {
             let tint = categoricalColor(segment.colorIndex)

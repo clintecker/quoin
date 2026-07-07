@@ -53,7 +53,7 @@ extension DiagramScene {
 
         // Outward axis labels, one per spoke. `labelPoint` is the label centre.
         for spoke in layout.spokes {
-            let w = CGFloat(max(spoke.label.count, 1)) * 6
+            let w = DiagramScene.estimatedLabelSize(spoke.label).width
             labels.append(Label(
                 text: spoke.label,
                 frame: CGRect(
@@ -68,7 +68,7 @@ extension DiagramScene {
         // Legend rows below the chart: a swatch followed by the curve label.
         // `labelPoint` is the text's left edge; `swatchCenter` sits to its left.
         for entry in layout.legend {
-            let textWidth = CGFloat(max(entry.label.count, 1)) * 6
+            let textWidth = DiagramScene.estimatedLabelSize(entry.label).width
             let left = entry.swatchCenter.x - 5
             let right = entry.labelPoint.x + textWidth
             labels.append(Label(

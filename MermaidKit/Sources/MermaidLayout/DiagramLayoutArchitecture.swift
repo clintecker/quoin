@@ -275,24 +275,6 @@ extension DiagramLayoutEngine {
             return path.reversed()
         }
 
-        // Drop redundant collinear / duplicate waypoints.
-        func simplify(_ pts: [CGPoint]) -> [CGPoint] {
-            guard pts.count > 2 else { return pts }
-            var out: [CGPoint] = [pts[0]]
-            for i in 1..<(pts.count - 1) {
-                let a = out.last!, b = pts[i], c = pts[i + 1]
-                if abs(a.x - b.x) < 0.01 && abs(a.y - b.y) < 0.01 { continue } // dup
-                let sameX = abs(a.x - b.x) < 0.01 && abs(b.x - c.x) < 0.01
-                let sameY = abs(a.y - b.y) < 0.01 && abs(b.y - c.y) < 0.01
-                if sameX || sameY { continue } // collinear
-                out.append(b)
-            }
-            if let last = pts.last,
-               let prev = out.last, abs(prev.x - last.x) > 0.01 || abs(prev.y - last.y) > 0.01 {
-                out.append(last)
-            }
-            return out
-        }
 
         // Pick the border side of `f` that faces `other`, so a wire leaves
         // toward its target instead of away from it (the grid layout doesn't
@@ -331,7 +313,7 @@ extension DiagramLayoutEngine {
                     : CGPoint(x: aOut.x, y: bOut.y)
                 points = [a, aOut, corner, bOut, b]
             }
-            edges.append(ArchitectureLayout.Edge(points: simplify(points), arrow: edge.arrow))
+            edges.append(ArchitectureLayout.Edge(points: simplifyCollinear(points), arrow: edge.arrow))
         }
 
         let width = min(max(maxX + margin, 140), 3900)

@@ -30,7 +30,7 @@ extension DiagramScene {
 
         // Day-axis tick captions: free-standing labels sitting under the chart.
         let labels: [Label] = layout.ticks.map { tick in
-            let w = CGFloat(max(tick.label.count, 1)) * 6
+            let w = DiagramScene.estimatedLabelSize(tick.label).width
             return Label(
                 text: tick.label,
                 frame: CGRect(x: tick.x - w / 2, y: tick.bottom + 2, width: w, height: 14)

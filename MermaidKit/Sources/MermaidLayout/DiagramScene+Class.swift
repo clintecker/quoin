@@ -24,8 +24,8 @@ extension DiagramScene {
 
         let labels: [Label] = layout.edges.compactMap { edge in
             guard let text = edge.label, !text.isEmpty else { return nil }
-            let center = midpoint(of: edge.points)
-            let w = CGFloat(text.count) * 6
+            let center = polylineMidpoint(edge.points)
+            let w = DiagramScene.estimatedLabelSize(text).width
             return Label(
                 text: text,
                 frame: CGRect(x: center.x - w / 2, y: center.y - 7, width: w, height: 14)
@@ -41,24 +41,4 @@ extension DiagramScene {
         )
     }
 
-    /// Point halfway along a routed polyline by arc length; falls back to the
-    /// single endpoint (or origin) for degenerate routes.
-    private static func midpoint(of points: [CGPoint]) -> CGPoint {
-        guard points.count > 1 else { return points.first ?? .zero }
-        var total: CGFloat = 0
-        for (a, b) in zip(points, points.dropFirst()) {
-            total += hypot(b.x - a.x, b.y - a.y)
-        }
-        guard total > 0 else { return points[0] }
-        var remaining = total / 2
-        for (a, b) in zip(points, points.dropFirst()) {
-            let len = hypot(b.x - a.x, b.y - a.y)
-            if len >= remaining {
-                let t = len == 0 ? 0 : remaining / len
-                return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            }
-            remaining -= len
-        }
-        return points[points.count / 2]
-    }
 }

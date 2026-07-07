@@ -47,7 +47,7 @@ extension DiagramScene {
         for slice in layout.slices {
             let percent = Int((slice.fraction * 100).rounded())
             let text = "\(slice.label) (\(percent)%)"
-            let textWidth = CGFloat(text.count) * 6
+            let textWidth = DiagramScene.estimatedLabelSize(text).width
             labels.append(Label(
                 text: text,
                 frame: CGRect(

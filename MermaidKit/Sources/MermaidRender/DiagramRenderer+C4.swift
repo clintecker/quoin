@@ -13,10 +13,7 @@ import UIKit
 extension DiagramRenderer {
 
     static func draw(_ layout: C4Layout, theme: DiagramTheme, in context: CGContext) {
-        if let title = layout.title {
-            drawText(title, center: CGPoint(x: layout.size.width / 2, y: 14),
-                     size: 12.5, weight: .semibold, color: theme.ink, in: context)
-        }
+        drawDiagramTitle(layout.title, width: layout.size.width, theme: theme, in: context)
 
         // Relationship arrows first, so box fills tuck over the shaft ends.
         // Routes are orthogonal polylines through the empty channels.

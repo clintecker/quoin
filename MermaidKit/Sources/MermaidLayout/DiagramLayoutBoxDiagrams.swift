@@ -117,7 +117,7 @@ extension DiagramLayoutEngine {
         // a self-loop's label rides outside the rightmost box and would clip.
         var canvas = size
         for edge in edges where !edge.label.isEmpty {
-            let mid = polylineMidpoint(edge.points)
+            let mid = DiagramScene.polylineMidpoint(edge.points)
             let w = measure(edge.label, labelFontSize).width
             canvas.width = max(canvas.width, mid.x + w / 2 + 8)
             canvas.height = max(canvas.height, mid.y + labelFontSize + 8)
@@ -125,23 +125,6 @@ extension DiagramLayoutEngine {
         return ERLayout(size: canvas, boxes: boxes, edges: edges)
     }
 
-    /// Point halfway along a polyline by cumulative arc length.
-    static func polylineMidpoint(_ points: [CGPoint]) -> CGPoint {
-        guard points.count > 1 else { return points.first ?? .zero }
-        let segLengths = zip(points, points.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) }
-        let total = segLengths.reduce(0, +)
-        guard total > 0 else { return points[0] }
-        var travelled: CGFloat = 0
-        for (i, len) in segLengths.enumerated() {
-            if travelled + len >= total / 2 {
-                let t = (total / 2 - travelled) / len
-                let a = points[i], b = points[i + 1]
-                return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            }
-            travelled += len
-        }
-        return points[points.count / 2]
-    }
 
     // MARK: State
 

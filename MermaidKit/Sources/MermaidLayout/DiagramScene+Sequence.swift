@@ -49,7 +49,7 @@ extension DiagramScene {
             // loop (matching the renderer, which widens the canvas for it).
             labels: layout.arrows.compactMap { arrow -> Label? in
                 guard !arrow.text.isEmpty else { return nil }
-                let width = CGFloat(arrow.text.count) * 6
+                let width = DiagramScene.estimatedLabelSize(arrow.text).width
                 if arrow.isSelfMessage {
                     return Label(
                         text: arrow.text,

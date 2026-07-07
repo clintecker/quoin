@@ -28,7 +28,7 @@ extension DiagramScene {
         // Free-standing labels: lane (branch-name) labels in the left gutter,
         // plus any commit tags, which float above their dot.
         var labels: [DiagramScene.Label] = layout.laneLabels.map { lane in
-            let w = CGFloat(max(lane.name.count, 1)) * 6
+            let w = DiagramScene.estimatedLabelSize(lane.name).width
             // The lane label point is left-anchored at the gutter margin.
             return DiagramScene.Label(
                 text: lane.name,
@@ -36,7 +36,7 @@ extension DiagramScene {
         }
         for commit in layout.commits {
             guard let tag = commit.tag, !tag.isEmpty else { continue }
-            let w = CGFloat(tag.count) * 6
+            let w = DiagramScene.estimatedLabelSize(tag).width
             labels.append(DiagramScene.Label(
                 text: tag,
                 frame: CGRect(

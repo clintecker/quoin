@@ -7,7 +7,7 @@ extension DiagramScene {
     static func from(_ layout: XYChartLayout) -> DiagramScene {
         // A synthesized frame for a label stored only as a center point.
         func labelFrame(_ text: String, _ center: CGPoint) -> CGRect {
-            let w = CGFloat(max(text.count, 1)) * 6
+            let w = DiagramScene.estimatedLabelSize(text).width
             return CGRect(x: center.x - w / 2, y: center.y - 7, width: w, height: 14)
         }
         // The y-axis title is drawn rotated 90° about its center, so its
@@ -15,7 +15,7 @@ extension DiagramScene {
         // line height is the width. Lowering it as a horizontal box would fake
         // a wide frame spilling off the left edge that is never actually drawn.
         func rotatedLabelFrame(_ text: String, _ center: CGPoint) -> CGRect {
-            let len = CGFloat(max(text.count, 1)) * 6
+            let len = DiagramScene.estimatedLabelSize(text).width
             return CGRect(x: center.x - 7, y: center.y - len / 2, width: 14, height: len)
         }
 

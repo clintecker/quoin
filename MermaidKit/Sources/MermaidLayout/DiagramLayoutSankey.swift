@@ -24,7 +24,10 @@ extension DiagramLayoutEngine {
         guard n > 0 else {
             return SankeyLayout(size: CGSize(width: 120, height: 80), nodes: [], links: [])
         }
-        let index = Dictionary(uniqueKeysWithValues: names.enumerated().map { ($1, $0) })
+        // Keyed by first occurrence; `uniquingKeysWith` because a hand-built
+        // SankeyDiagram may repeat a node name and a public entry point must
+        // not trap on malformed input.
+        let index = Dictionary(names.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
 
         // Flow totals and predecessor lists.
         var inValue = [Double](repeating: 0, count: n)

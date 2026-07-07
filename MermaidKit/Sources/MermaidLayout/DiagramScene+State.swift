@@ -27,8 +27,8 @@ extension DiagramScene {
         let labels: [DiagramScene.Label] = layout.edges.compactMap { edge in
             guard let text = edge.label, !text.isEmpty else { return nil }
             let poly = edge.points.count >= 2 ? edge.points : [edge.start, edge.end]
-            let mid = midpoint(of: poly)
-            let w = CGFloat(text.count) * 6
+            let mid = polylineMidpoint(poly)
+            let w = DiagramScene.estimatedLabelSize(text).width
             return DiagramScene.Label(
                 text: text,
                 frame: CGRect(x: mid.x - w / 2, y: mid.y - 7, width: w, height: 14)
@@ -44,28 +44,4 @@ extension DiagramScene {
         )
     }
 
-    /// Midpoint along a polyline by arc length (falls back to the average of
-    /// the endpoints for a two-point segment).
-    private static func midpoint(of points: [CGPoint]) -> CGPoint {
-        guard points.count > 1 else { return points.first ?? .zero }
-        if points.count == 2 {
-            return CGPoint(x: (points[0].x + points[1].x) / 2,
-                           y: (points[0].y + points[1].y) / 2)
-        }
-        var total: CGFloat = 0
-        for (a, b) in zip(points, points.dropFirst()) {
-            total += hypot(b.x - a.x, b.y - a.y)
-        }
-        let half = total / 2
-        var run: CGFloat = 0
-        for (a, b) in zip(points, points.dropFirst()) {
-            let seg = hypot(b.x - a.x, b.y - a.y)
-            if run + seg >= half, seg > 0 {
-                let t = (half - run) / seg
-                return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            }
-            run += seg
-        }
-        return points[points.count / 2]
-    }
 }

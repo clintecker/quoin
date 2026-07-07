@@ -28,7 +28,7 @@ extension DiagramScene {
                     x: (edge.start.x + edge.end.x) / 2,
                     y: (edge.start.y + edge.end.y) / 2
                 )
-                let width = CGFloat(text.count) * 6
+                let width = DiagramScene.estimatedLabelSize(text).width
                 return Label(
                     text: text,
                     frame: CGRect(x: center.x - width / 2, y: center.y - 7,

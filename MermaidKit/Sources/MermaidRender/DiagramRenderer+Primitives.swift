@@ -67,7 +67,11 @@ extension DiagramRenderer {
         var box = CGRect(origin: .zero, size: size)
         // Widest perpendicular marker spread across all types: the ER crow's
         // foot / zero-circle and the UML triangle sit within this of the line.
-        let markerReach: CGFloat = 8
+        // Must cover the largest end-marker overhang: arrowheads reach 8.5pt
+        // along the edge, ER crow's feet ~18pt along (toward the box, already
+        // inside bounds) with ~6pt perpendicular spread. 10pt covers every
+        // marker's off-edge spread with margin.
+        let markerReach: CGFloat = 10
         for points in edges {
             for p in points {
                 box = box.union(CGRect(x: p.x - markerReach, y: p.y - markerReach,
@@ -75,6 +79,14 @@ extension DiagramRenderer {
             }
         }
         return box
+    }
+
+    /// The standard centred diagram title — one implementation for the nine
+    /// chart types that draw one (12.5pt semibold ink, centred at y = 14).
+    static func drawDiagramTitle(_ title: String?, width: CGFloat, theme: DiagramTheme, in context: CGContext) {
+        guard let title, !title.isEmpty else { return }
+        drawText(title, center: CGPoint(x: width / 2, y: 14),
+                 size: 12.5, weight: .semibold, color: theme.ink, in: context)
     }
 
     static func categoricalColor(_ index: Int) -> PlatformColor {

@@ -18,7 +18,7 @@ extension DiagramScene {
                 text: band.name,
                 frame: CGRect(x: band.frame.minX + 8,
                               y: band.frame.minY + 4,
-                              width: CGFloat(band.name.count) * 6,
+                              width: DiagramScene.estimatedLabelSize(band.name).width,
                               height: 14)
             ))
         }
@@ -40,7 +40,7 @@ extension DiagramScene {
                 text: task.label,
                 frame: CGRect(x: task.labelPoint.x,
                               y: task.labelPoint.y - 7,
-                              width: CGFloat(task.label.count) * 6,
+                              width: DiagramScene.estimatedLabelSize(task.label).width,
                               height: 14)
             ))
 
@@ -50,7 +50,7 @@ extension DiagramScene {
                     text: task.actors,
                     frame: CGRect(x: task.actorsPoint.x,
                                   y: task.actorsPoint.y - 7,
-                                  width: CGFloat(task.actors.count) * 6,
+                                  width: DiagramScene.estimatedLabelSize(task.actors).width,
                                   height: 14)
                 ))
             }

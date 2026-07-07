@@ -65,33 +65,9 @@ extension DiagramRenderer {
         // Edge labels LAST, on top of every connector and box, so no line is
         // ever drawn through a label (the chip masks whatever sits under it).
         for edge in layout.edges {
-            drawEdgeLabel(edge.label, at: routeMidpoint(edge.points), theme: theme, in: context)
+            drawEdgeLabel(edge.label, at: polylineMidpoint(edge.points), theme: theme, in: context)
         }
     }
 
-    /// The point halfway along a routed polyline by cumulative segment length,
-    /// used to anchor the edge label near the middle of the connector.
-    private static func routeMidpoint(_ points: [CGPoint]) -> CGPoint {
-        guard let first = points.first else { return .zero }
-        guard points.count > 1 else { return first }
-        var total: CGFloat = 0
-        var lengths: [CGFloat] = []
-        for (a, b) in zip(points, points.dropFirst()) {
-            let d = abs(b.x - a.x) + abs(b.y - a.y)
-            lengths.append(d)
-            total += d
-        }
-        guard total > 0 else { return first }
-        var acc: CGFloat = 0
-        for (i, seg) in lengths.enumerated() {
-            if acc + seg >= total / 2 {
-                let t = seg > 0 ? (total / 2 - acc) / seg : 0
-                let a = points[i], b = points[i + 1]
-                return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            }
-            acc += seg
-        }
-        return points[points.count / 2]
-    }
 }
 #endif

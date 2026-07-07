@@ -738,10 +738,11 @@ extension DiagramLayoutEngine {
         // the disk is padded away from the left edge its left half spills off
         // canvas. Reserve enough left padding that the whole title clears x = 0,
         // and widen the canvas so its right half is bounded too. The width is
-        // estimated as the larger of the measured glyph run and the linter's
-        // own count·7 heuristic so both the render and the geometry check fit.
+        // estimated as the larger of the measured glyph run and the scene
+        // lowering's estimatedLabelSize heuristic, so both the render and the
+        // geometry check fit.
         let titleWidth: CGFloat = pie.title.map { title in
-            max(measure(title, 12.5).width, CGFloat(title.count) * 7)
+            max(measure(title, 12.5).width, DiagramScene.estimatedLabelSize(title).width)
         } ?? 0
         let leftPad = max(margin, titleWidth / 2 - radius + margin)
         let centerX = leftPad + radius

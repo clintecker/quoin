@@ -49,7 +49,7 @@ extension DiagramScene {
             // inside the head box (node-internal), so neither is listed here.
             labels: layout.arrows.compactMap { arrow -> Label? in
                 guard !arrow.label.isEmpty else { return nil }
-                let width = CGFloat(arrow.label.count) * 6
+                let width = DiagramScene.estimatedLabelSize(arrow.label).width
                 if arrow.isSelf {
                     return Label(
                         text: arrow.label,

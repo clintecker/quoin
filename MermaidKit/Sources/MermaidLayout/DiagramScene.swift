@@ -209,7 +209,10 @@ public enum DiagramLayoutLinter {
     }
 
     /// Length of the portion of segment a→b lying inside rect `r`
-    /// (Liang–Barsky clip). 0 when the segment misses or only grazes the border.
+    /// (Liang–Barsky clip). 0 when the segment misses the rect. A segment
+    /// lying exactly along a border counts at full length — callers wanting
+    /// interior-only penetration must inset the rect first (the linter insets
+    /// by its occlusion tolerance before measuring).
     static func segmentInsideLength(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> CGFloat {
         let dx = b.x - a.x, dy = b.y - a.y
         var t0: CGFloat = 0, t1: CGFloat = 1

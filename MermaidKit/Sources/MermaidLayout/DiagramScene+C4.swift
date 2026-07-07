@@ -24,7 +24,7 @@ extension DiagramScene {
             },
             labels: layout.edges.compactMap { edge -> Label? in
                 guard let text = edge.label, !text.isEmpty else { return nil }
-                let w = CGFloat(text.count) * 6
+                let w = DiagramScene.estimatedLabelSize(text).width
                 let half = w / 2
                 // The label point lives in an empty channel band, so clamping x
                 // to the canvas can never push it onto a box.
