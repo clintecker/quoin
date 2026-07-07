@@ -35,12 +35,17 @@ def remote_url(dep):
         return remote.get("urlString")
     return remote
 
-for dep in deps:
+# Local path dependencies (fileSystem) are first-party code living in this
+# repository (e.g. MermaidKit); the policy governs THIRD-PARTY code, so only
+# remote (sourceControl) dependencies count against the limit.
+remote_deps = [dep for dep in deps if "fileSystem" not in dep]
+
+for dep in remote_deps:
     location = remote_url(dep)
     if location != approved_url:
         violations.append(location or "<unknown>")
 
-print(len(deps))
+print(len(remote_deps))
 if violations:
     print("\n".join(violations), file=sys.stderr)
 PY

@@ -13,6 +13,7 @@ public typealias PlatformAppearance = NSObject
 
 #if canImport(AppKit) || canImport(UIKit)
 import Foundation
+import MermaidRender
 
 /// The Graphite design system from `docs/design/handoff.md`. Colors, type
 /// ramp, spacing, and radii are the handoff's exact values — change them
@@ -256,5 +257,23 @@ func themeDynamic(light: PlatformColor, dark: PlatformColor) -> PlatformColor {
         traits.userInterfaceStyle == .dark ? dark : light
     }
     #endif
+}
+
+// MARK: - MermaidKit adapter
+
+extension Theme {
+    /// Quoin's design system projected onto MermaidKit's theme seam — the
+    /// same seven values the diagram renderers used before extraction.
+    public var diagramTheme: DiagramTheme {
+        DiagramTheme(
+            ink: ink,
+            secondaryTextColor: secondaryTextColor,
+            tertiaryTextColor: tertiaryTextColor,
+            canvas: canvas,
+            accent: accent,
+            hairline: hairline,
+            prefersDark: prefersDark
+        )
+    }
 }
 #endif

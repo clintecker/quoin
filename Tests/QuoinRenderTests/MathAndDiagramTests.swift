@@ -2,6 +2,7 @@
 import XCTest
 import CoreGraphics
 @testable import QuoinRender
+import MermaidRender
 import QuoinCore
 
 /// Tests for the native math typesetter and diagram renderer.
@@ -106,7 +107,7 @@ final class MathAndDiagramTests: XCTestCase {
             A[Start] --> B[Middle]
             B --> C[End]
         """
-        let attachment = DiagramRenderer.attachmentString(source: flowchart, theme: theme)
+        let attachment = MermaidRenderer.attachmentString(source: flowchart, theme: theme.diagramTheme)
         let string = try XCTUnwrap(attachment, "a flowchart should render natively")
         let value = string.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
         let bounds = try XCTUnwrap(value?.bounds)
@@ -123,7 +124,7 @@ final class MathAndDiagramTests: XCTestCase {
             Build  :active, b1, after d1, 3d
             Ship   :milestone, m1, after b1, 0d
         """
-        let attachment = DiagramRenderer.attachmentString(source: gantt, theme: theme)
+        let attachment = MermaidRenderer.attachmentString(source: gantt, theme: theme.diagramTheme)
         let string = try XCTUnwrap(attachment, "a gantt chart should render natively")
         let bounds = try XCTUnwrap((string.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)?.bounds)
         XCTAssertGreaterThan(bounds.width, 0)
@@ -134,8 +135,8 @@ final class MathAndDiagramTests: XCTestCase {
         // A dialect the parser doesn't model returns nil from the parser, so
         // the renderer keeps the fenced source card.
         XCTAssertNil(MermaidParser.parse("nonesuchDiagram\n  a --> b"))
-        XCTAssertNil(DiagramRenderer.attachmentString(
-            source: "nonesuchDiagram\n  a --> b", theme: theme
+        XCTAssertNil(MermaidRenderer.attachmentString(
+            source: "nonesuchDiagram\n  a --> b", theme: theme.diagramTheme
         ), "an unmodeled dialect must return nil so the renderer keeps the source card")
     }
 

@@ -34,9 +34,18 @@ justification in the TRD first; the default answer is no.
 
 ## Layout
 
+- `MermaidKit/` — the Mermaid engine as its own SwiftPM package (extracted
+  for external distribution; Quoin consumes it via a local path dependency,
+  exempt from the one-dependency policy as first-party code).
+  `Sources/MermaidLayout` is the platform-free parser + layout + scene IR +
+  geometry linter; `Sources/MermaidRender` draws via CoreGraphics/CoreText
+  behind a 7-field `DiagramTheme` seam (Quoin adapts with
+  `Theme.diagramTheme`). Diagram fixtures live in `MermaidKit/Fixtures/`;
+  its tests run standalone (`swift test --package-path MermaidKit` — CI runs
+  both packages). QuoinCore `@_exported import`s MermaidLayout, so
+  `import QuoinCore` still exposes `MermaidParser` etc. unchanged.
 - `Sources/QuoinCore` — platform-agnostic engine (parses, sessions, search,
-  stats, exporters, math/mermaid parsers + diagram layout geometry). Must
-  build and test on Linux.
+  stats, exporters, math parser). Must build and test on Linux.
 - `Sources/QuoinRender` — attributed-string projection + TextKit 2
   typesetting and diagram drawing. Shared engine files (guarded
   `canImport(AppKit) || canImport(UIKit)`) sit at the target root; the

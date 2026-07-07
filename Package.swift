@@ -14,18 +14,25 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.5.0"),
+        // The Mermaid engine lives in its own package (extracted for external
+        // distribution); Quoin consumes it like any other host app would.
+        .package(path: "MermaidKit"),
     ],
     targets: [
         .target(
             name: "QuoinCore",
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown"),
+                .product(name: "MermaidLayout", package: "MermaidKit"),
             ],
             path: "Sources/QuoinCore"
         ),
         .target(
             name: "QuoinRender",
-            dependencies: ["QuoinCore"],
+            dependencies: [
+                "QuoinCore",
+                .product(name: "MermaidRender", package: "MermaidKit"),
+            ],
             path: "Sources/QuoinRender"
         ),
         .testTarget(

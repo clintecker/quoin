@@ -2,6 +2,7 @@
 import XCTest
 import AppKit
 @testable import QuoinRender
+import MermaidRender
 import QuoinCore
 
 /// A visual harness — not a CI assertion. Renders each Mermaid diagram type to
@@ -528,7 +529,7 @@ final class DiagramGalleryTests: XCTestCase {
     /// natively rendered. Draws the diagram image under the theme's appearance
     /// so dynamic colors resolve to match the card.
     static func renderPNG(source: String, theme: Theme, scale: CGFloat, pad: CGFloat = 24) -> Data? {
-        guard let attachment = DiagramRenderer.attachmentString(source: source, theme: theme),
+        guard let attachment = MermaidRenderer.attachmentString(source: source, theme: theme.diagramTheme),
               let image = (attachment.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment)?.image
         else { return nil }
         let size = NSSize(width: image.size.width * scale + pad * 2, height: image.size.height * scale + pad * 2)

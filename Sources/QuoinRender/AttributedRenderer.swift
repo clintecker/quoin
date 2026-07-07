@@ -2,6 +2,7 @@
 import Foundation
 import ImageIO
 import QuoinCore
+import MermaidRender
 
 #if canImport(AppKit)
 import AppKit
@@ -508,9 +509,9 @@ public struct AttributedRenderer {
     }
 
     private func renderMermaidFallback(source: String) -> NSAttributedString {
-        // Native rendering for supported diagram types (flowchart, sequence,
-        // pie); everything else keeps the styled-source fallback.
-        if let native = DiagramRenderer.attachmentString(source: source, theme: theme) {
+        // Native rendering via MermaidKit; unparseable sources keep the
+        // styled-source fallback.
+        if let native = MermaidRenderer.attachmentString(source: source, theme: theme.diagramTheme) {
             let output = NSMutableAttributedString(attributedString: native)
             let style = paragraphStyle()
             style.paragraphSpacingBefore = theme.paragraphSpacing
