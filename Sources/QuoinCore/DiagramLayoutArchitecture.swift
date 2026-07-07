@@ -294,24 +294,39 @@ extension DiagramLayoutEngine {
             return out
         }
 
+        // Pick the border side of `f` that faces `other`, so a wire leaves
+        // toward its target instead of away from it (the grid layout doesn't
+        // honour the declared side for placement, so `waf:R` can point away
+        // from a gateway that landed below it — routing then has to cross the
+        // box). Prefer the axis with the larger separation.
+        func facingSide(_ f: CGRect, toward other: CGRect) -> ArchitectureDiagram.Side {
+            let dx = other.midX - f.midX, dy = other.midY - f.midY
+            if abs(dx) >= abs(dy) { return dx >= 0 ? .right : .left }
+            return dy >= 0 ? .bottom : .top
+        }
+
         var edges: [ArchitectureLayout.Edge] = []
         for edge in diagram.edges {
             guard let fromFrame = serviceFrames[edge.from], let toFrame = serviceFrames[edge.to] else { continue }
-            let a = anchor(fromFrame, edge.fromSide)
-            let b = anchor(toFrame, edge.toSide)
-            let aOut = out(a, edge.fromSide, stub)
-            let bOut = out(b, edge.toSide, stub)
+            let fromSide = facingSide(fromFrame, toward: toFrame)
+            let toSide = facingSide(toFrame, toward: fromFrame)
+            let a = anchor(fromFrame, fromSide)
+            let b = anchor(toFrame, toSide)
+            let aOut = out(a, fromSide, stub)
+            let bOut = out(b, toSide, stub)
 
-            let obstacles = allObstacles
-                .filter { $0.id != edge.from && $0.id != edge.to }
-                .map { $0.rect.insetBy(dx: -clearance, dy: -clearance) }
+            // Every box is an obstacle — INCLUDING this edge's own endpoints, so
+            // the route can never cut back through its source or target box. The
+            // stubs (a→aOut, bOut→b) sit just outside each border, so connecting
+            // stays clean.
+            let obstacles = allObstacles.map { $0.rect.insetBy(dx: -clearance, dy: -clearance) }
 
             var points: [CGPoint]
             if let mid = routeGrid(aOut, bOut, obstacles), mid.count >= 2 {
                 points = [a] + mid + [b]
             } else {
                 // Fallback single elbow (should be rare).
-                let corner = isHorizontal(edge.fromSide)
+                let corner = isHorizontal(fromSide)
                     ? CGPoint(x: bOut.x, y: aOut.y)
                     : CGPoint(x: aOut.x, y: bOut.y)
                 points = [a, aOut, corner, bOut, b]

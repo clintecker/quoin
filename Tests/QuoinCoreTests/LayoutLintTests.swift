@@ -22,17 +22,12 @@ final class LayoutLintTests: XCTestCase {
         "flowchart", "sequence", "gantt", "journey", "kanban", "mindmap",
         "packet", "radar", "timeline", "treemap", "zenuml", "state",
         "block", "c4", "gitgraph", "pie", "quadrant", "requirement",
-        "sankey", "xychart", "er", "class",
+        "sankey", "xychart", "er", "class", "architecture",
     ]
 
-    /// Known layout debt — edges routed through their own endpoint boxes. These
-    /// were previously (wrongly) marked clean because the occlusion check
-    /// exempted endpoint boxes entirely; the honest length-based check exposes
-    /// them. The routing needs to connect on the side facing the target instead
-    /// of crossing the box to escape.
-    private let knownIssues: Set<String> = [
-        "architecture",
-    ]
+    /// Known layout debt: empty — every fixture lays out with zero occlusion,
+    /// overlap, off-canvas or escaping-mark errors under the honest linter.
+    private let knownIssues: Set<String> = []
 
     private var fixturesDir: URL {
         URL(fileURLWithPath: #filePath)
