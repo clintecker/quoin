@@ -33,13 +33,56 @@ extension DiagramLayoutEngine {
         }
 
         // Edges from each commit to its parents, coloured by the child's lane.
+        //
+        // A same-lane edge is a straight horizontal run. A cross-lane edge (a
+        // branch point or a merge) must NOT be drawn as a naive diagonal: that
+        // line cuts straight through any commit dot sitting in an intermediate
+        // lane at the midpoint column (e.g. the develop→feature/search branch
+        // passing through feature/auth's dot). Instead we route it orthogonally
+        // with a single right-angle corner, splitting the edge into two
+        // collinear legs. Emitting them separately keeps the drawn path
+        // identical to the geometry the linter checks: the renderer strokes a
+        // same-y leg straight, and its cross-lane curve collapses to a straight
+        // line when the two endpoints share an x.
+        //
+        // Two corner placements are possible; both keep the VERTICAL leg on a
+        // commit's own (unique, otherwise-empty) column, so the only occlusion
+        // risk is the HORIZONTAL leg running along an occupied lane:
+        //   • source route — turn at the PARENT's column: vertical along the
+        //     parent's column, then horizontal along the CHILD's lane. Preferred
+        //     (a branch visibly leaves its source), and only its final leg lands
+        //     on the child's column.
+        //   • dest route — turn at the CHILD's column: horizontal along the
+        //     PARENT's lane, then vertical up the child's column.
+        // Prefer the source route; fall back to the dest route only when the
+        // source route's horizontal leg (along the child's lane) would pass over
+        // an intervening commit — e.g. a merge landing on a lane that has commits
+        // between the two endpoints.
+        func laneIsClear(betweenX ax: CGFloat, _ bx: CGFloat, onLaneY laneY: CGFloat) -> Bool {
+            let lo = min(ax, bx), hi = max(ax, bx)
+            for c in commits where abs(c.center.y - laneY) < 1 {
+                if c.center.x > lo + 0.5 && c.center.x < hi - 0.5 { return false }
+            }
+            return true
+        }
+
         var edges: [GitGraphLayout.Edge] = []
         for (order, commit) in graph.commits.enumerated() {
+            let color = lane(commit.branch)
             for parent in commit.parents where parent < commits.count {
-                edges.append(GitGraphLayout.Edge(
-                    from: commits[parent].center,
-                    to: commits[order].center,
-                    colorIndex: lane(commit.branch)))
+                let from = commits[parent].center
+                let to = commits[order].center
+                if abs(from.y - to.y) < 0.5 {
+                    edges.append(GitGraphLayout.Edge(from: from, to: to, colorIndex: color))
+                    continue
+                }
+                // Source route corners at (from.x, to.y); its horizontal leg
+                // runs along the child's lane from from.x to to.x.
+                let corner = laneIsClear(betweenX: from.x, to.x, onLaneY: to.y)
+                    ? CGPoint(x: from.x, y: to.y)   // source route
+                    : CGPoint(x: to.x, y: from.y)   // dest route
+                edges.append(GitGraphLayout.Edge(from: from, to: corner, colorIndex: color))
+                edges.append(GitGraphLayout.Edge(from: corner, to: to, colorIndex: color))
             }
         }
 

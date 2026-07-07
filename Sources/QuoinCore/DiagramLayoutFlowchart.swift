@@ -733,16 +733,32 @@ extension DiagramLayoutEngine {
             .max() ?? 80
         let legendHeight = CGFloat(pie.slices.count) * 20
 
-        let width = margin + radius * 2 + 28 + legendWidth + margin
+        // The title is centred horizontally on the disk's centre (the renderer
+        // draws it there). A long title is far wider than the disk, so unless
+        // the disk is padded away from the left edge its left half spills off
+        // canvas. Reserve enough left padding that the whole title clears x = 0,
+        // and widen the canvas so its right half is bounded too. The width is
+        // estimated as the larger of the measured glyph run and the linter's
+        // own count·7 heuristic so both the render and the geometry check fit.
+        let titleWidth: CGFloat = pie.title.map { title in
+            max(measure(title, 12.5).width, CGFloat(title.count) * 7)
+        } ?? 0
+        let leftPad = max(margin, titleWidth / 2 - radius + margin)
+        let centerX = leftPad + radius
+        let legendX = centerX + radius + 28
+
+        let contentRight = legendX + legendWidth + margin
+        let titleRight = centerX + titleWidth / 2 + margin
+        let width = max(contentRight, titleRight)
         let height = margin + titleHeight + max(radius * 2, legendHeight) + margin
         return PieLayout(
             size: CGSize(width: width, height: height),
-            center: CGPoint(x: margin + radius, y: margin + titleHeight + radius),
+            center: CGPoint(x: centerX, y: margin + titleHeight + radius),
             radius: radius,
             title: pie.title,
             slices: slices,
             legendOrigin: CGPoint(
-                x: margin + radius * 2 + 28,
+                x: legendX,
                 y: margin + titleHeight + max(0, (radius * 2 - legendHeight) / 2)
             )
         )

@@ -19,16 +19,20 @@ extension DiagramRenderer {
         }
 
         // Relationship arrows first, so box fills tuck over the shaft ends.
+        // Routes are orthogonal polylines through the empty channels.
         for edge in layout.edges {
+            let pts = edge.points
+            guard let first = pts.first, pts.count >= 2 else { continue }
             context.saveGState()
             context.setStrokeColor(resolvedCGColor(theme.ink.withAlphaComponent(0.5)))
             context.setLineWidth(1)
+            context.setLineJoin(.round)
             context.beginPath()
-            context.move(to: edge.from)
-            context.addLine(to: edge.to)
+            context.move(to: first)
+            for p in pts.dropFirst() { context.addLine(to: p) }
             context.strokePath()
             context.restoreGState()
-            drawArrowhead(at: edge.to, from: edge.from,
+            drawArrowhead(at: pts[pts.count - 1], from: pts[pts.count - 2],
                           color: theme.ink.withAlphaComponent(0.6), canvas: theme.canvas, in: context)
         }
 
@@ -82,11 +86,11 @@ extension DiagramRenderer {
             }
         }
 
-        // Edge labels on top of everything, on a canvas-colored pad.
+        // Edge labels on top of everything, on a canvas-colored pad. Drawn at
+        // the route's label point, which sits in a clear channel band.
         for edge in layout.edges {
             guard let label = edge.label else { continue }
-            let mid = CGPoint(x: (edge.from.x + edge.to.x) / 2, y: (edge.from.y + edge.to.y) / 2)
-            drawEdgeLabel(label, at: mid, theme: theme, in: context)
+            drawEdgeLabel(label, at: edge.labelPoint, theme: theme, in: context)
         }
     }
 }

@@ -184,7 +184,116 @@ extension DiagramLayoutEngine {
             side == .left || side == .right
         }
 
-        let stub: CGFloat = 16
+        // --- Obstacle-avoiding orthogonal edge routing --------------------
+        // Every non-container box (services + junctions) is an obstacle. Each
+        // wire leaves its source border by a short stub, then threads the
+        // channels between boxes via a lattice A* so no segment cuts through a
+        // box that isn't one of its own endpoints.
+        let clearance: CGFloat = 4
+        let stub: CGFloat = 8
+
+        let allObstacles: [(id: String, rect: CGRect)] =
+            serviceFrames.map { ($0.key, $0.value) }
+
+        // Does an axis-aligned segment pass through a rect's interior?
+        func segHitsRect(_ p: CGPoint, _ q: CGPoint, _ r: CGRect) -> Bool {
+            let eps: CGFloat = 0.001
+            if abs(p.x - q.x) < eps { // vertical
+                let x = p.x
+                guard x > r.minX + eps, x < r.maxX - eps else { return false }
+                let lo = min(p.y, q.y), hi = max(p.y, q.y)
+                return hi > r.minY + eps && lo < r.maxY - eps
+            } else { // horizontal
+                let y = p.y
+                guard y > r.minY + eps, y < r.maxY - eps else { return false }
+                let lo = min(p.x, q.x), hi = max(p.x, q.x)
+                return hi > r.minX + eps && lo < r.maxX - eps
+            }
+        }
+
+        // A* over a lattice whose grid lines are the obstacle borders (already
+        // inflated by `clearance`) plus the two route endpoints. A move between
+        // adjacent lattice points is allowed only when its segment misses every
+        // obstacle. Turns are penalised so routes stay simple.
+        func routeGrid(_ start: CGPoint, _ goal: CGPoint, _ obstacles: [CGRect]) -> [CGPoint]? {
+            var xsSet: Set<CGFloat> = [start.x, goal.x]
+            var ysSet: Set<CGFloat> = [start.y, goal.y]
+            for r in obstacles {
+                xsSet.insert(r.minX); xsSet.insert(r.maxX)
+                ysSet.insert(r.minY); ysSet.insert(r.maxY)
+            }
+            let xs = xsSet.sorted(), ys = ysSet.sorted()
+            let nx = xs.count
+            guard let sx = xs.firstIndex(of: start.x), let sy = ys.firstIndex(of: start.y),
+                  let gx = xs.firstIndex(of: goal.x), let gy = ys.firstIndex(of: goal.y) else { return nil }
+            func nodeIndex(_ ix: Int, _ iy: Int) -> Int { iy * nx + ix }
+            func point(_ n: Int) -> CGPoint { CGPoint(x: xs[n % nx], y: ys[n / nx]) }
+            let startNode = nodeIndex(sx, sy), goalNode = nodeIndex(gx, gy)
+            func heuristic(_ n: Int) -> CGFloat {
+                abs(xs[n % nx] - goal.x) + abs(ys[n / nx] - goal.y)
+            }
+            let turnPenalty: CGFloat = 14
+            // State = node * 3 + dir, dir: 0 none, 1 horizontal, 2 vertical.
+            var gScore: [Int: CGFloat] = [startNode * 3: 0]
+            var cameFrom: [Int: Int] = [:]
+            var open: [(f: CGFloat, key: Int)] = [(heuristic(startNode), startNode * 3)]
+            func popMin() -> Int? {
+                guard !open.isEmpty else { return nil }
+                var mi = 0
+                for i in 1..<open.count where open[i].f < open[mi].f { mi = i }
+                let k = open[mi].key
+                open.remove(at: mi)
+                return k
+            }
+            var goalKey: Int?
+            while let cur = popMin() {
+                let node = cur / 3, dir = cur % 3
+                if node == goalNode { goalKey = cur; break }
+                let g = gScore[cur] ?? .greatestFiniteMagnitude
+                let ix = node % nx, iy = node / nx
+                let steps = [(ix - 1, iy, 1), (ix + 1, iy, 1), (ix, iy - 1, 2), (ix, iy + 1, 2)]
+                for (jx, jy, ndir) in steps {
+                    guard jx >= 0, jx < nx, jy >= 0, jy < ys.count else { continue }
+                    let p = CGPoint(x: xs[ix], y: ys[iy])
+                    let q = CGPoint(x: xs[jx], y: ys[jy])
+                    if obstacles.contains(where: { segHitsRect(p, q, $0) }) { continue }
+                    let n2 = nodeIndex(jx, jy)
+                    let cost = abs(q.x - p.x) + abs(q.y - p.y)
+                        + (dir != 0 && dir != ndir ? turnPenalty : 0)
+                    let key2 = n2 * 3 + ndir
+                    if g + cost < (gScore[key2] ?? .greatestFiniteMagnitude) {
+                        gScore[key2] = g + cost
+                        cameFrom[key2] = cur
+                        open.append((g + cost + heuristic(n2), key2))
+                    }
+                }
+            }
+            guard let endKey = goalKey else { return nil }
+            var path: [CGPoint] = []
+            var k: Int? = endKey
+            while let kk = k { path.append(point(kk / 3)); k = cameFrom[kk] }
+            return path.reversed()
+        }
+
+        // Drop redundant collinear / duplicate waypoints.
+        func simplify(_ pts: [CGPoint]) -> [CGPoint] {
+            guard pts.count > 2 else { return pts }
+            var out: [CGPoint] = [pts[0]]
+            for i in 1..<(pts.count - 1) {
+                let a = out.last!, b = pts[i], c = pts[i + 1]
+                if abs(a.x - b.x) < 0.01 && abs(a.y - b.y) < 0.01 { continue } // dup
+                let sameX = abs(a.x - b.x) < 0.01 && abs(b.x - c.x) < 0.01
+                let sameY = abs(a.y - b.y) < 0.01 && abs(b.y - c.y) < 0.01
+                if sameX || sameY { continue } // collinear
+                out.append(b)
+            }
+            if let last = pts.last,
+               let prev = out.last, abs(prev.x - last.x) > 0.01 || abs(prev.y - last.y) > 0.01 {
+                out.append(last)
+            }
+            return out
+        }
+
         var edges: [ArchitectureLayout.Edge] = []
         for edge in diagram.edges {
             guard let fromFrame = serviceFrames[edge.from], let toFrame = serviceFrames[edge.to] else { continue }
@@ -193,27 +302,21 @@ extension DiagramLayoutEngine {
             let aOut = out(a, edge.fromSide, stub)
             let bOut = out(b, edge.toSide, stub)
 
-            var points: [CGPoint] = [a, aOut]
-            if isHorizontal(edge.fromSide) == isHorizontal(edge.toSide) {
-                if isHorizontal(edge.fromSide) {
-                    let midX = (aOut.x + bOut.x) / 2
-                    points.append(CGPoint(x: midX, y: aOut.y))
-                    points.append(CGPoint(x: midX, y: bOut.y))
-                } else {
-                    let midY = (aOut.y + bOut.y) / 2
-                    points.append(CGPoint(x: aOut.x, y: midY))
-                    points.append(CGPoint(x: bOut.x, y: midY))
-                }
+            let obstacles = allObstacles
+                .filter { $0.id != edge.from && $0.id != edge.to }
+                .map { $0.rect.insetBy(dx: -clearance, dy: -clearance) }
+
+            var points: [CGPoint]
+            if let mid = routeGrid(aOut, bOut, obstacles), mid.count >= 2 {
+                points = [a] + mid + [b]
             } else {
-                // Mixed orientation: a single elbow.
+                // Fallback single elbow (should be rare).
                 let corner = isHorizontal(edge.fromSide)
                     ? CGPoint(x: bOut.x, y: aOut.y)
                     : CGPoint(x: aOut.x, y: bOut.y)
-                points.append(corner)
+                points = [a, aOut, corner, bOut, b]
             }
-            points.append(bOut)
-            points.append(b)
-            edges.append(ArchitectureLayout.Edge(points: points, arrow: edge.arrow))
+            edges.append(ArchitectureLayout.Edge(points: simplify(points), arrow: edge.arrow))
         }
 
         let width = min(max(maxX + margin, 140), 3900)

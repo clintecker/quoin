@@ -12,16 +12,12 @@ extension DiagramScene {
             nodes: layout.nodes.map { node in
                 Node(id: node.label, frame: node.rect, isContainer: false)
             },
-            // Each link is a flow band; represent it as its centerline from the
-            // source bar's right edge to the target bar's left edge.
+            // Each link is a flow band; represent it as its routed centerline
+            // (source bar's right edge → target bar's left edge). The layout
+            // detours column-skipping links around intermediate bars, so the
+            // polyline reflects the real flow route for occlusion checks.
             edges: layout.links.map { link in
-                let sourceCenter = CGPoint(
-                    x: link.sourceTop.x,
-                    y: (link.sourceTop.y + link.sourceBottom.y) / 2)
-                let targetCenter = CGPoint(
-                    x: link.targetTop.x,
-                    y: (link.targetTop.y + link.targetBottom.y) / 2)
-                return Edge(polyline: [sourceCenter, targetCenter], label: nil)
+                Edge(polyline: link.route, label: nil)
             },
             // Node labels sit outboard of their bars (not centered on them), so
             // they are free-standing and can collide with neighbouring columns.

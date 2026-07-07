@@ -22,9 +22,13 @@ public struct RequirementLayout: Sendable {
     }
 
     public struct Edge: Sendable {
-        public let from: CGPoint
-        public let to: CGPoint
+        /// The routed orthogonal polyline, source-box edge to dest-box edge,
+        /// threaded through the empty channels between node rows/columns so it
+        /// never crosses a non-endpoint box.
+        public let points: [CGPoint]
         public let label: String
+        public var from: CGPoint { points.first ?? .zero }
+        public var to: CGPoint { points.last ?? .zero }
     }
 
     public let size: CGSize
@@ -105,14 +109,21 @@ extension DiagramLayoutEngine {
         let count = contents.count
         let columns = max(1, count <= 1 ? 1 : (count <= 4 ? 2 : 3))
 
+        // Grid position of every box, so edges can be routed through the empty
+        // channels (the hGap columns and vGap rows) rather than straight lines.
+        struct Slot { let row: Int; let col: Int; let frame: CGRect }
         var boxes: [RequirementLayout.Box] = []
-        var frameByName: [String: CGRect] = [:]
+        var slotByName: [String: Slot] = [:]
+        var rowTops: [CGFloat] = []
+        var rowHeights: [CGFloat] = []
         var y = margin
         var row = 0
         while row * columns < count {
             let start = row * columns
             let end = min(start + columns, count)
             let rowHeight = (start..<end).map { boxHeight(contents[$0].details.count) }.max() ?? 0
+            rowTops.append(y)
+            rowHeights.append(rowHeight)
             for i in start..<end {
                 let col = i - start
                 let x = margin + CGFloat(col) * (boxWidth + hGap)
@@ -121,34 +132,76 @@ extension DiagramLayoutEngine {
                 boxes.append(RequirementLayout.Box(
                     frame: frame, stereotype: c.stereotype, name: c.name,
                     detailLines: c.details, isElement: c.isElement, colorIndex: c.colorIndex))
-                frameByName[c.name] = frame
+                slotByName[c.name] = Slot(row: row, col: col, frame: frame)
             }
             y += rowHeight + vGap
             row += 1
         }
+        let rowCount = row
 
-        // Where a straight center-to-center segment exits `rect`.
-        func exitPoint(from rect: CGRect, toward target: CGPoint) -> CGPoint {
-            let c = CGPoint(x: rect.midX, y: rect.midY)
-            let dx = target.x - c.x, dy = target.y - c.y
-            if dx == 0 && dy == 0 { return c }
-            let halfW = rect.width / 2, halfH = rect.height / 2
-            let scale: CGFloat = abs(dx) * halfH > abs(dy) * halfW
-                ? halfW / abs(dx)
-                : halfH / abs(dy)
-            return CGPoint(x: c.x + dx * scale, y: c.y + dy * scale)
+        // A vertical line at a column boundary is clear for the full canvas
+        // height (every row leaves the same hGap between columns); a horizontal
+        // line at a row boundary is clear for the full width. Edges hop between
+        // these channels so they never cross a box.
+        func columnGapX(after col: Int) -> CGFloat {
+            // Centre of the hGap to the right of `col` (valid for 0..<columns-1).
+            margin + CGFloat(col) * (boxWidth + hGap) + boxWidth + hGap / 2
+        }
+        let leftMarginX = margin / 2
+        func gutterAbove(_ r: Int) -> CGFloat {
+            r == 0 ? margin / 2 : rowTops[r - 1] + rowHeights[r - 1] + vGap / 2
+        }
+        func gutterBelow(_ r: Int) -> CGFloat {
+            r == rowCount - 1 ? rowTops[r] + rowHeights[r] + margin / 2
+                              : rowTops[r] + rowHeights[r] + vGap / 2
+        }
+
+        // A clear vertical channel x sitting to one side of both columns.
+        func channelX(between colA: Int, and colB: Int) -> CGFloat {
+            if colA != colB { return columnGapX(after: min(colA, colB)) }
+            if colA < columns - 1 { return columnGapX(after: colA) }
+            if colA > 0 { return columnGapX(after: colA - 1) }
+            return leftMarginX
+        }
+
+        func route(_ s: Slot, _ d: Slot) -> [CGPoint] {
+            let sx = s.frame.midX, dx = d.frame.midX
+
+            // Same row: run along the shared gutter above the row.
+            if s.row == d.row {
+                let g = gutterAbove(s.row)
+                return [CGPoint(x: sx, y: s.frame.minY), CGPoint(x: sx, y: g),
+                        CGPoint(x: dx, y: g), CGPoint(x: dx, y: d.frame.minY)]
+            }
+
+            // Same column, adjacent rows: the gap between them is clear — go
+            // straight down/up through it.
+            if s.col == d.col && abs(s.row - d.row) == 1 {
+                if d.row > s.row {
+                    return [CGPoint(x: sx, y: s.frame.maxY), CGPoint(x: dx, y: d.frame.minY)]
+                }
+                return [CGPoint(x: sx, y: s.frame.minY), CGPoint(x: dx, y: d.frame.maxY)]
+            }
+
+            // General case: exit toward the dest, cross the width along the
+            // source gutter, drop/rise through a clear column channel, then run
+            // the dest gutter in to the dest box.
+            let down = d.row > s.row
+            let sEdgeY = down ? s.frame.maxY : s.frame.minY
+            let dEdgeY = down ? d.frame.minY : d.frame.maxY
+            let sGut = down ? gutterBelow(s.row) : gutterAbove(s.row)
+            let dGut = down ? gutterAbove(d.row) : gutterBelow(d.row)
+            let cx = channelX(between: s.col, and: d.col)
+            return [CGPoint(x: sx, y: sEdgeY), CGPoint(x: sx, y: sGut),
+                    CGPoint(x: cx, y: sGut), CGPoint(x: cx, y: dGut),
+                    CGPoint(x: dx, y: dGut), CGPoint(x: dx, y: dEdgeY)]
         }
 
         var edges: [RequirementLayout.Edge] = []
         for relation in diagram.relations {
-            guard let sourceFrame = frameByName[relation.source],
-                  let destFrame = frameByName[relation.dest] else { continue }
-            let sourceCenter = CGPoint(x: sourceFrame.midX, y: sourceFrame.midY)
-            let destCenter = CGPoint(x: destFrame.midX, y: destFrame.midY)
-            edges.append(RequirementLayout.Edge(
-                from: exitPoint(from: sourceFrame, toward: destCenter),
-                to: exitPoint(from: destFrame, toward: sourceCenter),
-                label: relation.kind.rawValue))
+            guard let s = slotByName[relation.source],
+                  let d = slotByName[relation.dest] else { continue }
+            edges.append(RequirementLayout.Edge(points: route(s, d), label: relation.kind.rawValue))
         }
 
         let usedColumns = min(columns, max(count, 1))

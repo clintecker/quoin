@@ -73,47 +73,107 @@ extension DiagramLayoutEngine {
             )
         }
 
+        // Grid position (col/row) alongside the frame, so routing can travel
+        // the empty gap channels rather than cutting straight through cells.
+        struct Placed { let col: Int; let row: Int; let frame: CGRect }
+
         var nodes: [BlockLayout.Node] = []
-        var frameByID: [String: CGRect] = [:]
+        var placedByID: [String: Placed] = [:]
         for (i, block) in diagram.blocks.enumerated() {
             let f = frame(atIndex: i)
             if block.shape != .space {
                 nodes.append(BlockLayout.Node(
                     frame: f, label: block.label, shape: block.shape, colorIndex: i / cols
                 ))
-                if frameByID[block.id] == nil { frameByID[block.id] = f }
+                if placedByID[block.id] == nil {
+                    placedByID[block.id] = Placed(col: i % cols, row: i / cols, frame: f)
+                }
             }
-        }
-
-        // Orthogonal border-to-border routing between grid cells.
-        func route(_ a: CGRect, _ b: CGRect) -> [CGPoint] {
-            let aC = CGPoint(x: a.midX, y: a.midY)
-            let bC = CGPoint(x: b.midX, y: b.midY)
-            if abs(aC.y - bC.y) < 1 {
-                return bC.x >= aC.x
-                    ? [CGPoint(x: a.maxX, y: aC.y), CGPoint(x: b.minX, y: bC.y)]
-                    : [CGPoint(x: a.minX, y: aC.y), CGPoint(x: b.maxX, y: bC.y)]
-            }
-            if abs(aC.x - bC.x) < 1 {
-                return bC.y >= aC.y
-                    ? [CGPoint(x: aC.x, y: a.maxY), CGPoint(x: bC.x, y: b.minY)]
-                    : [CGPoint(x: aC.x, y: a.minY), CGPoint(x: bC.x, y: b.maxY)]
-            }
-            // Elbow: leave A vertically, then approach B horizontally.
-            let start = CGPoint(x: aC.x, y: bC.y > aC.y ? a.maxY : a.minY)
-            let corner = CGPoint(x: aC.x, y: bC.y)
-            let end = CGPoint(x: bC.x > aC.x ? b.minX : b.maxX, y: bC.y)
-            return [start, corner, end]
-        }
-
-        var edges: [BlockLayout.Edge] = []
-        for edge in diagram.edges {
-            guard let a = frameByID[edge.from], let b = frameByID[edge.to] else { continue }
-            edges.append(BlockLayout.Edge(points: route(a, b), label: edge.label))
         }
 
         let width = margin * 2 + CGFloat(cols) * cellWidth + CGFloat(cols - 1) * gapX
         let height = margin * 2 + CGFloat(rows) * cellHeight + CGFloat(rows - 1) * gapY
+
+        // Gap-channel centre lines. Every row-gap is a full-width band with no
+        // nodes in it; every column-gap is a full-height band with no nodes.
+        // Routing inside these bands can never cross a non-endpoint cell.
+        func gapBelow(_ r: Int) -> CGFloat { margin + CGFloat(r) * (cellHeight + gapY) + cellHeight + gapY / 2 }
+        func gapAbove(_ r: Int) -> CGFloat { margin + CGFloat(r) * (cellHeight + gapY) - gapY / 2 }
+        func gapRight(_ c: Int) -> CGFloat { margin + CGFloat(c) * (cellWidth + gapX) + cellWidth + gapX / 2 }
+        func gapLeft(_ c: Int) -> CGFloat { margin + CGFloat(c) * (cellWidth + gapX) - gapX / 2 }
+        func clampY(_ y: CGFloat) -> CGFloat { min(max(y, 4), height - 4) }
+        func clampX(_ x: CGFloat) -> CGFloat { min(max(x, 4), width - 4) }
+
+        // Orthogonal routing that stays inside the empty gap channels between
+        // cells, so an edge never passes through a block that isn't its endpoint.
+        func route(_ a: Placed, _ b: Placed) -> [CGPoint] {
+            let af = a.frame, bf = b.frame
+            let aCx = af.midX, aCy = af.midY
+            let bCx = bf.midX, bCy = bf.midY
+
+            // Same row.
+            if a.row == b.row {
+                if abs(a.col - b.col) == 1 {
+                    return b.col > a.col
+                        ? [CGPoint(x: af.maxX, y: aCy), CGPoint(x: bf.minX, y: bCy)]
+                        : [CGPoint(x: af.minX, y: aCy), CGPoint(x: bf.maxX, y: bCy)]
+                }
+                // Non-adjacent: dip into an adjacent row-gap and run along it.
+                let down = a.row < rows - 1
+                let chan = clampY(down ? gapBelow(a.row) : gapAbove(a.row))
+                let ay = down ? af.maxY : af.minY
+                let by = down ? bf.maxY : bf.minY
+                return [CGPoint(x: aCx, y: ay), CGPoint(x: aCx, y: chan),
+                        CGPoint(x: bCx, y: chan), CGPoint(x: bCx, y: by)]
+            }
+
+            // Same column.
+            if a.col == b.col {
+                if abs(a.row - b.row) == 1 {
+                    return b.row > a.row
+                        ? [CGPoint(x: aCx, y: af.maxY), CGPoint(x: bCx, y: bf.minY)]
+                        : [CGPoint(x: aCx, y: af.minY), CGPoint(x: bCx, y: bf.maxY)]
+                }
+                // Non-adjacent: step out into an adjacent column-gap and run down it.
+                let right = a.col < cols - 1
+                let chan = clampX(right ? gapRight(a.col) : gapLeft(a.col))
+                let ax = right ? af.maxX : af.minX
+                let bx = right ? bf.maxX : bf.minX
+                return [CGPoint(x: ax, y: aCy), CGPoint(x: chan, y: aCy),
+                        CGPoint(x: chan, y: bCy), CGPoint(x: bx, y: bCy)]
+            }
+
+            // Different row and column.
+            let down = b.row > a.row
+            let ay = down ? af.maxY : af.minY
+            let by = down ? bf.minY : bf.maxY
+
+            // Adjacent rows: one L through the shared row-gap.
+            if abs(a.row - b.row) == 1 {
+                let chan = clampY(down ? gapBelow(a.row) : gapAbove(a.row))
+                return [CGPoint(x: aCx, y: ay), CGPoint(x: aCx, y: chan),
+                        CGPoint(x: bCx, y: chan), CGPoint(x: bCx, y: by)]
+            }
+
+            // Rows more than one apart: exit A into its adjacent row-gap, cross
+            // to a column-gap beside B, drop down that column-gap to B's
+            // adjacent row-gap, then step into B — every leg lives in a gap.
+            let chanA = clampY(down ? gapBelow(a.row) : gapAbove(a.row))
+            let chanB = clampY(down ? gapAbove(b.row) : gapBelow(b.row))
+            let vchan: CGFloat = b.col > a.col ? clampX(gapLeft(b.col))
+                : b.col < a.col ? clampX(gapRight(b.col))
+                : clampX(b.col < cols - 1 ? gapRight(b.col) : gapLeft(b.col))
+            return [CGPoint(x: aCx, y: ay), CGPoint(x: aCx, y: chanA),
+                    CGPoint(x: vchan, y: chanA), CGPoint(x: vchan, y: chanB),
+                    CGPoint(x: bCx, y: chanB), CGPoint(x: bCx, y: by)]
+        }
+
+        var edges: [BlockLayout.Edge] = []
+        for edge in diagram.edges {
+            guard let a = placedByID[edge.from], let b = placedByID[edge.to] else { continue }
+            edges.append(BlockLayout.Edge(points: route(a, b), label: edge.label))
+        }
+
         return BlockLayout(
             size: CGSize(width: min(max(width, 120), 3800),
                          height: min(max(height, 80), 3800)),

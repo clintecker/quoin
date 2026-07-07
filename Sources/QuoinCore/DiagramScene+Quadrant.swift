@@ -35,6 +35,14 @@ extension DiagramScene {
             let w = CGFloat(text.count) * 6
             return Label(text: text, frame: CGRect(x: c.x - w / 2, y: c.y - 7, width: w, height: 14))
         }
+        // y-axis labels are painted rotated 90° in the narrow left gutter, so
+        // their bounding box is tall-and-narrow (width = font height, height =
+        // text length) — lowering them as horizontal boxes made them spill off
+        // the left edge of the canvas.
+        func rotatedCentered(_ text: String, at c: CGPoint) -> Label {
+            let h = CGFloat(text.count) * 6
+            return Label(text: text, frame: CGRect(x: c.x - 7, y: c.y - h / 2, width: 14, height: h))
+        }
 
         for point in layout.points {
             labels.append(leftAnchored(point.label, at: point.labelPoint))
@@ -46,7 +54,7 @@ extension DiagramScene {
             labels.append(centered(x.text, at: x.center))
         }
         for y in layout.yAxisLabels {
-            labels.append(centered(y.text, at: y.center))
+            labels.append(rotatedCentered(y.text, at: y.center))
         }
 
         return DiagramScene(

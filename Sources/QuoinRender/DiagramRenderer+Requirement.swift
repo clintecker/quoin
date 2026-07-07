@@ -16,18 +16,21 @@ extension DiagramRenderer {
         // Connectors first, so box fills sit cleanly on top of any overlap.
         let edgeColor = theme.ink.withAlphaComponent(0.42)
         for edge in layout.edges {
+            let pts = edge.points
+            guard let start = pts.first, let end = pts.last else { continue }
             context.saveGState()
             context.setStrokeColor(resolvedCGColor(edgeColor))
             context.setLineWidth(1)
+            context.setLineJoin(.round)
             context.beginPath()
-            context.move(to: edge.from)
-            context.addLine(to: edge.to)
+            context.move(to: start)
+            for p in pts.dropFirst() { context.addLine(to: p) }
             context.strokePath()
             context.restoreGState()
-            drawArrowhead(at: edge.to, from: edge.from, color: edgeColor, canvas: theme.canvas, in: context)
-            drawEdgeLabel(edge.label, at: CGPoint(x: (edge.from.x + edge.to.x) / 2,
-                                                  y: (edge.from.y + edge.to.y) / 2),
-                          theme: theme, in: context)
+            // Arrowhead points along the final segment.
+            let prev = pts.count >= 2 ? pts[pts.count - 2] : start
+            drawArrowhead(at: end, from: prev, color: edgeColor, canvas: theme.canvas, in: context)
+            drawEdgeLabel(edge.label, at: routeMidpoint(pts), theme: theme, in: context)
         }
 
         let padding: CGFloat = 11
@@ -59,6 +62,31 @@ extension DiagramRenderer {
                 lineY += lineH
             }
         }
+    }
+
+    /// The point halfway along a routed polyline by cumulative segment length,
+    /// used to anchor the edge label near the middle of the connector.
+    private static func routeMidpoint(_ points: [CGPoint]) -> CGPoint {
+        guard let first = points.first else { return .zero }
+        guard points.count > 1 else { return first }
+        var total: CGFloat = 0
+        var lengths: [CGFloat] = []
+        for (a, b) in zip(points, points.dropFirst()) {
+            let d = abs(b.x - a.x) + abs(b.y - a.y)
+            lengths.append(d)
+            total += d
+        }
+        guard total > 0 else { return first }
+        var acc: CGFloat = 0
+        for (i, seg) in lengths.enumerated() {
+            if acc + seg >= total / 2 {
+                let t = seg > 0 ? (total / 2 - acc) / seg : 0
+                let a = points[i], b = points[i + 1]
+                return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+            }
+            acc += seg
+        }
+        return points[points.count / 2]
     }
 }
 #endif

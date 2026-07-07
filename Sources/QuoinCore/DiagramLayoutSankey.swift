@@ -98,6 +98,18 @@ extension DiagramLayoutEngine {
 
         // Bands: stack outgoing on each source's right edge, incoming on each
         // target's left edge, in link declaration order.
+        //
+        // A link whose target is more than one column past its source would,
+        // as a straight source→target centerline, pass through the bars in the
+        // skipped column(s). We give such links a routed centerline that climbs
+        // into the node-free band above every bar, runs across, and drops back
+        // down at the target — the vertical legs hug the source's right edge and
+        // the target's left edge (never entering another bar), and the crossbar
+        // rides above the tallest column's top, so the route clears every
+        // intermediate node. Depth is a longest-path rank, so a target's column
+        // is always strictly greater than its source's; `ct - cs >= 2` is
+        // exactly the set of column-skipping links.
+        let clearY = topOffset - 6   // above every bar (bars start at topOffset)
         var outOffset = [CGFloat](repeating: 0, count: n)
         var inOffset = [CGFloat](repeating: 0, count: n)
         var links: [SankeyLayout.Link] = []
@@ -108,12 +120,26 @@ extension DiagramLayoutEngine {
             let tTop = rects[t].minY + inOffset[t]
             outOffset[s] += w
             inOffset[t] += w
+            let sourceCenter = CGPoint(x: rects[s].maxX, y: sTop + w / 2)
+            let targetCenter = CGPoint(x: rects[t].minX, y: tTop + w / 2)
+            let route: [CGPoint]
+            if depths[t] - depths[s] >= 2 {
+                route = [
+                    sourceCenter,
+                    CGPoint(x: sourceCenter.x, y: clearY),
+                    CGPoint(x: targetCenter.x, y: clearY),
+                    targetCenter
+                ]
+            } else {
+                route = [sourceCenter, targetCenter]
+            }
             links.append(SankeyLayout.Link(
                 sourceTop: CGPoint(x: rects[s].maxX, y: sTop),
                 sourceBottom: CGPoint(x: rects[s].maxX, y: sTop + w),
                 targetTop: CGPoint(x: rects[t].minX, y: tTop),
                 targetBottom: CGPoint(x: rects[t].minX, y: tTop + w),
-                colorIndex: s
+                colorIndex: s,
+                route: route
             ))
         }
 
@@ -159,6 +185,13 @@ public struct SankeyLayout: Sendable {
         public let targetTop: CGPoint
         public let targetBottom: CGPoint
         public let colorIndex: Int
+        /// The band's centerline as a routed polyline (source edge → target
+        /// edge). For links spanning more than one column it detours through the
+        /// node-free band above the bars so it never crosses an intermediate
+        /// node; adjacent links are a straight two-point centerline. The
+        /// renderer draws its own cubic band from the four corner points — this
+        /// route is the flow's logical path for geometry checks.
+        public let route: [CGPoint]
     }
 
     public let size: CGSize

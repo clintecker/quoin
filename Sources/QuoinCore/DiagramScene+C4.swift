@@ -6,9 +6,10 @@ import CoreGraphics
 extension DiagramScene {
     /// Lowers a C4 model layout to the common scene IR. Every element is a
     /// leaf box (boundaries and deployment nodes are flattened away by the
-    /// parser, so nothing here is a container). Relationships are straight
-    /// border-to-border arrows; their labels are free-standing at the segment
-    /// midpoint, where they can collide with boxes or each other.
+    /// parser, so nothing here is a container). Relationships are orthogonal
+    /// routed polylines that thread the empty channels between rows; each label
+    /// is free-standing at a point on its route that sits in a clear channel
+    /// band, clamped to stay on-canvas.
     static func from(_ layout: C4Layout) -> DiagramScene {
         DiagramScene(
             name: "c4",
@@ -19,15 +20,17 @@ extension DiagramScene {
                 return Node(id: id, frame: box.frame, isContainer: false)
             },
             edges: layout.edges.map { edge in
-                Edge(polyline: [edge.from, edge.to], label: edge.label)
+                Edge(polyline: edge.points, label: edge.label)
             },
             labels: layout.edges.compactMap { edge -> Label? in
                 guard let text = edge.label, !text.isEmpty else { return nil }
-                let center = CGPoint(x: (edge.from.x + edge.to.x) / 2,
-                                     y: (edge.from.y + edge.to.y) / 2)
                 let w = CGFloat(text.count) * 6
+                let half = w / 2
+                // The label point lives in an empty channel band, so clamping x
+                // to the canvas can never push it onto a box.
+                let cx = min(max(edge.labelPoint.x, half + 1), layout.size.width - half - 1)
                 return Label(text: text,
-                             frame: CGRect(x: center.x - w / 2, y: center.y - 7,
+                             frame: CGRect(x: cx - half, y: edge.labelPoint.y - 7,
                                            width: w, height: 14))
             }
         )

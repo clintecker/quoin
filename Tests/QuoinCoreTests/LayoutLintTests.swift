@@ -21,14 +21,16 @@ final class LayoutLintTests: XCTestCase {
     private let errorFree: Set<String> = [
         "flowchart", "sequence", "gantt", "journey", "kanban", "mindmap",
         "packet", "radar", "timeline", "treemap", "zenuml", "er", "state",
+        // Fixed by the linter-driven fix pass (edge routing / canvas sizing /
+        // label spacing), each verified to 0 errors:
+        "architecture", "block", "c4", "gitgraph", "pie", "quadrant",
+        "requirement", "sankey", "xychart",
     ]
 
-    /// Known layout debt — the linter's own to-fix list (occlusion from missing
-    /// edge routing, off-canvas labels, dense label collisions). Documented,
-    /// not yet enforced. Shrinks as the layout engines are fixed.
+    /// Known layout debt — the linter's own to-fix list. Down to one: the class
+    /// diagram's shared layered router still passes one edge through a box.
     private let knownIssues: Set<String> = [
-        "architecture", "block", "c4", "class", "gitgraph", "pie",
-        "quadrant", "requirement", "sankey", "xychart",
+        "class",
     ]
 
     private var fixturesDir: URL {

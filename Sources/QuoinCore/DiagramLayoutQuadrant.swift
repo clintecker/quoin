@@ -12,7 +12,7 @@ extension DiagramLayoutEngine {
     public static func layout(_ chart: QuadrantChart, measure: DiagramTextMeasurer) -> QuadrantLayout {
         let margin: CGFloat = 14
         let titleHeight: CGFloat = chart.title == nil ? 0 : 26
-        let side: CGFloat = 300
+        let side: CGFloat = 460
         let yGutter: CGFloat = 20        // left strip for rotated y-axis labels
         let xStrip: CGFloat = 22         // bottom strip for x-axis labels
         let dotRadius: CGFloat = 4
@@ -43,9 +43,13 @@ extension DiagramLayoutEngine {
         var quadrantLabels: [QuadrantLayout.Label] = []
         for (index, name) in chart.quadrants.enumerated() {
             guard let name, index < quarters.count else { continue }
-            // Name near the top of its quarter so it never sits under a dot cluster.
+            // Push each name toward the OUTER edge of its quarter (top quarters
+            // up, bottom quarters down) so it stays clear of the mid-value dot
+            // clusters that gather near the plot's center lines.
             let rect = quarters[index]
-            quadrantLabels.append(QuadrantLayout.Label(text: name, center: CGPoint(x: rect.midX, y: rect.minY + 14)))
+            let isBottom = index >= 2   // q3 (BL) and q4 (BR) are the bottom row
+            let cy = isBottom ? rect.maxY - 14 : rect.minY + 14
+            quadrantLabels.append(QuadrantLayout.Label(text: name, center: CGPoint(x: rect.midX, y: cy)))
         }
 
         // Axis-end labels, centered under/beside each half.

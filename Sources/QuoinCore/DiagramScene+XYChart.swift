@@ -10,6 +10,14 @@ extension DiagramScene {
             let w = CGFloat(max(text.count, 1)) * 6
             return CGRect(x: center.x - w / 2, y: center.y - 7, width: w, height: 14)
         }
+        // The y-axis title is drawn rotated 90° about its center, so its
+        // bounding box is a *vertical* strip: text length runs along y and the
+        // line height is the width. Lowering it as a horizontal box would fake
+        // a wide frame spilling off the left edge that is never actually drawn.
+        func rotatedLabelFrame(_ text: String, _ center: CGPoint) -> CGRect {
+            let len = CGFloat(max(text.count, 1)) * 6
+            return CGRect(x: center.x - 7, y: center.y - len / 2, width: 14, height: len)
+        }
 
         // The plot rect is a container: bars sit inside it and lines route
         // across it, so it must be exempt from overlap/occlusion checks.
@@ -35,7 +43,7 @@ extension DiagramScene {
             labels.append(Label(text: l.text, frame: labelFrame(l.text, l.center)))
         }
         if let t = layout.yAxisTitle {
-            labels.append(Label(text: t.text, frame: labelFrame(t.text, t.center)))
+            labels.append(Label(text: t.text, frame: rotatedLabelFrame(t.text, t.center)))
         }
         if let t = layout.xAxisTitle {
             labels.append(Label(text: t.text, frame: labelFrame(t.text, t.center)))
