@@ -30,7 +30,6 @@ extension DiagramRenderer {
             // Arrowhead points along the final segment.
             let prev = pts.count >= 2 ? pts[pts.count - 2] : start
             drawArrowhead(at: end, from: prev, color: edgeColor, canvas: theme.canvas, in: context)
-            drawEdgeLabel(edge.label, at: routeMidpoint(pts), theme: theme, in: context)
         }
 
         let padding: CGFloat = 11
@@ -61,6 +60,12 @@ extension DiagramRenderer {
                              size: 10.5, color: theme.secondaryTextColor, in: context)
                 lineY += lineH
             }
+        }
+
+        // Edge labels LAST, on top of every connector and box, so no line is
+        // ever drawn through a label (the chip masks whatever sits under it).
+        for edge in layout.edges {
+            drawEdgeLabel(edge.label, at: routeMidpoint(edge.points), theme: theme, in: context)
         }
     }
 
