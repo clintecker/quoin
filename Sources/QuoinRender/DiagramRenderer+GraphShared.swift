@@ -161,28 +161,39 @@ extension DiagramRenderer {
         for end in [points.first, points.last].compactMap({ $0 }) {
             obstacles.append(CGRect(x: end.x - 18, y: end.y - 18, width: 36, height: 36))
         }
-        // Sample along the edge's arc length, not just at the midpoint, so two
-        // antiparallel edges between the same box pair can slide their labels
-        // apart along their lines instead of stacking into one phrase. Each
-        // sample is also nudged sideways to clear a box or a sibling label.
-        let fractions: [CGFloat] = [0.5, 0.38, 0.62, 0.27, 0.73]
-        let nudges: [CGFloat] = [0, w / 2 + 5, -(w / 2 + 5), w + 9, -(w + 9)]
+        // Build candidate anchors from the route's own geometry so a long label
+        // lands where it actually reads, not on a bend with the L's legs poking
+        // out on both sides:
+        //   • horizontal runs — seat the label centred on the run (its opaque
+        //     chip masks the line); penalise runs narrower than the label, since
+        //     that's exactly when the corners show;
+        //   • vertical runs — place the label BESIDE the line (either side);
+        //   • the midpoint as a last resort.
         let mid = polylineMidpoint(points)
+        var candidates: [(pt: CGPoint, bias: CGFloat)] = []
+        for (a, b) in zip(points, points.dropFirst()) {
+            let c = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+            let distBias = hypot(c.x - mid.x, c.y - mid.y) * 0.08
+            if abs(a.y - b.y) < 1 {                      // horizontal run
+                let overflow = max(0, w - abs(b.x - a.x))
+                candidates.append((c, overflow * 2.0 + distBias))
+            } else if abs(a.x - b.x) < 1 {               // vertical run
+                for side in [CGFloat(1), -1] {
+                    candidates.append((CGPoint(x: a.x + side * (w / 2 + 6), y: c.y), 6 + distBias))
+                }
+            }
+        }
+        candidates.append((mid, 14))
+
         var best = CGPoint(x: clampX(mid.x), y: clampY(mid.y))
         var bestScore = CGFloat.greatestFiniteMagnitude
-        for f in fractions {
-            let base = polylinePoint(points, fraction: f)
-            for dx in nudges {
-                let cx = clampX(base.x + dx)
-                let cy = clampY(base.y)
-                let rect = CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
-                // Prefer the midpoint and the line itself; but let real overlap
-                // (a box, or a sibling label) easily outvote those preferences.
-                var score: CGFloat = abs(dx) * 0.15 + abs(f - 0.5) * 18
-                for o in obstacles { score += overlap(rect, o.insetBy(dx: -3, dy: -3)) * 4 }
-                for p in placed { score += overlap(rect, p.insetBy(dx: -4, dy: -4)) * 6 }
-                if score < bestScore { bestScore = score; best = CGPoint(x: cx, y: cy) }
-            }
+        for (pt, bias) in candidates {
+            let cx = clampX(pt.x), cy = clampY(pt.y)
+            let rect = CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
+            var score = bias
+            for o in obstacles { score += overlap(rect, o.insetBy(dx: -3, dy: -3)) * 4 }
+            for p in placed { score += overlap(rect, p.insetBy(dx: -4, dy: -4)) * 6 }
+            if score < bestScore { bestScore = score; best = CGPoint(x: cx, y: cy) }
         }
         placed.append(CGRect(x: best.x - w / 2, y: best.y - h / 2, width: w, height: h))
         return best

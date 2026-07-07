@@ -663,12 +663,43 @@ public enum DiagramLayoutEngine {
             guard chain.count >= 2, let fromFrame = frames[chain[0]], let toFrame = frames[chain[chain.count - 1]] else {
                 routes.append([.zero, .zero]); continue
             }
-            // Same layer → route the short way through side faces.
+            // Self-loop (an edge from a box back to itself, e.g. an ER
+            // "subcategory of" parent_id): route it as a small loop off the
+            // right side, never a straight line through the box interior.
+            if chain[0] == chain[chain.count - 1] {
+                let f = fromFrame
+                let ext: CGFloat = 24
+                let yHi = f.midY - min(f.height * 0.24, 13)
+                let yLo = f.midY + min(f.height * 0.24, 13)
+                maxX = max(maxX, f.maxX + ext)
+                routes.append([
+                    CGPoint(x: f.maxX, y: yHi),
+                    CGPoint(x: f.maxX + ext, y: yHi),
+                    CGPoint(x: f.maxX + ext, y: yLo),
+                    CGPoint(x: f.maxX, y: yLo),
+                ])
+                continue
+            }
+            // Same layer → route the short way through side faces, UNLESS the
+            // direct line would cross another box sitting between the two: then
+            // dip into the gap just below the row and cross there instead of
+            // straight through the intervening box.
             if abs(fromFrame.midY - toFrame.midY) < 1 {
                 let right = toFrame.midX >= fromFrame.midX
                 let start = CGPoint(x: right ? fromFrame.maxX : fromFrame.minX, y: fromFrame.midY)
                 let end = CGPoint(x: right ? toFrame.minX : toFrame.maxX, y: toFrame.midY)
-                routes.append([start, end])
+                let lo = min(start.x, end.x), hi = max(start.x, end.x)
+                let blocked = frames.contains { id, fr in
+                    id != chain[0] && id != chain[chain.count - 1] && !dummies.contains(id)
+                        && abs(fr.midY - fromFrame.midY) < 1
+                        && fr.minX < hi - 2 && fr.maxX > lo + 2
+                }
+                if blocked {
+                    let dy = fromFrame.maxY + 16
+                    routes.append([start, CGPoint(x: start.x, y: dy), CGPoint(x: end.x, y: dy), end])
+                } else {
+                    routes.append([start, end])
+                }
                 continue
             }
             let dummyCenters = chain[1..<(chain.count - 1)].compactMap { frames[$0].map { CGPoint(x: $0.midX, y: $0.midY) } }
