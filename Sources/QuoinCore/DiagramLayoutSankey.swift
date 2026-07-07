@@ -13,7 +13,7 @@ extension DiagramLayoutEngine {
     public static func layout(_ d: SankeyDiagram, measure: DiagramTextMeasurer) -> SankeyLayout {
         let margin: CGFloat = 16
         let thickness: CGFloat = 16
-        let columnSpacing: CGFloat = 150
+        let columnSpacing: CGFloat = 230
         let nodeGap: CGFloat = 12
         let labelSize: Double = 11
         let labelPad: CGFloat = 6
@@ -51,7 +51,16 @@ extension DiagramLayoutEngine {
             depthMemo[i] = best
             return best
         }
-        let depths = (0..<n).map { depth($0) }
+        var depths = (0..<n).map { depth($0) }
+        let deepest = depths.max() ?? 0
+        // Justify alignment (d3-sankey's default `nodeAlign`): a SINK — a node
+        // with no outgoing flow — belongs in the RIGHTMOST column, not merely
+        // at its longest path from a source. Without this, "Shipping"
+        // (Crude Oil → Refined Fuels → Shipping) has depth 2 and floats in a
+        // middle column instead of lining up on the right edge with the other
+        // outputs (Useful Energy, Waste Heat, Grid Losses), exactly as Clint
+        // spotted. `outValue[i] == 0` ⇔ the node emits nothing ⇔ it's a sink.
+        for i in 0..<n where outValue[i] <= 0 { depths[i] = deepest }
         let maxDepth = depths.max() ?? 0
 
         // Group node indices by column, preserving first-appearance order.
@@ -90,12 +99,15 @@ extension DiagramLayoutEngine {
         }
 
         // Choose a value→pixel scale so the busiest column fits a target height.
-        let targetHeight: CGFloat = 360
+        let targetHeight: CGFloat = 520
         var maxColValue = 0.0001
         for col in columns { maxColValue = max(maxColValue, col.reduce(0) { $0 + nodeValue[$1] }) }
         let maxColCount = columns.map(\.count).max() ?? 1
         var scale = (targetHeight - CGFloat(max(maxColCount - 1, 0)) * nodeGap) / CGFloat(maxColValue)
-        scale = min(max(scale, 3), 60)
+        // A low floor: `minBarHeight` already guarantees tiny nodes stay
+        // visible, so a big 3px/unit floor only inflates the canvas into a
+        // tall, cramped portrait. Keep it small so the plot stays landscape.
+        scale = min(max(scale, 1.2), 60)
 
         func barHeight(_ i: Int) -> CGFloat { max(CGFloat(nodeValue[i]) * scale, minBarHeight) }
 
@@ -115,16 +127,123 @@ extension DiagramLayoutEngine {
         let originX = margin + leftRoom
         let topOffset = margin
 
-        // Place node bars: each column centered vertically, stacked downward.
+        // ---- Coordinate assignment: a faithful port of d3-sankey's
+        // computeNodeBreadths (github.com/d3/d3-sankey). Node bar heights are
+        // value*scale; y-positions start stacked per column, then relax toward
+        // the LINK-ATTACHMENT point (targetTop/sourceTop), weighted by
+        // value × layer-distance, over `iterations` passes — each doing
+        // relaxRightToLeft then relaxLeftToRight, re-sorting links by breadth,
+        // with GENTLE α-damped centre-outward collision resolution that
+        // preserves the relaxation (a hard re-stack, which I did before, undoes
+        // it and reads worse). This is the algorithm every real Sankey uses. ----
+        let iterations = 32
+        let py = Swift.min(nodeGap, contentHeight / CGFloat(Swift.max(maxColCount - 1, 1)))
+        let yTop = topOffset, yBot = topOffset + contentHeight
+        func nh(_ i: Int) -> CGFloat { barHeight(i) }
+        var y0 = [CGFloat](repeating: 0, count: n)   // node top edge
+        for col in columns {
+            let colH = col.reduce(CGFloat(0)) { $0 + nh($1) } + CGFloat(Swift.max(col.count - 1, 0)) * py
+            var y = yTop + (contentHeight - colH) / 2
+            for i in col { y0[i] = y; y += nh(i) + py }
+        }
+
+        // Directed links with pixel width; per-node out/in lists (re-sorted by
+        // the connected node's breadth each pass, so the attachment maths track).
+        struct DL { let other: Int; let width: CGFloat }
+        var srcLinks = [[DL]](repeating: [], count: n)   // outgoing (this = source)
+        var tgtLinks = [[DL]](repeating: [], count: n)   // incoming (this = target)
+        for link in d.links {
+            guard let s = index[link.source], let t = index[link.target] else { continue }
+            let w = CGFloat(link.value) * scale
+            srcLinks[s].append(DL(other: t, width: w))
+            tgtLinks[t].append(DL(other: s, width: w))
+        }
+
+        // Ideal y0 for `t` so its link from `s` lines up (and vice versa).
+        func targetTop(_ s: Int, _ t: Int) -> CGFloat {
+            var y = y0[s] - CGFloat(srcLinks[s].count - 1) * py / 2
+            for dl in srcLinks[s] { if dl.other == t { break }; y += dl.width + py }
+            for dl in tgtLinks[t] { if dl.other == s { break }; y -= dl.width }
+            return y
+        }
+        func sourceTop(_ s: Int, _ t: Int) -> CGFloat {
+            var y = y0[t] - CGFloat(tgtLinks[t].count - 1) * py / 2
+            for dl in tgtLinks[t] { if dl.other == s { break }; y += dl.width + py }
+            for dl in srcLinks[s] { if dl.other == t { break }; y -= dl.width }
+            return y
+        }
+        func resolveCollisions(_ col: [Int], _ alpha: CGFloat) {
+            let nodes = col.sorted { y0[$0] < y0[$1] }
+            guard !nodes.isEmpty else { return }
+            func topToBottom(_ startY: CGFloat, _ from: Int) {
+                var y = startY, i = from
+                while i < nodes.count {
+                    let dy = (y - y0[nodes[i]]) * alpha
+                    if dy > 1e-6 { y0[nodes[i]] += dy }
+                    y = y0[nodes[i]] + nh(nodes[i]) + py; i += 1
+                }
+            }
+            func bottomToTop(_ startY: CGFloat, _ from: Int) {
+                var y = startY, i = from
+                while i >= 0 {
+                    let dy = (y0[nodes[i]] + nh(nodes[i]) - y) * alpha
+                    if dy > 1e-6 { y0[nodes[i]] -= dy }
+                    y = y0[nodes[i]] - py; i -= 1
+                }
+            }
+            let mid = nodes.count / 2
+            bottomToTop(y0[nodes[mid]] - py, mid - 1)
+            topToBottom(y0[nodes[mid]] + nh(nodes[mid]) + py, mid + 1)
+            bottomToTop(yBot, nodes.count - 1)
+            topToBottom(yTop, 0)
+        }
+
+        if maxDepth >= 1 {
+            for iter in 0..<iterations {
+                let alpha = pow(0.99, CGFloat(iter))
+                // reorder links by the connected node's current breadth
+                for i in 0..<n {
+                    srcLinks[i].sort { y0[$0.other] < y0[$1.other] }
+                    tgtLinks[i].sort { y0[$0.other] < y0[$1.other] }
+                }
+                // relaxRightToLeft: position each node from its outgoing links
+                for c in stride(from: maxDepth - 1, through: 0, by: -1) {
+                    for s in columns[c] where !srcLinks[s].isEmpty {
+                        var y: CGFloat = 0, w: CGFloat = 0
+                        for dl in srcLinks[s] {
+                            let v = dl.width * CGFloat(Swift.max(depths[dl.other] - depths[s], 1))
+                            y += (sourceTop(s, dl.other)) * v; w += v
+                        }
+                        if w > 0 { y0[s] += (y / w - y0[s]) * alpha }
+                    }
+                    resolveCollisions(columns[c], alpha)
+                }
+                // relaxLeftToRight: position each node from its incoming links
+                for c in 1...maxDepth {
+                    for t in columns[c] where !tgtLinks[t].isEmpty {
+                        var y: CGFloat = 0, w: CGFloat = 0
+                        for dl in tgtLinks[t] {
+                            let v = dl.width * CGFloat(Swift.max(depths[t] - depths[dl.other], 1))
+                            y += (targetTop(dl.other, t)) * v; w += v
+                        }
+                        if w > 0 { y0[t] += (y / w - y0[t]) * alpha }
+                    }
+                    resolveCollisions(columns[c], alpha)
+                }
+            }
+        }
+        // Final HARD collision pass per column (alpha = 1). The damped
+        // per-iteration passes converge but can leave residual overlap; one
+        // firm separation at the end guarantees no bars overlap and all stay
+        // in-bounds — without the every-iteration re-stacking that flattened
+        // the layout in my earlier attempt.
+        for c in 0...maxDepth { resolveCollisions(columns[c], 1.0) }
+        for i in 0..<n { y0[i] = Swift.min(Swift.max(y0[i], yTop), yBot - nh(i)) }
+
         var rects = [CGRect](repeating: .zero, count: n)
         for (c, col) in columns.enumerated() {
             let colX = originX + CGFloat(c) * columnSpacing
-            var y = topOffset + (contentHeight - colHeights[c]) / 2
-            for i in col {
-                let h = barHeight(i)
-                rects[i] = CGRect(x: colX, y: y, width: thickness, height: h)
-                y += h + nodeGap
-            }
+            for i in col { rects[i] = CGRect(x: colX, y: y0[i], width: thickness, height: nh(i)) }
         }
 
         // Bands: stack outgoing on each source's right edge, incoming on each
