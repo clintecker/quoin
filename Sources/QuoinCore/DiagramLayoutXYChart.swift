@@ -26,8 +26,11 @@ extension DiagramLayoutEngine {
         let allValues = chart.series.flatMap(\.values)
         let dataMax = allValues.max() ?? 1
         let dataMin = allValues.min() ?? 0
-        let yMax = chart.yMax ?? niceCeiling(dataMax)
-        let yMin = chart.yMin ?? Swift.min(0, dataMin)
+        // The axis must always cover the data: even when a range is declared,
+        // extend it so no series can escape the plot (a declared 0→260 must
+        // still hold a series that peaks at 375).
+        let yMax = Swift.max(chart.yMax ?? 0, niceCeiling(dataMax))
+        let yMin = Swift.min(chart.yMin ?? 0, dataMin, 0)
         let span = yMax - yMin == 0 ? 1 : yMax - yMin
         func y(_ value: Double) -> CGFloat {
             plotRect.maxY - CGFloat((value - yMin) / span) * plotHeight

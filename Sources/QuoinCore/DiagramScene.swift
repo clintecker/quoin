@@ -138,7 +138,19 @@ public enum DiagramLayoutLinter {
             }
         }
 
-        // 5. Edge crossings (warning) beyond a modest budget.
+        // 5. Marks escaping the plot: when a container bounds the data region
+        //    (a chart plot covering most of the canvas), no edge may leave it —
+        //    catches a line/series running off the chart.
+        if let plot = scene.nodes.filter({ $0.isContainer })
+            .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }),
+           plot.frame.width * plot.frame.height > 0.35 * scene.size.width * scene.size.height {
+            let bounds = plot.frame.insetBy(dx: -2, dy: -2)
+            for (ei, edge) in scene.edges.enumerated() where edge.polyline.contains(where: { !bounds.contains($0) }) {
+                out.append(.init(.error, "mark-escapes-plot", "edge #\(ei) runs outside the plot area"))
+            }
+        }
+
+        // 6. Edge crossings (warning) beyond a modest budget.
         var crossings = 0
         for i in scene.edges.indices {
             for j in scene.edges.indices where j > i {
