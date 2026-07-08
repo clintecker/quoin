@@ -29,12 +29,19 @@ public enum MermaidRenderer {
     /// every call in async contexts, making the cheap sync cache-hit path
     /// unreachable there. Cancelling the calling task cancels the render.
     public static func renderImage(source: String, theme: DiagramTheme) async -> sending PlatformImage? {
-        let task = Task.detached(priority: .userInitiated) { () -> sending PlatformImage? in
-            guard !Task.isCancelled else { return nil }
-            return image(source: source, theme: theme)
+        // NSImage's Sendable conformance is explicitly unavailable, so the
+        // image crosses the task boundary in a transfer box. This is sound:
+        // the value is either freshly rendered in this task or a fresh COPY
+        // from the cache (see attributedString(for:)), so the box holds the
+        // only reference. (Also keeps the code compiling across Swift 6.0-6.2,
+        // whose region-transfer inference differs here.)
+        struct Transfer: @unchecked Sendable { let image: PlatformImage? }
+        let task = Task.detached(priority: .userInitiated) { () -> Transfer in
+            guard !Task.isCancelled else { return Transfer(image: nil) }
+            return Transfer(image: image(source: source, theme: theme))
         }
         return await withTaskCancellationHandler {
-            await task.value
+            await task.value.image
         } onCancel: {
             task.cancel()
         }
