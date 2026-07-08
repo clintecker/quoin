@@ -6,7 +6,7 @@ app's shape.
 ## Add the package
 
 ```swift
-.package(url: "https://github.com/<org>/MermaidKit.git", from: "0.1.0")
+.package(url: "https://github.com/clintecker/MermaidKit.git", from: "0.1.0")
 ```
 
 Depend on the `MermaidRender` product (it brings `MermaidLayout` with it).
