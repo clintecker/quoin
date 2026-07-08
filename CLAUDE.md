@@ -34,21 +34,20 @@ justification in the TRD first; the default answer is no.
 
 ## Layout
 
-- `MermaidKit/` — the Mermaid engine as its own SwiftPM package (extracted
-  for external distribution; Quoin consumes it via a local path dependency,
-  exempt from the one-dependency policy as first-party code). PUBLISHED at
-  github.com/clintecker/MermaidKit (v0.1.0, own CI): the directory here is
-  the source of truth; publish updates with
-  `git subtree split --prefix=MermaidKit -b mermaidkit-split` then
-  `git push git@github.com:clintecker/MermaidKit.git mermaidkit-split:main`.
-  Its inert `.github/workflows/ci.yml` is live in the split repo.
-  `Sources/MermaidLayout` is the platform-free parser + layout + scene IR +
-  geometry linter; `Sources/MermaidRender` draws via CoreGraphics/CoreText
-  behind a 7-field `DiagramTheme` seam (Quoin adapts with
-  `Theme.diagramTheme`). Diagram fixtures live in `MermaidKit/Fixtures/`;
-  its tests run standalone (`swift test --package-path MermaidKit` — CI runs
-  both packages). QuoinCore `@_exported import`s MermaidLayout, so
-  `import QuoinCore` still exposes `MermaidParser` etc. unchanged.
+- Mermaid rendering comes from **MermaidKit**, Quoin's own published
+  package, consumed FROM GITHUB like any host app would:
+  github.com/clintecker/MermaidKit (`from: "0.1.0"`, first-party — exempt
+  from the one-third-party-dependency policy; the policy script allowlists
+  it). It is no longer vendored in this repo. MermaidLayout is the
+  platform-free parser + layout + scene IR + geometry linter; MermaidRender
+  draws via CoreGraphics/CoreText behind a `DiagramTheme` seam (Quoin
+  adapts with `Theme.diagramTheme`). QuoinCore `@_exported import`s
+  MermaidLayout, so `import QuoinCore` still exposes `MermaidParser` etc.
+  To co-develop: clone MermaidKit next to quoin and temporarily switch
+  Package.swift to `.package(path: "../MermaidKit")` (don't commit that),
+  or `swift package edit MermaidKit`; then publish to the MermaidKit repo,
+  tag, and bump the version here. Diagram engine changes are tested by
+  MermaidKit's own CI, not Quoin's.
 - `Sources/QuoinCore` — platform-agnostic engine (parses, sessions, search,
   stats, exporters, math parser). Must build and test on Linux.
 - `Sources/QuoinRender` — attributed-string projection + TextKit 2

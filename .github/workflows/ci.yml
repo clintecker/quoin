@@ -36,11 +36,6 @@ jobs:
       - name: Test
         run: swift test
 
-      # MermaidKit is its own package (extracted for external distribution);
-      # test it standalone so the extraction can never silently regress.
-      - name: Test MermaidKit
-        run: swift test --package-path MermaidKit
-
       # The app target lives outside the package; generate and build it so
       # the SwiftUI/AppKit shell is compile-verified too.
       - name: Install XcodeGen

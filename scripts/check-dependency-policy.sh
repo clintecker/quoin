@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-approved_url="https://github.com/swiftlang/swift-markdown.git"
-approved_identity="swift-markdown"
-approved_transitive_identity="swift-cmark"
+# Approved remote packages: swift-markdown is the one permitted THIRD-PARTY
+# code dependency; MermaidKit is FIRST-PARTY (Quoin's own published package,
+# extracted from this repo). Anything else requires written TRD justification.
+approved_urls="https://github.com/swiftlang/swift-markdown.git https://github.com/clintecker/MermaidKit.git"
+approved_identities="swift-markdown swift-cmark mermaidkit"
 
 if ! command -v swift >/dev/null 2>&1; then
   echo "error: swift is required to check Quoin's dependency policy." >&2
@@ -16,13 +18,12 @@ trap 'rm -f "$package_file" "$violations_file"' EXIT
 
 swift package dump-package > "$package_file"
 
-dependency_count="$(
-  /usr/bin/python3 - "$approved_url" "$package_file" 2> "$violations_file" <<'PY'
+/usr/bin/python3 - "$package_file" $approved_urls 2> "$violations_file" <<'PYEOF'
 import json
 import sys
 
-approved_url = sys.argv[1]
-package_path = sys.argv[2]
+package_path = sys.argv[1]
+approved = set(sys.argv[2:])
 with open(package_path, encoding="utf-8") as handle:
     package = json.load(handle)
 deps = package.get("dependencies", [])
@@ -36,27 +37,17 @@ def remote_url(dep):
     return remote
 
 # Local path dependencies (fileSystem) are first-party code living in this
-# repository (e.g. MermaidKit); the policy governs THIRD-PARTY code, so only
-# remote (sourceControl) dependencies count against the limit.
+# repository; the policy governs code fetched from elsewhere.
 remote_deps = [dep for dep in deps if "fileSystem" not in dep]
 
 for dep in remote_deps:
     location = remote_url(dep)
-    if location != approved_url:
+    if location not in approved:
         violations.append(location or "<unknown>")
 
-print(len(remote_deps))
 if violations:
     print("\n".join(violations), file=sys.stderr)
-PY
-)"
-
-if [[ "$dependency_count" != "1" ]]; then
-  echo "error: Quoin allows exactly one direct package dependency: $approved_url" >&2
-  echo "Found $dependency_count direct dependencies." >&2
-  echo "New code dependencies require written TRD justification before this guard is relaxed." >&2
-  exit 1
-fi
+PYEOF
 
 if [[ -s "$violations_file" ]]; then
   echo "error: Package.swift contains unapproved package dependencies:" >&2
@@ -66,12 +57,12 @@ if [[ -s "$violations_file" ]]; then
 fi
 
 if [[ -f Package.resolved ]]; then
-  /usr/bin/python3 - "$approved_identity" "$approved_transitive_identity" Package.resolved <<'PY'
+  /usr/bin/python3 - $approved_identities Package.resolved <<'PYEOF'
 import json
 import sys
 
-allowed = set(sys.argv[1:3])
-resolved_path = sys.argv[3]
+allowed = set(sys.argv[1:-1])
+resolved_path = sys.argv[-1]
 with open(resolved_path, encoding="utf-8") as handle:
     resolved = json.load(handle)
 pins = resolved.get("pins", [])
@@ -85,9 +76,9 @@ if unexpected:
     print("error: Package.resolved contains unapproved pins:", file=sys.stderr)
     for identity in unexpected:
         print(f"  - {identity}", file=sys.stderr)
-    print("Only swift-markdown and its existing swift-cmark transitive pin are allowed without TRD justification.", file=sys.stderr)
+    print("Only swift-markdown (+ swift-cmark transitive) and first-party mermaidkit are allowed without TRD justification.", file=sys.stderr)
     sys.exit(1)
-PY
+PYEOF
 fi
 
-echo "Dependency policy OK: direct dependency is $approved_url; existing swift-cmark transitive pin is allowed."
+echo "Dependency policy OK: remotes limited to swift-markdown (third-party) and first-party MermaidKit."

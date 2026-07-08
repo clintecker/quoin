@@ -1,6 +1,15 @@
 {
-  "originHash" : "e025878604f1fd47301595261a654b5eaf46784853512c41d74285577a5cfad5",
+  "originHash" : "25ae60aab69781e09213897ff00e2bdee6f20d4cb5b516f6798c2aebdb4171ea",
   "pins" : [
+    {
+      "identity" : "mermaidkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/clintecker/MermaidKit.git",
+      "state" : {
+        "revision" : "39b021495aed0c21f8d4f240b2dc9aba00fcb2bd",
+        "version" : "0.1.0"
+      }
+    },
     {
       "identity" : "swift-cmark",
       "kind" : "remoteSourceControl",
