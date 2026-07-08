@@ -1,0 +1,27 @@
+# Live once MermaidKit is its own repository (GitHub ignores nested workflow
+# files while it lives inside Quoin).
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: swift test (macOS)
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode 16
+        run: sudo xcode-select -s "$(find /Applications -maxdepth 1 -name 'Xcode_16*.app' -print | sort -V | tail -n 1)"
+      - name: Swift version
+        run: swift --version
+      - name: Build (strict concurrency is the default in Swift 6 mode)
+        run: swift build
+      - name: Test
+        run: swift test
