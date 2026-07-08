@@ -1,13 +1,13 @@
 {
-  "originHash" : "25ae60aab69781e09213897ff00e2bdee6f20d4cb5b516f6798c2aebdb4171ea",
+  "originHash" : "65795477900e3db55ed7de6c790f5087823d6b4d0912914c84beac64ab87a162",
   "pins" : [
     {
       "identity" : "mermaidkit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/clintecker/MermaidKit.git",
       "state" : {
-        "revision" : "c371ece4b5694418ab9d611d3aacd6d67f22521a",
-        "version" : "0.2.0"
+        "revision" : "afcf06539f933b07f4f6198117dcf342e01f1859",
+        "version" : "0.3.0"
       }
     },
     {
