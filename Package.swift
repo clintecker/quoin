@@ -13,11 +13,11 @@ let package = Package(
         .library(name: "QuoinRender", targets: ["QuoinRender"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.7.0"),
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.8.0"),
         // The Mermaid engine is Quoin's own published package — consumed from
         // GitHub exactly like any other host app would (first-party, so exempt
         // from the one-third-party-dependency policy).
-        .package(url: "https://github.com/clintecker/MermaidKit.git", from: "0.7.0"),
+        .package(url: "https://github.com/clintecker/MermaidKit.git", from: "0.8.0"),
     ],
     targets: [
         .target(
