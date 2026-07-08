@@ -126,31 +126,11 @@ final class RendererConformanceTests: XCTestCase {
     }
 
     private static func layoutSize(_ diagram: MermaidDiagram, measure: DiagramTextMeasurer) -> CGSize? {
-        switch diagram {
-        case .flowchart(let c): return DiagramLayoutEngine.layout(c, measure: measure).size
-        case .sequence(let s): return DiagramLayoutEngine.layout(s, measure: measure).size
-        case .pie(let p): return DiagramLayoutEngine.layout(p, measure: measure).size
-        case .classDiagram(let c): return DiagramLayoutEngine.layout(c, measure: measure).size
-        case .er(let e): return DiagramLayoutEngine.layout(e, measure: measure).size
-        case .state(let s): return DiagramLayoutEngine.layout(s, measure: measure).size
-        case .gantt(let g): return DiagramLayoutEngine.layout(g, measure: measure).size
-        case .timeline(let t): return DiagramLayoutEngine.layout(t, measure: measure).size
-        case .mindmap(let m): return DiagramLayoutEngine.layout(m, measure: measure).size
-        case .journey(let j): return DiagramLayoutEngine.layout(j, measure: measure).size
-        case .quadrant(let q): return DiagramLayoutEngine.layout(q, measure: measure).size
-        case .packet(let p): return DiagramLayoutEngine.layout(p, measure: measure).size
-        case .xychart(let x): return DiagramLayoutEngine.layout(x, measure: measure).size
-        case .kanban(let k): return DiagramLayoutEngine.layout(k, measure: measure).size
-        case .radar(let r): return DiagramLayoutEngine.layout(r, measure: measure).size
-        case .treemap(let t): return DiagramLayoutEngine.layout(t, measure: measure).size
-        case .gitGraph(let g): return DiagramLayoutEngine.layout(g, measure: measure).size
-        case .sankey(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
-        case .requirement(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
-        case .zenuml(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
-        case .c4(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
-        case .architecture(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
-        case .block(let d): return DiagramLayoutEngine.layout(d, measure: measure).size
-        }
+        // The scene lowering runs the per-type layout dispatch for us — and
+        // unlike a hand-written exhaustive switch here, it can't fall out of
+        // sync when MermaidKit adds diagram types (the 23->30 bump broke the
+        // old switch at compile time).
+        DiagramScene.lower(diagram, measure: measure).size
     }
 
     private static func flatten(_ blocks: [Block]) -> [Block] {
