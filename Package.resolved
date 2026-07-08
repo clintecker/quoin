@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/clintecker/MermaidKit.git",
       "state" : {
-        "revision" : "0e4d43b1fd4da7eb9d606830bc954598fb72caff",
-        "version" : "0.1.1"
+        "revision" : "c371ece4b5694418ab9d611d3aacd6d67f22521a",
+        "version" : "0.2.0"
       }
     },
     {
