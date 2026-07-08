@@ -1,6 +1,11 @@
 #if canImport(AppKit) || canImport(UIKit)
 import Foundation
 import CoreGraphics
+#if canImport(AppKit)
+import AppKit
+#else
+import UIKit
+#endif
 
 /// The full color surface a Mermaid diagram render needs — the sole external
 /// seam. Host apps build one (or use the light/dark presets).
@@ -37,20 +42,49 @@ public struct DiagramTheme: Sendable {
     ]
 
     /// A stable digest of every color in the theme — the render-cache key
-    /// component, so two themes with the same appearance but different
-    /// colors can never serve each other's cached renders.
-    public var fingerprint: String {
+    /// component, so two themes with the same appearance but different colors
+    /// can never serve each other's cached renders. Computed ONCE at init,
+    /// with dynamic colors resolved under the SAME appearance the renderer
+    /// pins while drawing — resolving under the ambient appearance instead
+    /// would make the key drift between call contexts (main thread vs
+    /// detached task, light vs dark ambient) and collide across appearances.
+    public let fingerprint: String
+
+    private static func makeFingerprint(
+        prefersDark: Bool, colors: [PlatformColor]
+    ) -> String {
         func hex(_ c: PlatformColor) -> String {
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             #if canImport(AppKit)
-            (c.usingColorSpace(.sRGB) ?? c).getRed(&r, green: &g, blue: &b, alpha: &a)
+            guard let converted = c.usingColorSpace(.sRGB) else {
+                // Pattern/catalog colors that refuse sRGB conversion: fall back
+                // to their description rather than fingerprinting as zeros
+                // (which would collide every unconvertible color).
+                return "(\(c.description))"
+            }
+            converted.getRed(&r, green: &g, blue: &b, alpha: &a)
             #else
-            c.getRed(&r, green: &g, blue: &b, alpha: &a)
+            guard c.getRed(&r, green: &g, blue: &b, alpha: &a) else {
+                return "(\(c.description))"
+            }
             #endif
             return String(format: "%02X%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255), Int(a * 255))
         }
-        let colors = [ink, secondaryTextColor, tertiaryTextColor, canvas, accent, hairline] + palette
-        return (prefersDark ? "d" : "l") + colors.map(hex).joined()
+        var digest = ""
+        #if canImport(AppKit)
+        let appearance = NSAppearance(named: prefersDark ? .darkAqua : .aqua)
+        if let appearance {
+            appearance.performAsCurrentDrawingAppearance {
+                digest = colors.map(hex).joined()
+            }
+        } else {
+            digest = colors.map(hex).joined()
+        }
+        #else
+        let traits = UITraitCollection(userInterfaceStyle: prefersDark ? .dark : .light)
+        digest = colors.map { hex($0.resolvedColor(with: traits)) }.joined()
+        #endif
+        return (prefersDark ? "d" : "l") + digest
     }
 
     /// The palette color for a categorical index (wraps around).
@@ -70,6 +104,9 @@ public struct DiagramTheme: Sendable {
         self.tertiaryTextColor = tertiaryTextColor; self.canvas = canvas
         self.accent = accent; self.hairline = hairline; self.prefersDark = prefersDark
         self.palette = palette
+        self.fingerprint = Self.makeFingerprint(
+            prefersDark: prefersDark,
+            colors: [ink, secondaryTextColor, tertiaryTextColor, canvas, accent, hairline] + palette)
     }
 
     /// The built-in preset: a near-black (light) or near-white (dark) ink

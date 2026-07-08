@@ -106,6 +106,17 @@ final class AdversarialInputTests: XCTestCase {
     }
 
     func testHostileNumbers() {
+        // The two crashes an external audit reproduced: a non-finite gantt
+        // DURATION (the date path was covered; the duration path skipped the
+        // sanitizer) and a packet bit index at Int.max (bare Int parse, then
+        // `+ 1` overflow in layout). Plus radar's tick count, which drove an
+        // unbounded polygon loop.
+        pipeline("gantt\n title t\n section s\n T :t1, 2024-01-01, inf", "gantt inf duration")
+        pipeline("gantt\n title t\n section s\n T :t1, 2024-01-01, nan", "gantt nan duration")
+        pipeline("gantt\n title t\n section s\n T :t1, 2024-01-01, 1e308d", "gantt huge duration")
+        pipeline("packet-beta\n9223372036854775807: \"x\"", "packet Int.max bit")
+        pipeline("packet-beta\n0-9223372036854775807: \"x\"", "packet Int.max range")
+        pipeline("radar-beta\n ticks 500000000\n axis a, b, c\n curve x{1,2,3}", "radar huge ticks")
         pipeline("pie\n \"a\": 1e308\n \"b\": 1e308", "pie 1e308")
         pipeline("pie\n \"a\": -5", "pie negative")
         pipeline("pie\n \"a\": 0\n \"b\": 0", "pie zeros")

@@ -98,6 +98,10 @@ extension MermaidParser {
     private static func commonPrefixKey(_ canonical: String) -> String {
         if canonical.hasPrefix("C4") { return "C4" }
         if canonical == "stateDiagram-v2" { return "stateDiagram" }
+        // block-beta is matched by parse() in FULL (a bare "block" is not a
+        // recognized header), unlike the other -beta types which match on
+        // their stem.
+        if canonical == "block-beta" { return "block-beta" }
         if let dash = canonical.firstIndex(of: "-") { return String(canonical[..<dash]) }
         return canonical
     }

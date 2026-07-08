@@ -120,12 +120,19 @@ extension MermaidParser {
     /// number is treated as days.
     static func durationInDays(_ text: String) -> Double? {
         guard let unit = text.last else { return nil }
-        if let bare = Double(text) { return bare }  // "30" → 30 days
+        // The bare-number path must sanitize too: Double("inf")/"nan" parse
+        // successfully and a non-finite duration traps layout's Int(span)
+        // conversions (a reproduced crash). Durations also cap at a century —
+        // finite-but-absurd values otherwise size a multi-billion-point canvas.
+        let maxDays = 36_500.0
+        if let bare = MermaidParser.finiteDouble(text) {
+            return bare >= 0 ? min(bare, maxDays) : nil  // "30" → 30 days
+        }
         let value = MermaidParser.finiteDouble(text.dropLast())
         guard let value, value >= 0 else { return nil }
         switch unit {
-        case "d": return value
-        case "w": return value * 7
+        case "d": return min(value, maxDays)
+        case "w": return min(value * 7, maxDays)
         case "h": return value / 24
         case "m": return value / (24 * 60)   // minutes
         default: return nil

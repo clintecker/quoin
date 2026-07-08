@@ -41,7 +41,7 @@ Embedding Mermaid today usually means shipping mermaid.js inside a
 `WKWebView`: a JS runtime per diagram, async round-trips, non-native text,
 and a web process in your memory footprint. MermaidKit renders the same
 source natively and synchronously — every diagram type below renders cold in
-**under 15 ms** on Apple silicon, most in **under 3 ms**, and results are
+**under 20 ms** on Apple silicon, most in **under 10 ms**, and results are
 cached per (source, appearance).
 
 |  | MermaidKit | mermaid.js + WKWebView | [BeautifulMermaid](https://github.com/lukilabs/beautiful-mermaid-swift) |
@@ -103,31 +103,35 @@ directives (theming is `DiagramTheme`'s job).
 
 ## Performance
 
-Cold parse → layout → render to image, best of 3, on an Apple-silicon Mac
+Cold parse → layout → render **to rasterized pixels** (the benchmark forces
+rasterization — a deferred-drawing `NSImage` would flatter the numbers), best
+of 3, on an Apple-silicon Mac
 (the dense per-type fixtures in this repo — real-world diagrams are usually
 smaller). Measured by `RenderBenchmarks`, which fails CI if any type exceeds
 250 ms:
 
 | Diagram | Cold render | Diagram | Cold render |
 |---|---:|---|---:|
-| architecture | 13.1 ms | packet | 0.2 ms |
-| block | 0.4 ms | pie | 0.3 ms |
-| c4 | 1.3 ms | quadrant | 0.3 ms |
-| class | 1.9 ms | radar | 0.2 ms |
-| er | 1.3 ms | requirement | 1.3 ms |
-| flowchart | 3.1 ms | sankey | 3.1 ms |
-| gantt | 0.5 ms | sequence | 0.3 ms |
-| gitgraph | 0.3 ms | state | 1.9 ms |
-| journey | 0.6 ms | timeline | 0.5 ms |
-| kanban | 1.2 ms | treemap | 0.3 ms |
-| mindmap | 0.6 ms | xychart | 0.2 ms |
-| zenuml | 0.3 ms | | |
+| architecture | 18.6 ms | packet | 3.2 ms |
+| block | 3.2 ms | pie | 2.1 ms |
+| c4 | 8.7 ms | quadrant | 3.8 ms |
+| class | 9.2 ms | radar | 1.9 ms |
+| er | 7.6 ms | requirement | 10.7 ms |
+| flowchart | 10.5 ms | sankey | 9.4 ms |
+| gantt | 3.0 ms | sequence | 7.1 ms |
+| gitgraph | 2.6 ms | state | 10.9 ms |
+| journey | 4.4 ms | timeline | 5.9 ms |
+| kanban | 4.7 ms | treemap | 3.1 ms |
+| mindmap | 7.4 ms | xychart | 2.0 ms |
+| zenuml | 7.0 ms | | |
 
 Rendering is synchronous by design: at these times a first render in a
 SwiftUI `body` is cheaper than a state round-trip, and repeat renders hit the
-cache. Input is bounded the same way mermaid.js bounds it
-(`MermaidParser.maxTextSize` = 50k chars, `maxEdges` = 500) — oversized
-sources return `nil` fast instead of feeding a super-linear layout.
+cache. Input is bounded the same way mermaid.js bounds it:
+`MermaidParser.maxTextSize` (50k chars) caps every source, and
+`maxEdges` (500) caps flowcharts — the one type whose layered layout is
+super-linear in edge count. Oversized sources return `nil` fast; per-type
+numeric fields are clamped at parse (durations, bit ranges, tick counts).
 
 Swift 6 language mode, zero concurrency warnings.
 
@@ -149,7 +153,7 @@ Two targets:
   (frames, polylines). Text measurement is injected (`DiagramTextMeasurer`),
   so layout is fully testable without a display server.
 - **MermaidRender** — CoreGraphics/CoreText drawing on macOS 14+, iOS 17+,
-  and visionOS 1+. The only styling input is `DiagramTheme` (7 colors + a
+  and visionOS 1+. Building the package requires Xcode 16+ (Swift 6 tools). The only styling input is `DiagramTheme` (7 colors + a
   dark-mode flag).
 
 ### The layout linter

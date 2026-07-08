@@ -41,13 +41,16 @@ enum DiagramRenderer {
     /// A rendered attachment for mermaid source, or nil when the dialect
     /// isn't supported yet (caller keeps the styled-source fallback).
     static func attachmentString(source: String, theme: DiagramTheme) -> NSAttributedString? {
+        // Cache first: a hit must not pay a re-parse of up-to-50KB source
+        // (MermaidView evaluates this on every SwiftUI body pass).
+        let key = "mermaid|\(theme.fingerprint)|\(source)" as NSString
+        if let cached = cache.object(forKey: key) {
+            return attributedString(for: cached)
+        }
         guard let diagram = MermaidParser.parse(source) else { return nil }
 
-        let key = "mermaid|\(theme.fingerprint)|\(source)" as NSString
         let entry: Entry
-        if let cached = cache.object(forKey: key) {
-            entry = cached
-        } else {
+        do {
             let measure: DiagramTextMeasurer = { text, fontSize in
                 Self.measure(text, size: CGFloat(fontSize))
             }
@@ -188,20 +191,50 @@ enum DiagramRenderer {
                 return true
             }
             #else
-            let renderer = UIGraphicsImageRenderer(size: canvasSize)
+            // Pin trait resolution to the theme's appearance: without this,
+            // dynamic colors (tintColor, host semantic colors) rasterize under
+            // whatever UITraitCollection.current happens to be — wrong under
+            // an explicit opposite-appearance theme, and unspecified on the
+            // async path's detached thread.
+            let traits = UITraitCollection(userInterfaceStyle: theme.prefersDark ? .dark : .light)
+            let format = UIGraphicsImageRendererFormat()
+            format.traitCollection = traits
+            let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
             let image = renderer.image { rendererContext in
-                rendererContext.cgContext.translateBy(x: originX, y: originY)
-                draw(rendererContext.cgContext)
+                traits.performAsCurrent {
+                    rendererContext.cgContext.translateBy(x: originX, y: originY)
+                    draw(rendererContext.cgContext)
+                }
             }
             #endif
             entry = Entry(image: image)
-            let pixels = Int(entry.image.size.width * entry.image.size.height)
+            // Cost = actual backing bytes, not point-size bytes: UIKit
+            // rasterizes at screen scale; AppKit's handler-backed NSImage caches
+            // a rep per destination scale (2x assumed) on first draw.
+            #if canImport(AppKit)
+            let scale: CGFloat = 2
+            #else
+            let scale = image.scale
+            #endif
+            let pixels = Int(image.size.width * scale * image.size.height * scale)
             cache.setObject(entry, forKey: key, cost: pixels * 4)
         }
+        return attributedString(for: entry)
+    }
 
+    /// Wraps a cached render as a fresh single-attachment string. On AppKit
+    /// the image is COPIED: NSImage is mutable, and handing the cache's own
+    /// instance out lets an innocent `image.size = fitted` poison every future
+    /// cache hit. (UIImage is immutable; no copy needed.)
+    private static func attributedString(for entry: Entry) -> NSAttributedString {
+        #if canImport(AppKit)
+        let image = (entry.image.copy() as? NSImage) ?? entry.image
+        #else
+        let image = entry.image
+        #endif
         let attachment = NSTextAttachment()
-        attachment.image = entry.image
-        attachment.bounds = CGRect(origin: .zero, size: entry.image.size)
+        attachment.image = image
+        attachment.bounds = CGRect(origin: .zero, size: image.size)
         return NSAttributedString(attachment: attachment)
     }
 

@@ -20,10 +20,18 @@ extension MermaidParser {
             let label = line[line.index(after: colon)...]
                 .trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
             let bounds = range.split(separator: "-", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            // Clamp bit indices: a bare Int at Int.max walks layout's
+            // `segmentEnd + 1` into an overflow trap (a reproduced crash), and
+            // a huge range explodes into tens of thousands of 32-bit rows that
+            // take minutes to lay out and lint. 4096 bits comfortably covers
+            // real protocol headers (an IPv6 header is 320).
+            func clampedBit(_ text: String) -> Int? {
+                Int(text).map { min(max($0, 0), 4096) }
+            }
             let start: Int, end: Int
-            if bounds.count == 2, let a = Int(bounds[0]), let b = Int(bounds[1]) {
+            if bounds.count == 2, let a = clampedBit(bounds[0]), let b = clampedBit(bounds[1]) {
                 start = min(a, b); end = max(a, b)
-            } else if bounds.count == 1, let a = Int(bounds[0]) {
+            } else if bounds.count == 1, let a = clampedBit(bounds[0]) {
                 start = a; end = a
             } else {
                 continue

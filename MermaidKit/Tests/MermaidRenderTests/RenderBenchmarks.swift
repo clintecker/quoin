@@ -41,8 +41,13 @@ final class RenderBenchmarks: XCTestCase {
 
                 t0 = CFAbsoluteTimeGetCurrent()
                 let image = MermaidRenderer.image(source: src, theme: theme)
+                // Force rasterization: a handler-backed NSImage defers drawing
+                // until first use, so timing image() alone would flatter the
+                // numbers by excluding the actual CoreGraphics work.
+                let rasterized = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 totalBest = min(totalBest, (CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 XCTAssertNotNil(image, name)
+                XCTAssertNotNil(rasterized, name)
             }
             rows.append((name, parseBest, totalBest))
             XCTAssertLessThan(totalBest, 250, "\(name): cold render must stay interactive")

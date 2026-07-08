@@ -51,7 +51,11 @@ extension MermaidParser {
             } else if line.hasPrefix("min ") {
                 minValue = MermaidParser.finiteDouble(line.dropFirst(4).trimmingCharacters(in: .whitespaces)) ?? minValue
             } else if line.hasPrefix("ticks ") {
-                ticks = Int(line.dropFirst(6).trimmingCharacters(in: .whitespaces)) ?? ticks
+                // Clamped: layout draws one ring polygon per tick, so an
+                // unbounded count is a render-time hang.
+                if let t = Int(line.dropFirst(6).trimmingCharacters(in: .whitespaces)) {
+                    ticks = min(max(t, 1), 100)
+                }
             }
         }
 

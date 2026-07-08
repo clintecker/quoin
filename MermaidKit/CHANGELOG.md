@@ -19,6 +19,21 @@ Initial extraction from [Quoin](https://github.com/clintecker/quoin).
   tints/pie slices/sankey bands across all types; render cache now keys on
   the full theme fingerprint (a same-appearance theme change previously
   could serve a stale cached render).
+- Second external audit round: fixed two reproduced process crashes
+  (gantt `inf`/`nan` duration skipping the sanitizer; packet bit index at
+  Int.max overflowing in layout) and two hostile-input hangs (packet
+  0..1M-bit ranges, unbounded radar tick loops) — all now clamped at parse
+  with adversarial regression tests. Render-layer correctness: iOS trait
+  resolution pinned to the theme's appearance (dynamic colors no longer
+  bake at ambient traits), theme fingerprint resolved under the same
+  pinned appearance and memoized (was ambient-dependent, with a crash
+  path on unconvertible colors), cache cost accounts for backing-scale
+  bytes, cache hits skip re-parsing, and returned NSImages are copies so
+  host mutations can't poison the cache. Async API renamed to
+  `renderImage` (a same-name overload made the sync path unreachable in
+  async contexts) and now propagates cancellation. Benchmarks force
+  rasterization — published numbers were flattered by NSImage's deferred
+  drawing; honest worst is ~19 ms (was reported 13.1).
 - Swift 6 language mode (swift-tools-version 6.0), zero warnings; async
   `MermaidRenderer.image(source:theme:)` twin renders off the calling
   thread via `sending`.

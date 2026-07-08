@@ -53,19 +53,30 @@ final class MermaidViewTests: XCTestCase {
     }
 
     /// The async variant renders off-thread and returns the same result as
-    /// the sync path (they share cache and pipeline).
+    /// the sync path (they share cache and pipeline). Distinct name, so the
+    /// sync API stays reachable from async contexts.
     func testAsyncImageMatchesSync() async throws {
         let source = "flowchart TD\n A --> B"
         let theme = DiagramTheme(prefersDark: false)
-        // Pin the sync overload via a non-async closure: in an async context
-        // Swift resolves `MermaidRenderer.image` to the async twin.
-        let syncImage: PlatformImage? = { MermaidRenderer.image(source: source, theme: theme) }()
-        let sync = try XCTUnwrap(syncImage)
-        let asyncResult: PlatformImage? = await MermaidRenderer.image(source: source, theme: theme)
-        let rendered = try XCTUnwrap(asyncResult)
+        let sync = try XCTUnwrap(MermaidRenderer.image(source: source, theme: theme))
+        let renderedOpt: PlatformImage? = await MermaidRenderer.renderImage(source: source, theme: theme)
+        let rendered = try XCTUnwrap(renderedOpt)
         XCTAssertEqual(sync.size, rendered.size)
-        let missing: PlatformImage? = await MermaidRenderer.image(source: "nonesuch", theme: theme)
+        let missing: PlatformImage? = await MermaidRenderer.renderImage(source: "nonesuch", theme: theme)
         XCTAssertNil(missing)
+    }
+
+    /// The cache must hand back independent images: mutating a returned
+    /// NSImage (`image.size = fitted` is common host code) must not poison
+    /// subsequent cache hits.
+    func testReturnedImageIsIndependentOfCache() throws {
+        let source = "pie\n \"a\": 2\n \"b\": 1"
+        let theme = DiagramTheme(prefersDark: false)
+        let first = try XCTUnwrap(MermaidRenderer.image(source: source, theme: theme))
+        let original = first.size
+        first.size = CGSize(width: 1, height: 1)
+        let second = try XCTUnwrap(MermaidRenderer.image(source: source, theme: theme))
+        XCTAssertEqual(second.size, original, "cache hit must not reflect caller mutations")
     }
 
     func testTypeNameCoversAllCases() throws {

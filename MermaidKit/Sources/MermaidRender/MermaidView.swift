@@ -32,7 +32,7 @@ public struct MermaidView: View {
     }
 
     /// The rendered diagram image (scaled down to fit, never up), or the
-    /// monospaced raw-source fallback when the source isn't recognized.
+    /// monospaced raw-source fallback when the source can't be rendered.
     public var body: some View {
         let theme = explicitTheme ?? DiagramTheme(prefersDark: colorScheme == .dark)
         if let image = MermaidRenderer.image(source: source, theme: theme) {
@@ -41,20 +41,38 @@ public struct MermaidView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: image.size.width, maxHeight: image.size.height)
                 .accessibilityLabel(Text(accessibilityDescription))
+        } else if MermaidParser.parse(source) != nil {
+            // Parsed fine but couldn't be rasterized (the layout exceeded the
+            // canvas guard): say THAT, not "unrecognized".
+            fallbackSource(label: "Diagram too large to render")
         } else {
-            Text(source)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
-                .accessibilityLabel(Text("Unrecognized diagram source"))
+            fallbackSource(label: "Unrecognized diagram source")
         }
+    }
+
+    private func fallbackSource(label: String) -> some View {
+        Text(source)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
+            .accessibilityLabel(Text(label))
     }
 
     private var accessibilityDescription: String {
         guard let diagram = MermaidParser.parse(source) else { return "Diagram" }
         return "\(diagram.typeName) diagram"
+    }
+}
+
+extension MermaidView: Equatable {
+    /// Lets SwiftUI skip re-evaluating unchanged diagrams in bulk containers:
+    /// equal source + equal theme identity (fingerprint) means an identical
+    /// render. Environment color-scheme changes invalidate separately.
+    nonisolated public static func == (lhs: MermaidView, rhs: MermaidView) -> Bool {
+        lhs.source == rhs.source
+            && lhs.explicitTheme?.fingerprint == rhs.explicitTheme?.fingerprint
     }
 }
 
