@@ -98,6 +98,61 @@ final class RevealFidelityTests: XCTestCase {
         XCTAssertLessThan(delta, 8, "heading reveal shifted content by \(delta)pt")
     }
 
+    /// THE reported symptom: "spacing between lines goes away in edit mode
+    /// and comes back in real mode." A hard-break paragraph's rendered lines
+    /// carry the body's paragraph spacing; the revealed source must carry
+    /// the same per-line metrics, keeping the reveal height-neutral.
+    func testHardBreakParagraphRevealIsHeightNeutral() throws {
+        let hardBreakSource = """
+        # Interior spacing
+
+        This line ends with two spaces.  \u{20}
+        This line should appear after a hard line break.  \u{20}
+        And a third line to make the gaps unmissable.
+
+        Tail paragraph.
+        """
+        let document = MarkdownConverter.parse(hardBreakSource)
+        let renderer = AttributedRenderer()
+        var cache: [BlockID: NSAttributedString] = [:]
+        let para = try XCTUnwrap(document.blocks.first {
+            if case .paragraph = $0.kind { return true }
+            return false
+        }?.id)
+
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+        let revealed = renderer.render(document, activeBlockID: para, activeCaret: 3, cache: &cache)
+        XCTAssertEqual(measureHeight(reading.attributed),
+                       measureHeight(revealed.attributed),
+                       accuracy: 2.0,
+                       "hard-break paragraph reveal must keep its interior line spacing")
+    }
+
+    /// List items keep their gaps and indents when the list reveals.
+    func testListRevealKeepsItemSpacing() throws {
+        let listSource = """
+        # Lists
+
+        - first item of the list
+        - second item of the list
+        - third item of the list
+
+        Tail paragraph.
+        """
+        let document = MarkdownConverter.parse(listSource)
+        let renderer = AttributedRenderer()
+        var cache: [BlockID: NSAttributedString] = [:]
+        let list = try XCTUnwrap(document.blocks.first {
+            if case .list = $0.kind { return true }
+            return false
+        }?.id)
+
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+        let revealed = renderer.render(document, activeBlockID: list, activeCaret: 3, cache: &cache)
+        let delta = abs(measureHeight(reading.attributed) - measureHeight(revealed.attributed))
+        XCTAssertLessThan(delta, 6, "list reveal shifted content by \(delta)pt")
+    }
+
     private func measureHeight(_ attributed: NSAttributedString) -> CGFloat {
         let storage = NSTextStorage(attributedString: attributed)
         let contentStorage = NSTextContentStorage()

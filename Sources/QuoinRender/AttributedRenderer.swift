@@ -169,7 +169,7 @@ public struct AttributedRenderer {
                 // editable in place. Only the caret's span reveals its
                 // delimiters (handoff span-level rule). Never cached — its
                 // fragment changes as the caret moves.
-                let editable = renderEditableSource(slice, caretOffset: activeCaret, kind: block.kind)
+                let editable = renderEditableSource(slice, caretOffset: activeCaret, block: block, document: document)
                 activeEditableRange = NSRange(location: start, length: editable.length)
                 activeSourceText = slice
                 output.append(editable)
@@ -189,7 +189,18 @@ public struct AttributedRenderer {
                 output.append(fragment)
             }
             if index < document.blocks.count - 1 {
-                output.append(blockSeparator(after: block.kind, before: document.blocks[index + 1].kind))
+                let nextKind = document.blocks[index + 1].kind
+                // The separator after a revealed block whose slice carries
+                // its own trailing newline would lay out as a phantom empty
+                // paragraph (~a full line) the reading projection never
+                // shows; clamp it to near-zero height (same characters, so
+                // every range stays valid).
+                if block.id == activeBlockID, let text = activeSourceText,
+                   Self.revealNeedsClampedSeparator(text) {
+                    output.append(clampedSeparator(after: block.kind, before: nextKind))
+                } else {
+                    output.append(blockSeparator(after: block.kind, before: nextKind))
+                }
             }
             blockRanges[block.id] = NSRange(location: start, length: output.length - start)
         }
@@ -215,9 +226,10 @@ public struct AttributedRenderer {
     }
 
     public func renderEditableSourceFragment(
-        _ slice: String, caretOffset: Int? = nil, kind: BlockKind? = nil
+        _ slice: String, caretOffset: Int? = nil,
+        block: Block? = nil, document: QuoinDocument? = nil
     ) -> NSAttributedString {
-        renderEditableSource(slice, caretOffset: caretOffset, kind: kind)
+        renderEditableSource(slice, caretOffset: caretOffset, block: block, document: document)
     }
 
     /// One block's READ fragment, exactly as the full render loop would
@@ -274,19 +286,30 @@ public struct AttributedRenderer {
         var cacheable: (id: BlockID, fragment: NSAttributedString)?
         var activeSourceText: String?
 
-        // Deactivation: the old editable run flips back to its read fragment.
+        // Deactivation: the old editable run flips back to its read fragment,
+        // and its separator (clamped during the reveal) back to normal. The
+        // patch spans fragment + separator so both projections stay
+        // reproducible from either path.
         if let oldID {
             guard let editableRange = current.activeEditableRange,
                   current.activeBlockID == oldID,
-                  let blockIndex = document.blocks.firstIndex(where: { $0.id == oldID })
+                  let blockIndex = document.blocks.firstIndex(where: { $0.id == oldID }),
+                  let oldBlockRange = current.blockRanges[oldID],
+                  oldBlockRange.location == editableRange.location,
+                  oldBlockRange.length >= editableRange.length
             else { return nil }
             let block = document.blocks[blockIndex]
             let (fragment, pending) = renderReadFragment(block, document: document)
             if !pending { cacheable = (oldID, fragment) }
+            let replacement = NSMutableAttributedString(attributedString: fragment)
+            if blockIndex < document.blocks.count - 1 {
+                replacement.append(blockSeparator(
+                    after: block.kind, before: document.blocks[blockIndex + 1].kind))
+            }
             patches.append((
-                location: editableRange.location,
-                patch: RenderStoragePatch(oldRange: editableRange, replacement: fragment),
-                blockID: oldID, newLength: fragment.length, oldLength: editableRange.length
+                location: oldBlockRange.location,
+                patch: RenderStoragePatch(oldRange: oldBlockRange, replacement: replacement),
+                blockID: oldID, newLength: replacement.length, oldLength: oldBlockRange.length
             ))
         }
 
@@ -298,22 +321,23 @@ public struct AttributedRenderer {
                   let slice = document.source.substring(in: document.blocks[blockIndex].range)
             else { return nil }
             let block = document.blocks[blockIndex]
-            // A block's stored range includes its trailing separator; the
-            // separator depends only on the neighboring kinds, which a flip
-            // never changes, so it stays put and only the fragment is
-            // patched.
-            let separator = blockIndex < document.blocks.count - 1
-                ? separatorLength(after: block.kind, before: document.blocks[blockIndex + 1].kind)
-                : 0
-            let fragmentLength = blockRange.length - separator
-            guard fragmentLength >= 0 else { return nil }
-            let editable = renderEditableSourceFragment(slice, caretOffset: caret, kind: block.kind)
+            // The patch spans fragment + separator: the separator's
+            // CHARACTERS are constant (range bookkeeping depends on that),
+            // but a revealed slice that ends with its own newline needs the
+            // separator clamped to near-zero height or it lays out as a
+            // phantom empty paragraph the reading projection never shows.
+            let editable = renderEditableSourceFragment(slice, caretOffset: caret, block: block, document: document)
+            let replacement = NSMutableAttributedString(attributedString: editable)
+            if blockIndex < document.blocks.count - 1 {
+                let nextKind = document.blocks[blockIndex + 1].kind
+                replacement.append(Self.revealNeedsClampedSeparator(slice)
+                    ? clampedSeparator(after: block.kind, before: nextKind)
+                    : blockSeparator(after: block.kind, before: nextKind))
+            }
             patches.append((
                 location: blockRange.location,
-                patch: RenderStoragePatch(
-                    oldRange: NSRange(location: blockRange.location, length: fragmentLength),
-                    replacement: editable),
-                blockID: newID, newLength: editable.length, oldLength: fragmentLength
+                patch: RenderStoragePatch(oldRange: blockRange, replacement: replacement),
+                blockID: newID, newLength: replacement.length, oldLength: blockRange.length
             ))
             activeSourceText = slice
             newEditableLength = editable.length
@@ -414,55 +438,121 @@ public struct AttributedRenderer {
     /// content approximates its rendered look, delimiters stay visible at
     /// 35% ink mono (syntax reveal), and the character mapping stays 1:1.
     ///
-    /// The revealed fragment mirrors the READ fragment's outer vertical
-    /// metrics (a heading's spacing-above, a paragraph's trailing spacing) —
-    /// without them the block's height collapsed on activation and the
-    /// content below shifted up, nudging the viewport on every click-in.
+    /// Layout preservation is the point of in-place editing: the revealed
+    /// source must keep the block's VERTICAL SKELETON — spacing between
+    /// hard-break lines, list-item gaps and indents, a heading's air, the
+    /// trailing paragraph gap — so entering and leaving edit mode doesn't
+    /// reflow the page. For text-family blocks that means transplanting the
+    /// READ fragment's paragraph styles onto the source line by line (the
+    /// same text alignment that maps clicks to carets finds each source
+    /// line's rendered anchor). Embed blocks (code, mermaid, math, table)
+    /// keep tuned constants instead: re-rendering a diagram per keystroke
+    /// just to copy its one paragraph style would defeat the render cache.
     private func renderEditableSource(
-        _ slice: String, caretOffset: Int? = nil, kind: BlockKind? = nil
+        _ slice: String, caretOffset: Int? = nil,
+        block: Block? = nil, document: QuoinDocument? = nil
     ) -> NSAttributedString {
         let styled = NSMutableAttributedString(
             attributedString: MarkdownSourceStyler(theme: theme).style(slice, caretOffset: caretOffset))
         guard styled.length > 0 else { return styled }
 
-        let spacingBefore: CGFloat
-        let spacingAfter: CGFloat
-        var lineHeightMultiple: CGFloat?
-        if case .heading(let level, _, _) = kind {
-            let spacing = theme.headingSpacing(level: level)
-            spacingBefore = spacing.above
-            spacingAfter = spacing.below
-        } else {
-            spacingBefore = 0
-            spacingAfter = theme.paragraphSpacing
-            // Same font, same multiple ⇒ a plain paragraph's revealed height
-            // equals its rendered height exactly — zero viewport shift for
-            // the most common click-to-edit.
-            lineHeightMultiple = theme.bodyLineHeightMultiple
+        if let block, let document {
+            switch block.kind {
+            case .paragraph, .heading, .list, .blockQuote, .callout, .thematicBreak:
+                let read = render(block: block, depth: 0, document: document)
+                transplantParagraphStyles(from: read, onto: styled, source: slice)
+                return styled
+            default:
+                break
+            }
         }
 
-        // First and last non-empty paragraphs carry the block's outer gaps.
+        // Fallback (embed kinds, or no block context): mirror the code
+        // canvas's line metrics and the body's trailing gap.
+        applyFallbackMetrics(to: styled, kind: block?.kind)
+        return styled
+    }
+
+    /// True when an active block's revealed slice ends with its own newline
+    /// — the block separator that FOLLOWS it then forms an empty paragraph
+    /// of its own (a phantom ~40pt line the rendered projection never
+    /// shows; list ranges end this way). The separator's characters must
+    /// stay (all range bookkeeping assumes constant separators), so the
+    /// separator is instead styled to near-zero height while the block is
+    /// revealed.
+    static func revealNeedsClampedSeparator(_ slice: String) -> Bool {
+        slice.hasSuffix("\n")
+    }
+
+    /// The block separator, styled to near-zero height (same characters).
+    func clampedSeparator(after kind: BlockKind, before nextKind: BlockKind) -> NSAttributedString {
+        let separator = NSMutableAttributedString(
+            attributedString: blockSeparator(after: kind, before: nextKind))
+        mutateParagraphStyles(in: separator, range: NSRange(location: 0, length: separator.length)) { style, _ in
+            style.maximumLineHeight = 2
+            style.minimumLineHeight = 0
+            style.paragraphSpacing = 0
+            style.paragraphSpacingBefore = 0
+            style.lineHeightMultiple = 1
+        }
+        return separator
+    }
+
+    /// Copies each rendered line's paragraph style onto the corresponding
+    /// source line. Source lines with no rendered counterpart (fences,
+    /// blank lines) inherit the style at their alignment boundary — their
+    /// neighbor's.
+    private func transplantParagraphStyles(
+        from read: NSAttributedString,
+        onto styled: NSMutableAttributedString,
+        source: String
+    ) {
+        guard read.length > 0 else { return }
         let text = styled.string as NSString
         let full = NSRange(location: 0, length: text.length)
-        var firstParagraph = full
-        var lastParagraph = full
-        var seenFirst = false
-        text.enumerateSubstrings(in: full, options: [.byParagraphs, .substringNotRequired]) { _, range, _, _ in
-            guard range.length > 0 else { return }
-            if !seenFirst { firstParagraph = range; seenFirst = true }
-            lastParagraph = range
+        var lineRanges: [NSRange] = []
+        var location = 0
+        while location < text.length {
+            let line = text.lineRange(for: NSRange(location: location, length: 0))
+            lineRanges.append(line)
+            location = NSMaxRange(line)
+            if line.length == 0 { break }
         }
+        guard !lineRanges.isEmpty else { return }
 
-        mutateParagraphStyles(in: styled, range: full) { style, _ in
-            if let lineHeightMultiple { style.lineHeightMultiple = lineHeightMultiple }
+        let anchors = EditMapping.renderedOffsets(
+            forSourceOffsets: lineRanges.map(\.location),
+            renderedText: read.string,
+            sourceText: source
+        )
+        for (line, anchor) in zip(lineRanges, anchors) {
+            let clampedAnchor = min(max(0, anchor), read.length - 1)
+            guard let style = read.attribute(.paragraphStyle, at: clampedAnchor, effectiveRange: nil)
+                as? NSParagraphStyle else { continue }
+            let clamped = NSRange(location: line.location,
+                                  length: min(line.length, full.length - line.location))
+            guard clamped.length > 0 else { continue }
+            styled.addAttribute(.paragraphStyle, value: style, range: clamped)
         }
-        mutateParagraphStyles(in: styled, range: firstParagraph) { style, _ in
-            style.paragraphSpacingBefore = spacingBefore
+    }
+
+    /// Tuned constants for blocks whose read fragment shouldn't be rebuilt
+    /// per keystroke (diagram/code canvases): code-canvas line height,
+    /// tight interior, body trailing gap.
+    private func applyFallbackMetrics(to styled: NSMutableAttributedString, kind: BlockKind?) {
+        let text = styled.string as NSString
+        let full = NSRange(location: 0, length: text.length)
+        var lastParagraph = full
+        text.enumerateSubstrings(in: full, options: [.byParagraphs, .substringNotRequired]) { _, range, _, _ in
+            if range.length > 0 { lastParagraph = range }
+        }
+        mutateParagraphStyles(in: styled, range: full) { style, _ in
+            style.lineHeightMultiple = 1.6   // code canvas metric (12/1.6)
+            style.paragraphSpacing = 0
         }
         mutateParagraphStyles(in: styled, range: lastParagraph) { style, _ in
-            style.paragraphSpacing = spacingAfter
+            style.paragraphSpacing = theme.paragraphSpacing
         }
-        return styled
     }
 
     /// Mutates a copy of each effective paragraph style run within `range`.

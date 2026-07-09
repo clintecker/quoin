@@ -504,7 +504,8 @@ final class ReaderModel {
             metadata: "block_utf8=\(newDocument.blocks[newIndex].range.length)"
         ) {
             renderer.renderEditableSourceFragment(
-                newSlice, caretOffset: caretInActiveBlock, kind: newDocument.blocks[newIndex].kind)
+                newSlice, caretOffset: caretInActiveBlock,
+                block: newDocument.blocks[newIndex], document: newDocument)
         }
         let delta = replacement.length - oldEditableRange.length
 

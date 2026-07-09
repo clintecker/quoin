@@ -172,4 +172,66 @@ public enum EditMapping {
         }
         return s
     }
+
+    /// The inverse mapping, batched: for each SOURCE offset (ascending),
+    /// the corresponding offset in the RENDERED text. One alignment walk
+    /// serves all requests — used to transplant the rendered projection's
+    /// per-line layout metrics onto the revealed source (line starts in,
+    /// rendered anchors out). Source offsets inside a hidden run (a
+    /// delimiter-only line) map to the run's boundary.
+    public static func renderedOffsets(
+        forSourceOffsets offsets: [Int],
+        renderedText: String,
+        sourceText: String
+    ) -> [Int] {
+        let rendered = Array(renderedText.utf16)
+        let source = Array(sourceText.utf16)
+        let attachment: UInt16 = 0xFFFC
+        let newline = UInt16(UnicodeScalar("\n").value)
+        let space = UInt16(UnicodeScalar(" ").value)
+
+        func aligned(_ sc: UInt16, _ rc: UInt16) -> Bool {
+            sc == rc || (sc == newline && rc == space) || (sc == space && rc == newline)
+        }
+        func lookahead(from start: Int, for rc: UInt16) -> Int? {
+            let limit = min(start + 24, source.count)
+            var i = start
+            while i < limit {
+                if aligned(source[i], rc) { return i }
+                i += 1
+            }
+            return nil
+        }
+
+        var results: [Int] = []
+        results.reserveCapacity(offsets.count)
+        var next = 0
+        var s = 0
+        var r = 0
+        func emit(upTo sourcePosition: Int) {
+            while next < offsets.count, offsets[next] <= sourcePosition {
+                results.append(r)
+                next += 1
+            }
+        }
+        while s < source.count, r < rendered.count {
+            emit(upTo: s)
+            let rc = rendered[r]
+            if rc == attachment {
+                r += 1
+            } else if aligned(source[s], rc) {
+                s += 1; r += 1
+            } else if let match = lookahead(from: s, for: rc) {
+                s = match
+            } else {
+                s += 1; r += 1
+            }
+        }
+        emit(upTo: source.count)
+        while next < offsets.count {
+            results.append(min(r, rendered.count))
+            next += 1
+        }
+        return results
+    }
 }
