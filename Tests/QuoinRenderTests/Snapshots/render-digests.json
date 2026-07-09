@@ -1332,16 +1332,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "word_with_underscores should usually remain a single word"
+        "t" : "•  word_with_underscores should usually remain a single word"
       },
       {
         "f" : "14.00/0.00",
@@ -1359,16 +1350,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "mid"
+        "t" : "•  mid"
       },
       {
         "f" : "14.00/0.00",
@@ -1404,16 +1386,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "mid_word_emphasis is not usually emphasis"
+        "t" : "•  mid_word_emphasis is not usually emphasis"
       },
       {
         "f" : "14.00/0.00",
@@ -1597,16 +1570,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "H"
+        "t" : "•  H"
       },
       {
         "f" : "14.00/0.00",
@@ -1643,16 +1607,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "x^2^ superscript syntax is extension-only"
+        "t" : "•  x^2^ superscript syntax is extension-only"
       },
       {
         "f" : "14.00/0.00",
@@ -1828,16 +1783,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Code with Markdown punctuation: "
+        "t" : "•  Code with Markdown punctuation: "
       },
       {
         "bg" : "#F2F2F4",
@@ -1865,16 +1811,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Code with entities: "
+        "t" : "•  Code with entities: "
       },
       {
         "bg" : "#F2F2F4",
@@ -2430,16 +2367,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "[Link with escaped paren](https://example.com/a_"
+        "t" : "•  [Link with escaped paren](https://example.com/a_"
       },
       {
         "fg" : "#333333",
@@ -2751,16 +2679,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "[Full reference link][full-reference]"
+        "t" : "•  [Full reference link][full-reference]"
       },
       {
         "f" : "14.00/0.00",
@@ -2778,16 +2697,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "[Collapsed reference link][]"
+        "t" : "•  [Collapsed reference link][]"
       },
       {
         "f" : "14.00/0.00",
@@ -2805,16 +2715,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "[shortcut-reference]"
+        "t" : "•  [shortcut-reference]"
       },
       {
         "f" : "14.00/0.00",
@@ -2832,16 +2733,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "[Case Insensitive Reference][CASE insensitive reference]"
+        "t" : "•  [Case Insensitive Reference][CASE insensitive reference]"
       },
       {
         "f" : "14.00/0.00",
@@ -2859,16 +2751,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "[Reference with spaces][reference    with    spaces]"
+        "t" : "•  [Reference with spaces][reference    with    spaces]"
       },
       {
         "f" : "14.00/0.00",
@@ -2886,16 +2769,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "[Reference to heading-like label][heading-like]"
+        "t" : "•  [Reference to heading-like label][heading-like]"
       },
       {
         "f" : "14.00/0.00",
@@ -3220,16 +3094,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Dash item 1"
+        "t" : "•  Dash item 1"
       },
       {
         "f" : "14.00/0.00",
@@ -3247,25 +3112,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Dash item 2"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "•  Dash item 2\n"
       },
       {
         "f" : "14.00/0.00",
@@ -3274,16 +3121,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested dash item 2.1"
+        "t" : "•  Nested dash item 2.1"
       },
       {
         "f" : "14.00/0.00",
@@ -3301,25 +3139,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested dash item 2.2"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "•  Nested dash item 2.2\n"
       },
       {
         "f" : "14.00/0.00",
@@ -3328,25 +3148,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh44.00 hi66.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested dash item 2.2.1"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh44.00 hi66.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "•  Nested dash item 2.2.1\n"
       },
       {
         "f" : "14.00/0.00",
@@ -3355,25 +3157,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh66.00 hi88.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested dash item 2.2.1.1"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh66.00 hi88.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "•  Nested dash item 2.2.1.1\n"
       },
       {
         "f" : "14.00/0.00",
@@ -3382,16 +3166,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh88.00 hi110.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested dash item 2.2.1.1.1"
+        "t" : "•  Nested dash item 2.2.1.1.1"
       },
       {
         "f" : "14.00/0.00",
@@ -3409,16 +3184,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Dash item 3"
+        "t" : "•  Dash item 3"
       },
       {
         "f" : "14.00/0.00",
@@ -3436,16 +3202,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Plus item 1"
+        "t" : "•  Plus item 1"
       },
       {
         "f" : "14.00/0.00",
@@ -3463,25 +3220,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Plus item 2"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "•  Plus item 2\n"
       },
       {
         "f" : "14.00/0.00",
@@ -3490,7 +3229,61 @@
         "q" : [
 
         ],
-        "t" : "•  "
+        "t" : "•  Nested plus item"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "•  Plus item 3"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "•  Asterisk item 1"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "•  Asterisk item 2\n"
       },
       {
         "f" : "14.00/0.00",
@@ -3499,7 +3292,7 @@
         "q" : [
 
         ],
-        "t" : "Nested plus item"
+        "t" : "•  Nested asterisk item"
       },
       {
         "f" : "14.00/0.00",
@@ -3517,124 +3310,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Plus item 3"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Asterisk item 1"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Asterisk item 2"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested asterisk item"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Asterisk item 3"
+        "t" : "•  Asterisk item 3"
       },
       {
         "f" : "14.00/0.00",
@@ -3670,16 +3346,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "First item"
+        "t" : "1.  First item"
       },
       {
         "f" : "14.00/0.00",
@@ -3697,16 +3364,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Second item"
+        "t" : "2.  Second item"
       },
       {
         "f" : "14.00/0.00",
@@ -3724,16 +3382,7 @@
         "q" : [
 
         ],
-        "t" : "3.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Third item"
+        "t" : "3.  Third item"
       },
       {
         "f" : "14.00/0.00",
@@ -3751,16 +3400,7 @@
         "q" : [
 
         ],
-        "t" : "4.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Ordered list that starts at seven"
+        "t" : "4.  Ordered list that starts at seven"
       },
       {
         "f" : "14.00/0.00",
@@ -3778,16 +3418,7 @@
         "q" : [
 
         ],
-        "t" : "5.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Item eight"
+        "t" : "5.  Item eight"
       },
       {
         "f" : "14.00/0.00",
@@ -3805,16 +3436,7 @@
         "q" : [
 
         ],
-        "t" : "6.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Item nine"
+        "t" : "6.  Item nine"
       },
       {
         "f" : "14.00/0.00",
@@ -3832,16 +3454,7 @@
         "q" : [
 
         ],
-        "t" : "7.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Large ordered marker"
+        "t" : "7.  Large ordered marker"
       },
       {
         "f" : "14.00/0.00",
@@ -3859,16 +3472,7 @@
         "q" : [
 
         ],
-        "t" : "8.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Next large ordered marker"
+        "t" : "8.  Next large ordered marker"
       },
       {
         "f" : "14.00/0.00",
@@ -3886,16 +3490,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Ordered list using right parenthesis"
+        "t" : "1.  Ordered list using right parenthesis"
       },
       {
         "f" : "14.00/0.00",
@@ -3913,16 +3508,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Second item"
+        "t" : "2.  Second item"
       },
       {
         "f" : "14.00/0.00",
@@ -3940,16 +3526,7 @@
         "q" : [
 
         ],
-        "t" : "3.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Third item"
+        "t" : "3.  Third item"
       },
       {
         "f" : "14.00/0.00",
@@ -3985,25 +3562,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Prepare parser fixtures."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "1.  Prepare parser fixtures.\n"
       },
       {
         "f" : "14.00/0.00",
@@ -4012,16 +3571,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "CommonMark core"
+        "t" : "•  CommonMark core"
       },
       {
         "f" : "14.00/0.00",
@@ -4039,16 +3589,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "GFM extensions"
+        "t" : "•  GFM extensions"
       },
       {
         "f" : "14.00/0.00",
@@ -4066,16 +3607,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Extension zoo"
+        "t" : "•  Extension zoo"
       },
       {
         "f" : "14.00/0.00",
@@ -4093,25 +3625,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Run renderer snapshots."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "2.  Run renderer snapshots.\n"
       },
       {
         "f" : "14.00/0.00",
@@ -4120,16 +3634,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "HTML snapshot"
+        "t" : "1.  HTML snapshot"
       },
       {
         "f" : "14.00/0.00",
@@ -4147,16 +3652,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "PDF export"
+        "t" : "2.  PDF export"
       },
       {
         "f" : "14.00/0.00",
@@ -4174,16 +3670,7 @@
         "q" : [
 
         ],
-        "t" : "3.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Plain-text extraction"
+        "t" : "3.  Plain-text extraction"
       },
       {
         "f" : "14.00/0.00",
@@ -4201,25 +3688,7 @@
         "q" : [
 
         ],
-        "t" : "3.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Compare output."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "3.  Compare output.\n"
       },
       {
         "f" : "14.00/0.00",
@@ -4228,16 +3697,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Visual diffs"
+        "t" : "•  Visual diffs"
       },
       {
         "f" : "14.00/0.00",
@@ -4255,16 +3715,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "DOM diffs"
+        "t" : "•  DOM diffs"
       },
       {
         "f" : "14.00/0.00",
@@ -4282,16 +3733,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Accessibility tree diffs"
+        "t" : "•  Accessibility tree diffs"
       },
       {
         "f" : "14.00/0.00",
@@ -4327,34 +3769,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Loose item one."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "This paragraph belongs to loose item one."
+        "t" : "•  Loose item one.\nThis paragraph belongs to loose item one."
       },
       {
         "f" : "14.00/0.00",
@@ -4372,25 +3787,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Loose item two."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "•  Loose item two.\n"
       },
       {
         "deco" : "quoteRule(#00000026)",
@@ -4418,25 +3815,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Loose item three."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "•  Loose item three.\n"
       },
       {
         "deco" : "codeCanvas(#1E2430)",
@@ -4538,16 +3917,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Tight item one"
+        "t" : "•  Tight item one"
       },
       {
         "f" : "14.00/0.00",
@@ -4565,16 +3935,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Tight item two"
+        "t" : "•  Tight item two"
       },
       {
         "f" : "14.00/0.00",
@@ -4592,16 +3953,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Tight item three"
+        "t" : "•  Tight item three"
       },
       {
         "f" : "14.00/0.00",
@@ -4710,25 +4062,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Item one"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "1.  Item one\n"
       },
       {
         "f" : "14.00/0.00",
@@ -4737,34 +4071,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested item one"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Paragraph under nested item."
+        "t" : "1.  Nested item one\nParagraph under nested item."
       },
       {
         "f" : "14.00/0.00",
@@ -4782,16 +4089,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested item two"
+        "t" : "2.  Nested item two"
       },
       {
         "f" : "14.00/0.00",
@@ -4809,16 +4107,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Item two after nested list."
+        "t" : "2.  Item two after nested list."
       },
       {
         "f" : "14.00/0.00",
@@ -5116,16 +4405,7 @@
         "q" : [
 
         ],
-        "t" : "Parent task"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "Parent task\n"
       },
       {
         "f" : "14.00/0.00",
@@ -5173,16 +4453,7 @@
         "q" : [
 
         ],
-        "t" : "Nested incomplete subtask"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "Nested incomplete subtask\n"
       },
       {
         "f" : "14.00/0.00",
@@ -10542,16 +9813,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Markdown inside details is supported by some renderers."
+        "t" : "•  Markdown inside details is supported by some renderers."
       },
       {
         "f" : "14.00/0.00",
@@ -10569,16 +9831,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Others may treat it differently depending on blank lines and HTML block parsing."
+        "t" : "•  Others may treat it differently depending on blank lines and HTML block parsing."
       },
       {
         "f" : "14.00/0.00",
@@ -11603,25 +10856,7 @@
         "q" : [
 
         ],
-        "t" : "<svg xmlns='http://www.w3.org/2000/svg' width='320' height='80'>"
-      },
-      {
-        "f" : "12.50/0.00m",
-        "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "<rect width='100%25' height='100%25' fill='%23f3f4f6'/>"
-      },
-      {
-        "f" : "12.50/0.00m",
-        "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "<text x='16' y='48' font-family='monospace' font-size='24'>"
+        "t" : "<svg xmlns='http://www.w3.org/2000/svg' width='320' height='80'><rect width='100%25' height='100%25' fill='%23f3f4f6'/><text x='16' y='48' font-family='monospace' font-size='24'>"
       },
       {
         "f" : "14.00/0.00",
@@ -11639,16 +10874,7 @@
         "q" : [
 
         ],
-        "t" : "</text>"
-      },
-      {
-        "f" : "12.50/0.00m",
-        "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "</svg>"
+        "t" : "</text></svg>"
       },
       {
         "f" : "14.00/0.00",
@@ -12580,16 +11806,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "First item starts here continuation line without indentation"
+        "t" : "•  First item starts here continuation line without indentation"
       },
       {
         "f" : "14.00/0.00",
@@ -12607,16 +11824,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Second item starts here"
+        "t" : "•  Second item starts here"
       },
       {
         "f" : "14.00/0.00",
@@ -12652,34 +11860,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Item with paragraph one."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Paragraph two belongs to the same item."
+        "t" : "•  Item with paragraph one.\nParagraph two belongs to the same item."
       },
       {
         "f" : "14.00/0.00",
@@ -12697,16 +11878,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Next item."
+        "t" : "•  Next item."
       },
       {
         "f" : "14.00/0.00",
@@ -16959,16 +16131,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\lambda_1\\sum_{j=1}^{m}|\\theta_j|"
+        "t" : "•  \\lambda_1\\sum_{j=1}^{m}|\\theta_j|"
       },
       {
         "f" : "14.00/0.00",
@@ -16986,16 +16149,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\lambda_2\\sqrt{\\sum_{j=1}^{m}\\theta_j^2}"
+        "t" : "•  \\lambda_2\\sqrt{\\sum_{j=1}^{m}\\theta_j^2}"
       },
       {
         "f" : "14.00/0.00",
@@ -17013,16 +16167,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\int_{\\Omega}\\left(\\nabla\\cdot \\mathbf{F}"
+        "t" : "•  \\int_{\\Omega}\\left(\\nabla\\cdot \\mathbf{F}"
       },
       {
         "f" : "14.00/0.00",
@@ -17058,16 +16203,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\mathbb{E}"
+        "t" : "•  \\mathbb{E}"
       },
       {
         "f" : "14.00/0.00",
@@ -18758,16 +17894,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Inline baseline alignment: text before"
+        "t" : "•  Inline baseline alignment: text before"
       },
       {
         "fg" : "#333333",
@@ -18803,16 +17930,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Display centering and overflow:"
+        "t" : "•  Display centering and overflow:"
       },
       {
         "fg" : "#333333",
@@ -18839,16 +17957,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "SVG/CHTML output should not overlap following paragraphs."
+        "t" : "•  SVG/CHTML output should not overlap following paragraphs."
       },
       {
         "f" : "14.00/0.00",
@@ -18866,16 +17975,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Tables containing math should not double-render or escape backslashes."
+        "t" : "•  Tables containing math should not double-render or escape backslashes."
       },
       {
         "f" : "14.00/0.00",
@@ -18893,16 +17993,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Code spans containing TeX delimiters, like `"
+        "t" : "•  Code spans containing TeX delimiters, like `"
       },
       {
         "fg" : "#333333",
@@ -18938,16 +18029,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Escaped currency should remain text: $1, $2, and $3."
+        "t" : "•  Escaped currency should remain text: $1, $2, and $3."
       },
       {
         "f" : "14.00/0.00",
@@ -22019,16 +21101,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Wiki link: [[Renderer Fixture]]"
+        "t" : "•  Wiki link: [[Renderer Fixture]]"
       },
       {
         "f" : "14.00/0.00",
@@ -22046,16 +21119,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Wiki link with alias: [[Renderer Fixture|human-readable alias]]"
+        "t" : "•  Wiki link with alias: [[Renderer Fixture|human-readable alias]]"
       },
       {
         "f" : "14.00/0.00",
@@ -22073,16 +21137,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Embedded note: ![[diagram.png]]"
+        "t" : "•  Embedded note: ![[diagram.png]]"
       },
       {
         "f" : "14.00/0.00",
@@ -22118,16 +21173,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Mention-like text: @octocat"
+        "t" : "•  Mention-like text: @octocat"
       },
       {
         "f" : "14.00/0.00",
@@ -22145,16 +21191,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Issue-like text: #123"
+        "t" : "•  Issue-like text: #123"
       },
       {
         "f" : "14.00/0.00",
@@ -22172,16 +21209,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Pull request-like text: GH-456"
+        "t" : "•  Pull request-like text: GH-456"
       },
       {
         "f" : "14.00/0.00",
@@ -22199,16 +21227,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Commit-like SHA: 0123456789abcdef0123456789abcdef01234567"
+        "t" : "•  Commit-like SHA: 0123456789abcdef0123456789abcdef01234567"
       },
       {
         "f" : "14.00/0.00",
@@ -22226,16 +21245,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Emoji shortcode: :tada:"
+        "t" : "•  Emoji shortcode: :tada:"
       },
       {
         "f" : "14.00/0.00",
@@ -24780,25 +23790,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Ordered item inside batch five."
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "1.  Ordered item inside batch five.\n"
       },
       {
         "f" : "14.00/0.00",
@@ -24807,16 +23799,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested unordered item."
+        "t" : "•  Nested unordered item."
       },
       {
         "f" : "14.00/0.00",
@@ -24834,16 +23817,7 @@
         "q" : [
 
         ],
-        "t" : "•  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi44.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested task list item: [ ] not a task unless parsed at list start in some renderers."
+        "t" : "•  Nested task list item: [ ] not a task unless parsed at list start in some renderers."
       },
       {
         "f" : "14.00/0.00",
@@ -24861,16 +23835,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Second ordered item."
+        "t" : "2.  Second ordered item."
       },
       {
         "f" : "14.00/0.00",
@@ -25335,16 +24300,7 @@
         "q" : [
 
         ],
-        "t" : "1.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "First item with inline math"
+        "t" : "1.  First item with inline math"
       },
       {
         "fg" : "#333333",
@@ -25380,25 +24336,7 @@
         "q" : [
 
         ],
-        "t" : "2.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Second item containing a Mermaid diagram:"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
+        "t" : "2.  Second item containing a Mermaid diagram:\n"
       },
       {
         "deco" : "diagramFrame(#0000001F)",
@@ -25426,16 +24364,7 @@
         "q" : [
 
         ],
-        "t" : "3.  "
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Third item with a footnote reference."
+        "t" : "3.  Third item with a footnote reference."
       },
       {
         "f" : "10.50/0.00",

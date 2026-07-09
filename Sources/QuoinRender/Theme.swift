@@ -124,47 +124,61 @@ public struct Theme: Sendable {
     }
 
     // MARK: - Colors (dynamic: light per handoff, dark = inverted ink/canvas)
+    //
+    // Every color is a STABLE static instance, not minted per access: a
+    // dynamic NSColor gets a fresh identity each time it's created, which
+    // (a) allocated thousands of colors per render and (b) made two renders
+    // of the same content attribute-UNEQUAL — breaking the storage-patch
+    // equivalence contract (a patched projection must be indistinguishable
+    // from a full re-render). Dynamic colors resolve per-appearance at draw
+    // time, so one shared instance is correct in both light and dark.
 
     /// `ink` #1D1D1F — headings, bold text.
-    public var ink: PlatformColor {
-        dynamic(light: rgb(0x1D1D1F), dark: rgb(0xF2F2F4))
-    }
+    public var ink: PlatformColor { Palette.ink }
 
     /// `ink.body` #333333 — body text.
-    public var textColor: PlatformColor {
-        dynamic(light: rgb(0x333333), dark: rgb(0xD9D9DE))
-    }
+    public var textColor: PlatformColor { Palette.textColor }
 
     /// `ink.secondary` — 55% ink.
-    public var secondaryTextColor: PlatformColor {
-        dynamic(light: rgb(0x1D1D1F, alpha: 0.55), dark: rgb(0xF2F2F4, alpha: 0.55))
-    }
+    public var secondaryTextColor: PlatformColor { Palette.secondaryText }
 
     /// `ink.tertiary` — 35–40% ink.
-    public var tertiaryTextColor: PlatformColor {
-        dynamic(light: rgb(0x1D1D1F, alpha: 0.38), dark: rgb(0xF2F2F4, alpha: 0.38))
-    }
+    public var tertiaryTextColor: PlatformColor { Palette.tertiaryText }
 
     /// `canvas` — the editor page.
-    public var canvas: PlatformColor {
-        dynamic(light: rgb(0xFFFFFF), dark: rgb(0x1B1B1D))
-    }
+    public var canvas: PlatformColor { Palette.canvas }
 
     /// `surface.sidebar` #F5F5F7.
-    public var sidebarSurface: PlatformColor {
-        dynamic(light: rgb(0xF5F5F7), dark: rgb(0x232326))
-    }
+    public var sidebarSurface: PlatformColor { Palette.sidebarSurface }
 
     /// `fill.codeInline` #F2F2F4.
-    public var inlineCodeFill: PlatformColor {
-        dynamic(light: rgb(0xF2F2F4), dark: rgb(0x2E2E32))
-    }
+    public var inlineCodeFill: PlatformColor { Palette.inlineCodeFill }
 
     /// `surface.code` #1E2430 — the SAME in both appearances (handoff rule).
-    public var codeSurface: PlatformColor { rgb(0x1E2430) }
+    public var codeSurface: PlatformColor { Palette.codeSurface }
 
     /// Code block body text #D6DCE6.
-    public var codeText: PlatformColor { rgb(0xD6DCE6) }
+    public var codeText: PlatformColor { Palette.codeText }
+
+    private enum Palette {
+        static let ink = themeDynamic(light: rgbStatic(0x1D1D1F), dark: rgbStatic(0xF2F2F4))
+        static let textColor = themeDynamic(light: rgbStatic(0x333333), dark: rgbStatic(0xD9D9DE))
+        static let secondaryText = themeDynamic(
+            light: rgbStatic(0x1D1D1F, alpha: 0.55), dark: rgbStatic(0xF2F2F4, alpha: 0.55))
+        static let tertiaryText = themeDynamic(
+            light: rgbStatic(0x1D1D1F, alpha: 0.38), dark: rgbStatic(0xF2F2F4, alpha: 0.38))
+        static let canvas = themeDynamic(light: rgbStatic(0xFFFFFF), dark: rgbStatic(0x1B1B1D))
+        static let sidebarSurface = themeDynamic(light: rgbStatic(0xF5F5F7), dark: rgbStatic(0x232326))
+        static let inlineCodeFill = themeDynamic(light: rgbStatic(0xF2F2F4), dark: rgbStatic(0x2E2E32))
+        static let codeSurface = rgbStatic(0x1E2430)
+        static let codeText = rgbStatic(0xD6DCE6)
+        static let hairline = themeDynamic(
+            light: rgbStatic(0x000000, alpha: 0.12), dark: rgbStatic(0xFFFFFF, alpha: 0.12))
+        static let quoteRule = themeDynamic(
+            light: rgbStatic(0x000000, alpha: 0.15), dark: rgbStatic(0xFFFFFF, alpha: 0.15))
+        static let tableRule = themeDynamic(
+            light: rgbStatic(0x000000, alpha: 0.07), dark: rgbStatic(0xFFFFFF, alpha: 0.09))
+    }
 
     /// Syntax token colors (one theme, both appearances).
     public enum CodeToken {
@@ -188,31 +202,31 @@ public struct Theme: Sendable {
     public var linkColor: PlatformColor { accent }
 
     /// Hairlines: 12% ink (HR), 8% (outline rules), 7% (borders).
-    public var hairline: PlatformColor {
-        dynamic(light: rgb(0x000000, alpha: 0.12), dark: rgb(0xFFFFFF, alpha: 0.12))
-    }
+    public var hairline: PlatformColor { Palette.hairline }
 
     /// Blockquote rule: 15% ink, 3pt wide.
-    public var quoteRule: PlatformColor {
-        dynamic(light: rgb(0x000000, alpha: 0.15), dark: rgb(0xFFFFFF, alpha: 0.15))
-    }
+    public var quoteRule: PlatformColor { Palette.quoteRule }
 
     /// Table body-row hairline: 7% ink (header rule uses `quoteRule`, 15%).
-    public var tableRule: PlatformColor {
-        dynamic(light: rgb(0x000000, alpha: 0.07), dark: rgb(0xFFFFFF, alpha: 0.09))
-    }
+    public var tableRule: PlatformColor { Palette.tableRule }
 
     /// Highlight palette (≥4.5:1 with ink.body); dark variants desaturated ~15%.
     public enum Highlight: String, CaseIterable, Sendable {
         case lime, pink, yellow, blue, orange
 
+        private static let limeColor = themeDynamic(light: rgbStatic(0xD9F59B), dark: rgbStatic(0x5A6B33))
+        private static let pinkColor = themeDynamic(light: rgbStatic(0xF7D9F0), dark: rgbStatic(0x6B4462))
+        private static let yellowColor = themeDynamic(light: rgbStatic(0xFDEEAA), dark: rgbStatic(0x6E6337))
+        private static let blueColor = themeDynamic(light: rgbStatic(0xCFE6FB), dark: rgbStatic(0x3A5570))
+        private static let orangeColor = themeDynamic(light: rgbStatic(0xFEDBC6), dark: rgbStatic(0x6E4A34))
+
         public var color: PlatformColor {
             switch self {
-            case .lime: return themeDynamic(light: rgbStatic(0xD9F59B), dark: rgbStatic(0x5A6B33))
-            case .pink: return themeDynamic(light: rgbStatic(0xF7D9F0), dark: rgbStatic(0x6B4462))
-            case .yellow: return themeDynamic(light: rgbStatic(0xFDEEAA), dark: rgbStatic(0x6E6337))
-            case .blue: return themeDynamic(light: rgbStatic(0xCFE6FB), dark: rgbStatic(0x3A5570))
-            case .orange: return themeDynamic(light: rgbStatic(0xFEDBC6), dark: rgbStatic(0x6E4A34))
+            case .lime: return Self.limeColor
+            case .pink: return Self.pinkColor
+            case .yellow: return Self.yellowColor
+            case .blue: return Self.blueColor
+            case .orange: return Self.orangeColor
             }
         }
     }

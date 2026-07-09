@@ -44,10 +44,23 @@ public struct RenderedDocument {
     /// AppKit can use this to apply a bounded TextKit splice for simple
     /// active-block edits instead of scanning the whole rendered string.
     public let spliceHint: RenderSpliceHint?
-    /// AppKit can apply this attributed replacement directly to live TextKit
-    /// storage. This is used when the model has already proven a block-local
-    /// active edit and rendering the whole document would be wasted work.
-    public let storagePatch: RenderStoragePatch?
+    /// AppKit can apply these attributed replacements directly to live
+    /// TextKit storage, in order. Used when the model has already proven a
+    /// block-local change (an active-block edit, or an activate/deactivate
+    /// flip) and rendering the whole document would be wasted work. Patches
+    /// MUST be ordered by DESCENDING location so applying one never shifts
+    /// the ranges of those still pending.
+    public let storagePatches: [RenderStoragePatch]
+
+    /// Convenience for the single-patch case (active-block edits).
+    public var storagePatch: RenderStoragePatch? { storagePatches.first }
+
+    /// Monotonic marker for "has this exact projection been applied to the
+    /// live storage yet". `updateNSView` runs on every SwiftUI pass; without
+    /// this, a patch-bearing projection would re-apply its patches on each
+    /// pass and corrupt the storage (object identity of `attributed` can't
+    /// distinguish patch generations — patches deliberately reuse it).
+    public let revision: Int
 
     public init(
         attributed: NSAttributedString,
@@ -56,7 +69,9 @@ public struct RenderedDocument {
         activeEditableRange: NSRange? = nil,
         activeSourceText: String? = nil,
         spliceHint: RenderSpliceHint? = nil,
-        storagePatch: RenderStoragePatch? = nil
+        storagePatch: RenderStoragePatch? = nil,
+        storagePatches: [RenderStoragePatch] = [],
+        revision: Int = 0
     ) {
         self.attributed = attributed
         self.blockRanges = blockRanges
@@ -64,7 +79,8 @@ public struct RenderedDocument {
         self.activeEditableRange = activeEditableRange
         self.activeSourceText = activeSourceText
         self.spliceHint = spliceHint
-        self.storagePatch = storagePatch
+        self.storagePatches = storagePatch.map { [$0] } ?? storagePatches
+        self.revision = revision
     }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])
@@ -188,6 +204,141 @@ public struct AttributedRenderer {
 
     public func renderEditableSourceFragment(_ slice: String, caretOffset: Int? = nil) -> NSAttributedString {
         renderEditableSource(slice, caretOffset: caretOffset)
+    }
+
+    /// One block's READ fragment, exactly as the full render loop would
+    /// produce it (blockID/embed tagging included) — so an activate/
+    /// deactivate flip can patch a single block into live storage instead of
+    /// re-rendering the document. `hasPendingContent` mirrors the cacheability
+    /// rule: a fragment holding a still-decoding image must not be cached.
+    public func renderReadFragment(
+        _ block: Block, document: QuoinDocument
+    ) -> (fragment: NSAttributedString, hasPendingContent: Bool) {
+        let fragment = render(block: block, depth: 0, document: document)
+        return (fragment, fragmentHasPendingContent(fragment))
+    }
+
+    /// Length of the separator the full render inserts between these two
+    /// block kinds — deterministic from the kinds, which is what makes
+    /// activation flips patchable (the flip never changes a block's kind,
+    /// so the separator is untouched).
+    public func separatorLength(after kind: BlockKind, before nextKind: BlockKind) -> Int {
+        blockSeparator(after: kind, before: nextKind).length
+    }
+
+    /// Everything a host needs to apply an activate/deactivate flip as
+    /// bounded storage patches instead of a full re-render.
+    public struct ActivationFlipUpdate {
+        /// Ordered by DESCENDING location, disjoint.
+        public let storagePatches: [RenderStoragePatch]
+        public let blockRanges: [BlockID: NSRange]
+        public let activeEditableRange: NSRange?
+        public let activeSourceText: String?
+        /// The deactivated block's fresh read fragment, safe to cache
+        /// (nil when it holds still-decoding async content).
+        public let cacheableReadFragment: (id: BlockID, fragment: NSAttributedString)?
+    }
+
+    /// Computes the storage patches for an activation flip (`oldID` closes,
+    /// `newID` opens; either may be nil). A flip changes only the flipped
+    /// blocks' PROJECTION — the document is untouched — so at most two
+    /// fragments change and everything else shifts. Returns nil when the
+    /// projection state doesn't line up; the caller then does a full
+    /// re-render, which is always correct.
+    public func activationFlipUpdate(
+        document: QuoinDocument,
+        current: RenderedDocument,
+        from oldID: BlockID?,
+        to newID: BlockID?,
+        caret: Int?
+    ) -> ActivationFlipUpdate? {
+        // Footnote-bearing documents append footnote ranges after the block
+        // loop; their bookkeeping isn't worth replicating here.
+        guard document.footnotes.isEmpty, oldID != newID else { return nil }
+
+        var patches: [(location: Int, patch: RenderStoragePatch, blockID: BlockID, newLength: Int, oldLength: Int)] = []
+        var cacheable: (id: BlockID, fragment: NSAttributedString)?
+        var activeSourceText: String?
+
+        // Deactivation: the old editable run flips back to its read fragment.
+        if let oldID {
+            guard let editableRange = current.activeEditableRange,
+                  current.activeBlockID == oldID,
+                  let blockIndex = document.blocks.firstIndex(where: { $0.id == oldID })
+            else { return nil }
+            let block = document.blocks[blockIndex]
+            let (fragment, pending) = renderReadFragment(block, document: document)
+            if !pending { cacheable = (oldID, fragment) }
+            patches.append((
+                location: editableRange.location,
+                patch: RenderStoragePatch(oldRange: editableRange, replacement: fragment),
+                blockID: oldID, newLength: fragment.length, oldLength: editableRange.length
+            ))
+        }
+
+        // Activation: the new block's read fragment flips to editable source.
+        var newEditableLength = 0
+        if let newID {
+            guard let blockIndex = document.blocks.firstIndex(where: { $0.id == newID }),
+                  let blockRange = current.blockRanges[newID],
+                  let slice = document.source.substring(in: document.blocks[blockIndex].range)
+            else { return nil }
+            let block = document.blocks[blockIndex]
+            // A block's stored range includes its trailing separator; the
+            // separator depends only on the neighboring kinds, which a flip
+            // never changes, so it stays put and only the fragment is
+            // patched.
+            let separator = blockIndex < document.blocks.count - 1
+                ? separatorLength(after: block.kind, before: document.blocks[blockIndex + 1].kind)
+                : 0
+            let fragmentLength = blockRange.length - separator
+            guard fragmentLength >= 0 else { return nil }
+            let editable = renderEditableSourceFragment(slice, caretOffset: caret)
+            patches.append((
+                location: blockRange.location,
+                patch: RenderStoragePatch(
+                    oldRange: NSRange(location: blockRange.location, length: fragmentLength),
+                    replacement: editable),
+                blockID: newID, newLength: editable.length, oldLength: fragmentLength
+            ))
+            activeSourceText = slice
+            newEditableLength = editable.length
+        }
+
+        guard !patches.isEmpty else { return nil }
+        patches.sort { $0.location > $1.location }
+        if patches.count == 2, NSMaxRange(patches[1].patch.oldRange) > patches[0].patch.oldRange.location {
+            return nil
+        }
+
+        // Shift every block range by the deltas of patches located before it.
+        var ranges: [BlockID: NSRange] = [:]
+        ranges.reserveCapacity(current.blockRanges.count)
+        for (blockID, range) in current.blockRanges {
+            var location = range.location
+            var length = range.length
+            for entry in patches {
+                let delta = entry.newLength - entry.oldLength
+                if entry.blockID == blockID {
+                    length += delta
+                } else if entry.location < range.location {
+                    location += delta
+                }
+            }
+            ranges[blockID] = NSRange(location: location, length: length)
+        }
+        var activeEditableRange: NSRange?
+        if let newID, let newRange = ranges[newID] {
+            activeEditableRange = NSRange(location: newRange.location, length: newEditableLength)
+        }
+
+        return ActivationFlipUpdate(
+            storagePatches: patches.map(\.patch),
+            blockRanges: ranges,
+            activeEditableRange: activeEditableRange,
+            activeSourceText: activeSourceText,
+            cacheableReadFragment: cacheable
+        )
     }
 
     /// The inter-block separator. Boxed blocks (callouts, code, tables,

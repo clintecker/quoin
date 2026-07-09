@@ -169,7 +169,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
             ]
         }
 
-        if (coordinator.renderedGeneration !== rendered.attributed || rendered.storagePatch != nil),
+        if coordinator.appliedRevision != rendered.revision,
            let storage = textView.textContentStorage?.textStorage {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
             // An activate/deactivate FLIP (chart ↔ source) can change the
@@ -193,21 +193,40 @@ public struct MarkdownReaderView: NSViewRepresentable {
             // replacing the whole document. TextKit 2 then re-lays-out just
             // that region, so unchanged content keeps its exact layout and the
             // scroll offset never jumps.
-            let splicedRange = QuoinPerformanceTrace.measure(
+            let splicedRange: NSRange? = QuoinPerformanceTrace.measure(
                 "render.textkit.splice",
-                metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length) hinted=\(rendered.spliceHint != nil) patched=\(rendered.storagePatch != nil)"
+                metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length) hinted=\(rendered.spliceHint != nil) patched=\(rendered.storagePatches.count)"
             ) {
-                if let patch = rendered.storagePatch,
-                   let range = Coordinator.applyStoragePatch(in: storage, patch: patch) {
-                    range
-                } else {
-                    Coordinator.spliceChanges(in: storage, to: rendered.attributed, hint: rendered.spliceHint)
+                // All-or-nothing: validate every patch range against the
+                // pre-patch storage before touching it (patches are disjoint
+                // and ordered by DESCENDING location, so earlier applications
+                // never shift a later patch's range). A partial application
+                // would corrupt the projection.
+                if !rendered.storagePatches.isEmpty,
+                   rendered.storagePatches.allSatisfy({
+                       $0.oldRange.location >= 0 && NSMaxRange($0.oldRange) <= storage.length
+                   }) {
+                    var last: NSRange?
+                    for patch in rendered.storagePatches {
+                        last = Coordinator.applyStoragePatch(in: storage, patch: patch) ?? last
+                        // Bounded edit: adjust the decoration runs in place
+                        // instead of rescanning the whole document's
+                        // attributes on the next draw.
+                        (textView as? QuoinTextView)?.noteStorageEdit(
+                            oldRange: patch.oldRange, newLength: patch.replacement.length)
+                    }
+                    return last
                 }
-            }
-            QuoinPerformanceTrace.measure("render.decorations.invalidate") {
-                (textView as? QuoinTextView)?.invalidateDecorations()
+                let range = Coordinator.spliceChanges(in: storage, to: rendered.attributed, hint: rendered.spliceHint)
+                // Unbounded change (full replace or computed splice): the
+                // runs are rebuilt from scratch on the next draw.
+                QuoinPerformanceTrace.measure("render.decorations.invalidate") {
+                    (textView as? QuoinTextView)?.invalidateDecorations()
+                }
+                return range
             }
             coordinator.renderedGeneration = rendered.attributed
+            coordinator.appliedRevision = rendered.revision
             coordinator.blockRanges = rendered.blockRanges
             if let flipAnchor, let newRange = rendered.blockRanges[flipAnchor.id] {
                 // Pin the flipped block exactly where it was; this also

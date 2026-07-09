@@ -11,7 +11,8 @@ import QuoinCore
 /// the shapes track reflow exactly.
 final class QuoinTextView: NSTextView {
 
-    private var decorationRuns: [(range: NSRange, decoration: BlockDecoration)] = []
+    /// Internal for tests (the incremental-maintenance equivalence check).
+    var decorationRuns: [(range: NSRange, decoration: BlockDecoration)] = []
     private var runsAreStale = true
 
     /// Set by the coordinator: a double-click landed on the character at this
@@ -40,6 +41,72 @@ final class QuoinTextView: NSTextView {
         }
     }
 
+    /// Redraw with the CURRENT runs — for attribute-only restyles (syntax
+    /// reveal flipping delimiter fonts as the caret moves): the run ranges
+    /// are unchanged, only their geometry moved, and geometry is read fresh
+    /// from the laid-out fragments at draw time. A full `invalidate` here
+    /// re-enumerated the whole document's attributes on every caret move.
+    func redrawDecorations() {
+        needsDisplay = true
+        DispatchQueue.main.async { [weak self] in
+            self?.needsDisplay = true
+        }
+    }
+
+    /// Incremental alternative to `invalidateDecorations()` for a bounded
+    /// storage edit: drops runs the edit touched, shifts the rest by the
+    /// length delta, and rescans ONLY the replaced range. A full rescan
+    /// enumerates the whole document's attributes (~170 ms at novel length)
+    /// — per keystroke, that was the render layer's last document-scale
+    /// cost.
+    func noteStorageEdit(oldRange: NSRange, newLength: Int) {
+        guard !runsAreStale, let storage = textContentStorage?.textStorage else {
+            invalidateDecorations()
+            return
+        }
+        let delta = newLength - oldRange.length
+        let oldEnd = NSMaxRange(oldRange)
+
+        // Partition: untouched runs before / after the edit; runs overlapping
+        // it widen the rescan window (a run can start before the patched
+        // fragment — dropping it without rescanning its full extent would
+        // orphan the prefix).
+        var before: [(range: NSRange, decoration: BlockDecoration)] = []
+        var after: [(range: NSRange, decoration: BlockDecoration)] = []
+        var scanStart = oldRange.location
+        var scanEndOld = oldEnd
+        for run in decorationRuns {
+            if NSMaxRange(run.range) <= oldRange.location {
+                before.append(run)
+            } else if run.range.location >= oldEnd {
+                after.append((NSRange(location: run.range.location + delta,
+                                      length: run.range.length), run.decoration))
+            } else {
+                scanStart = min(scanStart, run.range.location)
+                scanEndOld = max(scanEndOld, NSMaxRange(run.range))
+            }
+        }
+
+        var middle: [(range: NSRange, decoration: BlockDecoration)] = []
+        let scanEnd = min(max(scanStart, scanEndOld + delta), storage.length)
+        if scanStart >= 0, scanEnd > scanStart {
+            storage.enumerateAttribute(
+                QuoinAttribute.blockDecoration,
+                in: NSRange(location: scanStart, length: scanEnd - scanStart)
+            ) { value, range, _ in
+                if let decoration = value as? BlockDecoration {
+                    middle.append((range, decoration))
+                }
+            }
+        }
+
+        decorationRuns = before + middle + after
+        needsDisplay = true
+        DispatchQueue.main.async { [weak self] in
+            self?.needsDisplay = true
+        }
+    }
+
     // Any live layout change (viewport re-layout after estimates resolve)
     // must redraw decorations, or boxes lag behind their text.
     override func setFrameSize(_ newSize: NSSize) {
@@ -47,7 +114,7 @@ final class QuoinTextView: NSTextView {
         needsDisplay = true
     }
 
-    private func refreshRunsIfNeeded() {
+    func refreshRunsIfNeeded() {
         guard runsAreStale, let storage = textContentStorage?.textStorage else { return }
         runsAreStale = false
         decorationRuns.removeAll()
@@ -69,8 +136,29 @@ final class QuoinTextView: NSTextView {
               let contentManager = layoutManager.textContentManager
         else { return }
 
+        // Cull to the viewport BEFORE computing geometry: enumerating a
+        // run's fragments with .ensuresLayout forces layout, so iterating
+        // every decorated block in the document laid out the whole file on
+        // each draw — TextKit 2's viewport laziness, defeated by its own
+        // decorations. The character-range test is cheap and generous
+        // (±4096 characters of slack around the viewport range).
+        var visible: NSRange?
+        if let viewport = layoutManager.textViewportLayoutController.viewportRange {
+            let start = contentManager.offset(from: contentManager.documentRange.location,
+                                              to: viewport.location)
+            let end = contentManager.offset(from: contentManager.documentRange.location,
+                                            to: viewport.endLocation)
+            let slack = 4096
+            let lower = max(0, start - slack)
+            visible = NSRange(location: lower, length: end + slack - lower)
+        }
+
         let origin = textContainerOrigin
         for run in decorationRuns {
+            if let visible, NSIntersectionRange(run.range, visible).length == 0,
+               run.range.length > 0 {
+                continue
+            }
             guard let textRange = nsTextRange(run.range, in: contentManager) else { continue }
 
             var frames: [CGRect] = []

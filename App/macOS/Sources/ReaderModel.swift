@@ -62,6 +62,15 @@ final class ReaderModel {
     @ObservationIgnored private var actionFailureTask: Task<Void, Never>?
     @ObservationIgnored private var editPipelineTask: Task<Void, Never>?
     @ObservationIgnored private var latestEditGeneration = 0
+    /// Monotonic revision stamped on every published RenderedDocument, so
+    /// the view layer applies each projection (and its storage patches)
+    /// exactly once.
+    @ObservationIgnored private var renderedRevision = 0
+
+    private func nextRevision() -> Int {
+        renderedRevision += 1
+        return renderedRevision
+    }
 
     @ObservationIgnored private var slugToBlock: [String: BlockID] = [:]
     /// Per-block rendered fragments reused across re-renders so a keystroke
@@ -197,7 +206,8 @@ final class ReaderModel {
                     activeBlockID: activeBlockID,
                     activeEditableRange: patch.activeEditableRange,
                     activeSourceText: patch.activeSourceText,
-                    storagePatch: patch.storagePatch
+                    storagePatch: patch.storagePatch,
+                    revision: nextRevision()
                 )
             } else {
                 let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
@@ -207,7 +217,8 @@ final class ReaderModel {
                     activeBlockID: next.activeBlockID,
                     activeEditableRange: next.activeEditableRange,
                     activeSourceText: next.activeSourceText,
-                    spliceHint: spliceHint
+                    spliceHint: spliceHint,
+                    revision: nextRevision()
                 )
             }
             outline = document.outline
@@ -228,6 +239,7 @@ final class ReaderModel {
     /// it land a little early (hidden delimiters), which still feels right.
     func activateBlock(_ id: BlockID?, caretHint: Int? = nil) {
         guard id != activeBlockID else { return }
+        let previousActiveID = activeBlockID
         activeBlockID = id
         if let id, let block = document.blocks.first(where: { $0.id == id }),
            let slice = document.source.substring(in: block.range) {
@@ -237,7 +249,40 @@ final class ReaderModel {
             caretInActiveBlock = nil
         }
         caretGeneration += 1
+        // A flip changes only the flipped blocks' PROJECTION — the document
+        // is untouched. Patch just those fragments into the live storage
+        // instead of re-rendering the whole document (which costs ~half a
+        // second at novel length even with a warm fragment cache).
+        if applyActivationFlipPatch(from: previousActiveID, to: id) { return }
         rerender()
+    }
+
+    /// Publishes storage patches for an activate/deactivate flip (built by
+    /// the renderer — see `AttributedRenderer.activationFlipUpdate`).
+    /// Returns false when the projection state doesn't line up; the caller
+    /// then takes the full re-render, which is always correct.
+    private func applyActivationFlipPatch(from oldID: BlockID?, to newID: BlockID?) -> Bool {
+        guard let update = renderer.activationFlipUpdate(
+            document: document, current: rendered,
+            from: oldID, to: newID, caret: caretInActiveBlock
+        ) else { return false }
+
+        if let cacheable = update.cacheableReadFragment {
+            fragmentCache[cacheable.id] = cacheable.fragment
+        }
+        if let newID {
+            fragmentCache.removeValue(forKey: newID)
+        }
+        rendered = RenderedDocument(
+            attributed: rendered.attributed,
+            blockRanges: update.blockRanges,
+            activeBlockID: newID,
+            activeEditableRange: update.activeEditableRange,
+            activeSourceText: update.activeSourceText,
+            storagePatches: update.storagePatches,
+            revision: nextRevision()
+        )
+        return true
     }
 
     // MARK: - Edits

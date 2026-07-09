@@ -15,6 +15,10 @@ extension MarkdownReaderView {
         var parent: MarkdownReaderView
         weak var textView: NSTextView?
         var renderedGeneration: NSAttributedString?
+        /// Last `RenderedDocument.revision` applied to the live storage.
+        /// updateNSView runs on every SwiftUI pass; this is what stops a
+        /// patch-bearing projection from re-applying its patches.
+        var appliedRevision = -1
         var blockRanges: [BlockID: NSRange] = [:]
         /// The active block id as of the last applied update — what lets a
         /// re-render recognize an activate/deactivate FLIP (chart ↔ source)
@@ -47,16 +51,40 @@ extension MarkdownReaderView {
                 return nil
             }
 
+            // Chunked comparison via memcmp: per-character `character(at:)`
+            // costs an ObjC message each (~24 ms across a novel), and a
+            // Swift element loop pays per-index bounds checks in debug
+            // builds. memcmp on getCharacters buffers is C-speed in any
+            // build mode; only a differing chunk is scanned element-wise.
+            let chunk = 8192
+            var oldBuf = [unichar](repeating: 0, count: chunk)
+            var newBuf = [unichar](repeating: 0, count: chunk)
+            func chunksEqual(_ n: Int) -> Bool {
+                oldBuf.withUnsafeBufferPointer { a in
+                    newBuf.withUnsafeBufferPointer { b in
+                        memcmp(a.baseAddress!, b.baseAddress!, n * MemoryLayout<unichar>.size) == 0
+                    }
+                }
+            }
             let bound = min(oldLen, newLen)
             var prefix = 0
-            while prefix < bound, old.character(at: prefix) == new.character(at: prefix) {
-                prefix += 1
+            outer: while prefix < bound {
+                let n = min(chunk, bound - prefix)
+                old.getCharacters(&oldBuf, range: NSRange(location: prefix, length: n))
+                new.getCharacters(&newBuf, range: NSRange(location: prefix, length: n))
+                if chunksEqual(n) { prefix += n; continue }
+                for i in 0..<n where oldBuf[i] != newBuf[i] { prefix += i; break outer }
+                prefix += n
             }
             var suffix = 0
             let suffixBound = bound - prefix
-            while suffix < suffixBound,
-                  old.character(at: oldLen - 1 - suffix) == new.character(at: newLen - 1 - suffix) {
-                suffix += 1
+            outer2: while suffix < suffixBound {
+                let n = min(chunk, suffixBound - suffix)
+                old.getCharacters(&oldBuf, range: NSRange(location: oldLen - suffix - n, length: n))
+                new.getCharacters(&newBuf, range: NSRange(location: newLen - suffix - n, length: n))
+                if chunksEqual(n) { suffix += n; continue }
+                for i in 0..<n where oldBuf[n - 1 - i] != newBuf[n - 1 - i] { suffix += i; break outer2 }
+                suffix += n
             }
 
             let oldChanged = NSRange(location: prefix, length: oldLen - prefix - suffix)
@@ -282,8 +310,10 @@ extension MarkdownReaderView {
             }
             storage.endEditing()
             // Delimiter fonts flip between 1pt and full size — a reflow —
-            // so block chrome below the caret must redraw in place.
-            (textView as? QuoinTextView)?.invalidateDecorations()
+            // so block chrome below the caret must redraw in place. The run
+            // RANGES are untouched (attribute-only restyle), so this is a
+            // redraw, not a rescan.
+            (textView as? QuoinTextView)?.redrawDecorations()
         }
 
         /// Applies a format command to the selection inside the active
