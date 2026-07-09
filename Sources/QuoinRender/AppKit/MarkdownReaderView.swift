@@ -169,19 +169,36 @@ public struct MarkdownReaderView: NSViewRepresentable {
             ]
         }
 
+        // THE viewport invariant: the thing the user touched must not move.
+        // On a flip (activate/deactivate), the anchor is the LINE THE CARET
+        // IS ON — the clicked row of a table, the list item the arrow key
+        // just entered — captured before the projection changes and pinned
+        // back after, no matter how the block's height changes around it.
+        // Only when no caret applies (closing a block to nothing) does the
+        // anchor fall back to the flipped block's top edge.
+        let flipPending = rendered.activeBlockID != coordinator.lastActiveBlockID
+        let caretRestorePending = caretInActiveBlock != nil
+            && caretGeneration != coordinator.appliedCaretGeneration
+            && rendered.activeEditableRange != nil
+        var caretLineAnchorY: CGFloat?
+
         if coordinator.appliedRevision != rendered.revision,
            let storage = textView.textContentStorage?.textStorage {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
-            // An activate/deactivate FLIP (chart ↔ source) can change the
-            // block's height dramatically; pin the flipped block where the
-            // user is looking so the viewport doesn't lurch by the height
-            // delta. Captured before the splice, restored after.
+            let viewport = scrollView.contentView.bounds.height
+            if flipPending, caretRestorePending {
+                let selection = min(textView.selectedRange().location, max(0, storage.length - 1))
+                if let screenY = coordinator.lineScreenY(at: selection, in: textView),
+                   screenY > -viewport, screenY < viewport * 2 {
+                    caretLineAnchorY = screenY
+                }
+            }
+            // Fallback anchor for caret-less flips (Esc closing a block).
             var flipAnchor: (id: BlockID, screenY: CGFloat)?
-            if rendered.activeBlockID != coordinator.lastActiveBlockID,
+            if flipPending, caretLineAnchorY == nil,
                let flipID = rendered.activeBlockID ?? coordinator.lastActiveBlockID,
                let oldRange = coordinator.blockRanges[flipID],
                let screenY = coordinator.blockTopScreenY(oldRange, in: textView) {
-                let viewport = scrollView.contentView.bounds.height
                 // Only pin when the flip is near the viewport — a far-away
                 // programmatic flip shouldn't drag the scroll position to it.
                 if screenY > -viewport * 2, screenY < viewport * 2 {
@@ -225,10 +242,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
             coordinator.appliedRevision = rendered.revision
             coordinator.blockRanges = rendered.blockRanges
             if let flipAnchor, let newRange = rendered.blockRanges[flipAnchor.id] {
-                // Pin the flipped block exactly where it was; this also
-                // forces real layout for the spliced region, so the first
-                // paint after the flip uses settled geometry instead of
-                // estimates (which briefly drew stacked lines).
+                // Caret-less flip: pin the flipped block's top edge; this
+                // also forces real layout for the spliced region, so the
+                // first paint uses settled geometry instead of estimates.
                 coordinator.scrollBlockTop(newRange, toScreenY: flipAnchor.screenY, in: textView)
             } else if splicedRange == nil, caretInActiveBlock == nil,
                       let anchorID, let range = rendered.blockRanges[anchorID] {
@@ -250,7 +266,17 @@ public struct MarkdownReaderView: NSViewRepresentable {
             let location = min(active.location + caret, active.location + active.length)
             coordinator.suppressSelectionCallback = true
             textView.setSelectedRange(NSRange(location: location, length: 0))
-            textView.scrollRangeToVisible(NSRange(location: location, length: 0))
+            if let caretLineAnchorY {
+                // Flip: the caret's line goes back exactly where the user
+                // was looking (the clicked table row, the list item the
+                // arrow key entered) regardless of the height change.
+                coordinator.pinCaretLine(at: location, toScreenY: caretLineAnchorY, in: textView)
+            } else {
+                // Edit round-trip: scroll ONLY if the caret left the
+                // viewport, and then by the minimal amount — arrowing and
+                // typing must never lurch.
+                coordinator.scrollCaretIntoViewIfNeeded(location, in: textView)
+            }
             coordinator.suppressSelectionCallback = false
             if textView.window?.firstResponder !== textView {
                 textView.window?.makeFirstResponder(textView)

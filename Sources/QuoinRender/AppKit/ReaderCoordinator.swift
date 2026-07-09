@@ -529,7 +529,83 @@ extension MarkdownReaderView {
             guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { return }
             let documentY = fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y
             let y = max(0, documentY - screenY)
+            // Height-neutral reveals leave the pin where it already is —
+            // don't touch the clip view for a sub-point correction, or
+            // keyboard traversal picks up a micro-jitter at every block
+            // boundary.
+            guard abs(y - clip.bounds.origin.y) > 0.5 else { return }
             clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+            textView.enclosingScrollView?.reflectScrolledClipView(clip)
+        }
+
+        /// The on-screen y of the LINE containing `location` (distance from
+        /// the viewport's top), or nil when geometry is unavailable. This is
+        /// the anchor for the viewport invariant: the line the user touched.
+        func lineScreenY(at location: Int, in textView: NSTextView) -> CGFloat? {
+            guard location >= 0,
+                  let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let textRange = nsTextRange(NSRange(location: location, length: 0), in: contentStorage),
+                  let clip = textView.enclosingScrollView?.contentView
+            else { return nil }
+            layoutManager.ensureLayout(for: textRange)
+            guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { return nil }
+            return fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y - clip.bounds.origin.y
+        }
+
+        /// Scrolls so the line containing `location` sits at `screenY` from
+        /// the viewport top — restoring the user's point of attention after
+        /// a projection change, whatever happened to the heights around it.
+        func pinCaretLine(at location: Int, toScreenY screenY: CGFloat, in textView: NSTextView) {
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let textRange = nsTextRange(NSRange(location: location, length: 0), in: contentStorage),
+                  let clip = textView.enclosingScrollView?.contentView
+            else { return }
+            layoutManager.ensureLayout(for: textRange)
+            guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { return }
+            let documentY = fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y
+            let y = max(0, documentY - screenY)
+            guard abs(y - clip.bounds.origin.y) > 0.5 else { return }
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+            textView.enclosingScrollView?.reflectScrolledClipView(clip)
+        }
+
+        /// Scrolls only when the caret is NOT already visible — and then by
+        /// the minimal amount, using settled layout. Arrowing through a
+        /// document must feel native: no scroll while the caret is on
+        /// screen, one small nudge when it crosses the fold. The old
+        /// unconditional `scrollRangeToVisible` re-scrolled on every block
+        /// activation (against TextKit 2's estimates, no less), which is
+        /// what made keyboard traversal lurch at block boundaries.
+        func scrollCaretIntoViewIfNeeded(_ location: Int, in textView: NSTextView) {
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let textRange = nsTextRange(NSRange(location: location, length: 0), in: contentStorage),
+                  let clip = textView.enclosingScrollView?.contentView
+            else {
+                textView.scrollRangeToVisible(NSRange(location: location, length: 0))
+                return
+            }
+            layoutManager.ensureLayout(for: textRange)
+            guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else {
+                textView.scrollRangeToVisible(NSRange(location: location, length: 0))
+                return
+            }
+            let origin = textView.textContainerOrigin
+            let lineTop = fragment.layoutFragmentFrame.minY + origin.y
+            let lineBottom = fragment.layoutFragmentFrame.maxY + origin.y
+            let visibleTop = clip.bounds.origin.y
+            let visibleBottom = visibleTop + clip.bounds.height
+            let padding: CGFloat = 8
+            var target: CGFloat?
+            if lineTop < visibleTop + padding {
+                target = max(0, lineTop - padding)
+            } else if lineBottom > visibleBottom - padding {
+                target = lineBottom + padding - clip.bounds.height
+            }
+            guard let target, abs(target - visibleTop) > 0.5 else { return }
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: max(0, target)))
             textView.enclosingScrollView?.reflectScrolledClipView(clip)
         }
 

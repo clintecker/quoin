@@ -458,7 +458,7 @@ public struct AttributedRenderer {
 
         if let block, let document {
             switch block.kind {
-            case .paragraph, .heading, .list, .blockQuote, .callout, .thematicBreak:
+            case .paragraph, .heading, .list, .blockQuote, .callout, .thematicBreak, .table:
                 let read = render(block: block, depth: 0, document: document)
                 transplantParagraphStyles(from: read, onto: styled, source: slice)
                 return styled
