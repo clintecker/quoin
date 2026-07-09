@@ -16,6 +16,7 @@ struct QuoinApp: App {
             // document session, wired via window-local shortcuts.
             CommandGroup(replacing: .saveItem) {}
             CommandGroup(replacing: .undoRedo) {}
+            AboutCommands()
             // View menu: the handoff's panel toggles (⌘0 sidebar, ⌥⌘0
             // outline), delivered to the key window via notifications.
             CommandGroup(before: .sidebar) {
@@ -30,6 +31,31 @@ struct QuoinApp: App {
                 Divider()
             }
         }
+
+        // Quoin ▸ Settings… (⌘,): appearance + editor preferences.
+        Settings {
+            SettingsView()
+        }
+
+        // Quoin ▸ About Quoin: the custom about window.
+        Window("About Quoin", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+    }
+}
+
+/// Replaces the standard About item with the custom window. A separate
+/// `Commands` type because `openWindow` is only available through the
+/// environment.
+private struct AboutCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About Quoin") { openWindow(id: "about") }
+        }
     }
 }
 
@@ -43,12 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Quoin has its own document tabs; the system window-tab items
         // ("Show Tab Bar" etc.) would only confuse the View menu.
         NSWindow.allowsAutomaticWindowTabbing = false
-        // Screenshot automation: -QuoinForceDarkMode YES pins the app to
-        // dark appearance (the AppleInterfaceStyle default doesn't reach
-        // SwiftUI apps launched by the UI-test runner).
-        if UserDefaults.standard.bool(forKey: "QuoinForceDarkMode") {
-            NSApp.appearance = NSAppearance(named: .darkAqua)
-        }
+        // Apply the stored appearance preference (System / Light / Dark).
+        // The screenshot-automation pin (-QuoinForceDarkMode YES) wins over
+        // the preference inside applyStored, so CI captures stay
+        // deterministic.
+        AppAppearance.applyStored()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

@@ -52,8 +52,10 @@ targets:
       properties:
         CFBundleName: Quoin
         CFBundleDisplayName: Quoin
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
         LSMinimumSystemVersion: "14.0"
-        NSHumanReadableCopyright: ""
+        NSHumanReadableCopyright: "© 2026 Clint Ecker"
         CFBundleDocumentTypes:
           - CFBundleTypeName: Markdown Document
             CFBundleTypeRole: Viewer

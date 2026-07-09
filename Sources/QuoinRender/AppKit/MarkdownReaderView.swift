@@ -156,6 +156,19 @@ public struct MarkdownReaderView: NSViewRepresentable {
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
 
+        // View-level chrome follows the theme on every update, so an
+        // appearance flip (dark/light) recolors the canvas along with the
+        // re-rendered content — makeNSView's values would otherwise stick
+        // for the window's lifetime.
+        if textView.backgroundColor != theme.canvas {
+            textView.backgroundColor = theme.canvas
+            scrollView.backgroundColor = theme.canvas
+            textView.linkTextAttributes = [
+                .foregroundColor: theme.linkColor,
+                .cursor: NSCursor.pointingHand,
+            ]
+        }
+
         if (coordinator.renderedGeneration !== rendered.attributed || rendered.storagePatch != nil),
            let storage = textView.textContentStorage?.textStorage {
             let anchorID = coordinator.topVisibleBlockID(in: textView)

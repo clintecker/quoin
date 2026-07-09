@@ -71,14 +71,7 @@ final class ReaderModel {
     func start(fileURL: URL?, initialText: String) {
         guard session == nil else { return }
         self.fileURL = fileURL
-        let theme = Theme()
-        renderer = AttributedRenderer(
-            theme: theme,
-            baseURL: fileURL?.deletingLastPathComponent(),
-            onContentReady: { [weak self] in
-                Task { @MainActor in self?.scheduleAsyncContentRerender() }
-            }
-        )
+        renderer = makeRenderer()
 
         let session: DocumentSession
         if let fileURL, let opened = try? DocumentSession.open(fileURL: fileURL) {
@@ -100,6 +93,30 @@ final class ReaderModel {
                 await self?.ingest(document)
             }
         }
+    }
+
+    /// A renderer for the CURRENT appearance — `Theme()` captures light/dark
+    /// at creation, so appearance switches must re-create it (see
+    /// `refreshTheme`).
+    private func makeRenderer() -> AttributedRenderer {
+        AttributedRenderer(
+            theme: Theme(),
+            baseURL: fileURL?.deletingLastPathComponent(),
+            onContentReady: { [weak self] in
+                Task { @MainActor in self?.scheduleAsyncContentRerender() }
+            }
+        )
+    }
+
+    /// Rebuilds the rendered projection for a new appearance (the user
+    /// flipped dark/light, in-app or system-wide). The fragment cache is
+    /// per-theme by construction — every cached fragment has the old
+    /// palette baked in — so it empties rather than carries stale colors.
+    func refreshTheme() {
+        guard session != nil else { return }
+        renderer = makeRenderer()
+        fragmentCache.removeAll()
+        rerender()
     }
 
     // MARK: - Merge banner

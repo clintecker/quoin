@@ -14,7 +14,12 @@ struct ReaderScreen: View {
     var onFileRenamed: (URL) -> Void = { _ in }
 
     @State private var model = ReaderModel()
-    private let theme = Theme()
+    /// Fresh per body evaluation: `Theme()` captures the CURRENT appearance,
+    /// and reading `colorScheme` below is what makes SwiftUI re-evaluate
+    /// this view when the appearance flips (system or Settings preference).
+    private var theme: Theme { Theme() }
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("QuoinShowStatusBar") private var showStatusBar = true
 
     @State private var formatCommand: FormatCommand?
     @State private var formatGeneration = 0
@@ -92,7 +97,16 @@ struct ReaderScreen: View {
                 .padding(.top, 10)
                 .padding(.trailing, 16)
             }
-            statusBar
+            if showStatusBar {
+                statusBar
+            }
+        }
+        .onChange(of: colorScheme) {
+            // Appearance flipped (system or the Settings preference): the
+            // rendered projection has the old palette baked into its
+            // attributed string, so the model must re-render with a fresh
+            // Theme.
+            model.refreshTheme()
         }
         .inspector(isPresented: $isOutlineVisible) {
             OutlinePanel(
