@@ -26,6 +26,13 @@ Swift/SwiftUI + TextKit 2, zero JavaScript at runtime, local-only.
 - View models are platform-free; only navigation containers differ.
 - Never override system shortcuts: ⌘P print, ⌘E use-selection-for-find, ⌘H hide.
 - Round-trip (open → edit → save) must be byte-lossless for untouched regions.
+- Viewport invariant (user directive): on ANY projection change — reveal,
+  close, keystroke, for every block type — the line the caret/click is on
+  must not move on screen, and edit mode keeps the block's vertical skeleton
+  (per-line style transplant). Scroll only when the caret leaves the
+  viewport, then minimally. Enforced by RevealFidelityTests and
+  CaretLineAnchorTests; extend BOTH when adding block types or projection
+  paths.
 
 ## Dependency policy
 
