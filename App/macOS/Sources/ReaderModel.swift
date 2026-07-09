@@ -67,9 +67,31 @@ final class ReaderModel {
     /// exactly once.
     @ObservationIgnored private var renderedRevision = 0
 
+    /// The authoritative projection, mirrored through every publish: full
+    /// renders replace it; patch publishes apply their patches to it FIRST.
+    /// SwiftUI coalesces rapid publishes, so the view can skip a patch
+    /// revision entirely — when its `patchBaseLength` check misses, it
+    /// resyncs by splicing to this string, which is correct precisely
+    /// because it never skips a patch.
+    @ObservationIgnored private var liveAttributed = NSMutableAttributedString()
+
     private func nextRevision() -> Int {
         renderedRevision += 1
         return renderedRevision
+    }
+
+    /// Applies a descending, disjoint patch batch to the authoritative
+    /// string, returning its pre-patch length (the view's expected base).
+    /// Nil on any bounds surprise — the caller must fall back to a full
+    /// render.
+    private func applyToLiveAttributed(_ patches: [RenderStoragePatch]) -> Int? {
+        let base = liveAttributed.length
+        for patch in patches {
+            guard patch.oldRange.location >= 0,
+                  NSMaxRange(patch.oldRange) <= liveAttributed.length else { return nil }
+            liveAttributed.replaceCharacters(in: patch.oldRange, with: patch.replacement)
+        }
+        return base
     }
 
     @ObservationIgnored private var slugToBlock: [String: BlockID] = [:]
@@ -197,22 +219,25 @@ final class ReaderModel {
             "model.rerender",
             metadata: "bytes=\(document.source.utf8.count) blocks=\(document.blocks.count) active=\(activeBlockID != nil) patched=\(activeBlockPatch != nil)"
         ) {
-            if let patch = activeBlockPatch, let activeBlockID {
+            if let patch = activeBlockPatch, let activeBlockID,
+               let baseLength = applyToLiveAttributed([patch.storagePatch]) {
                 fragmentCache.removeValue(forKey: patch.oldActiveBlockID)
                 fragmentCache.removeValue(forKey: activeBlockID)
                 rendered = RenderedDocument(
-                    attributed: rendered.attributed,
+                    attributed: liveAttributed,
                     blockRanges: patch.blockRanges,
                     activeBlockID: activeBlockID,
                     activeEditableRange: patch.activeEditableRange,
                     activeSourceText: patch.activeSourceText,
                     storagePatch: patch.storagePatch,
-                    revision: nextRevision()
+                    revision: nextRevision(),
+                    patchBaseLength: baseLength
                 )
             } else {
                 let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
+                liveAttributed = NSMutableAttributedString(attributedString: next.attributed)
                 rendered = RenderedDocument(
-                    attributed: next.attributed,
+                    attributed: liveAttributed,
                     blockRanges: next.blockRanges,
                     activeBlockID: next.activeBlockID,
                     activeEditableRange: next.activeEditableRange,
@@ -267,6 +292,7 @@ final class ReaderModel {
             from: oldID, to: newID, caret: caretInActiveBlock
         ) else { return false }
 
+        guard let baseLength = applyToLiveAttributed(update.storagePatches) else { return false }
         if let cacheable = update.cacheableReadFragment {
             fragmentCache[cacheable.id] = cacheable.fragment
         }
@@ -274,13 +300,14 @@ final class ReaderModel {
             fragmentCache.removeValue(forKey: newID)
         }
         rendered = RenderedDocument(
-            attributed: rendered.attributed,
+            attributed: liveAttributed,
             blockRanges: update.blockRanges,
             activeBlockID: newID,
             activeEditableRange: update.activeEditableRange,
             activeSourceText: update.activeSourceText,
             storagePatches: update.storagePatches,
-            revision: nextRevision()
+            revision: nextRevision(),
+            patchBaseLength: baseLength
         )
         return true
     }

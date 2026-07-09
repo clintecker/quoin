@@ -193,37 +193,33 @@ public struct MarkdownReaderView: NSViewRepresentable {
             // replacing the whole document. TextKit 2 then re-lays-out just
             // that region, so unchanged content keeps its exact layout and the
             // scroll offset never jumps.
-            let splicedRange: NSRange? = QuoinPerformanceTrace.measure(
+            let application = QuoinPerformanceTrace.measure(
                 "render.textkit.splice",
                 metadata: "old_utf16=\(storage.length) new_utf16=\(rendered.attributed.length) hinted=\(rendered.spliceHint != nil) patched=\(rendered.storagePatches.count)"
             ) {
-                // All-or-nothing: validate every patch range against the
-                // pre-patch storage before touching it (patches are disjoint
-                // and ordered by DESCENDING location, so earlier applications
-                // never shift a later patch's range). A partial application
-                // would corrupt the projection.
-                if !rendered.storagePatches.isEmpty,
-                   rendered.storagePatches.allSatisfy({
-                       $0.oldRange.location >= 0 && NSMaxRange($0.oldRange) <= storage.length
-                   }) {
-                    var last: NSRange?
-                    for patch in rendered.storagePatches {
-                        last = Coordinator.applyStoragePatch(in: storage, patch: patch) ?? last
-                        // Bounded edit: adjust the decoration runs in place
-                        // instead of rescanning the whole document's
-                        // attributes on the next draw.
-                        (textView as? QuoinTextView)?.noteStorageEdit(
-                            oldRange: patch.oldRange, newLength: patch.replacement.length)
-                    }
-                    return last
+                Coordinator.applyProjection(rendered, to: storage)
+            }
+            let splicedRange: NSRange?
+            switch application {
+            case .patched(let patches):
+                splicedRange = patches.first.map {
+                    NSRange(location: $0.oldRange.location, length: $0.replacement.length)
                 }
-                let range = Coordinator.spliceChanges(in: storage, to: rendered.attributed, hint: rendered.spliceHint)
-                // Unbounded change (full replace or computed splice): the
-                // runs are rebuilt from scratch on the next draw.
+                // Bounded edits: adjust the decoration runs in place instead
+                // of rescanning the whole document's attributes on the next
+                // draw.
+                for patch in patches {
+                    (textView as? QuoinTextView)?.noteStorageEdit(
+                        oldRange: patch.oldRange, newLength: patch.replacement.length)
+                }
+            case .spliced(let range):
+                splicedRange = range
+                // Unbounded change (full replace, computed splice, or the
+                // stale-patch resync): runs rebuild from scratch on the
+                // next draw.
                 QuoinPerformanceTrace.measure("render.decorations.invalidate") {
                     (textView as? QuoinTextView)?.invalidateDecorations()
                 }
-                return range
             }
             coordinator.renderedGeneration = rendered.attributed
             coordinator.appliedRevision = rendered.revision

@@ -62,6 +62,16 @@ public struct RenderedDocument {
     /// distinguish patch generations — patches deliberately reuse it).
     public let revision: Int
 
+    /// The storage length (UTF-16) the patches expect BEFORE application.
+    /// Patches are diffs against a specific storage state; SwiftUI can
+    /// coalesce rapid publishes so the view skips an intermediate patch
+    /// revision — applying the next batch to that stale storage silently
+    /// corrupts the projection (drifting caret mapping, keystrokes falling
+    /// outside the editable range and being swallowed). On a length
+    /// mismatch the view must ignore the patches and resync by splicing to
+    /// `attributed`, which the model keeps authoritative.
+    public let patchBaseLength: Int?
+
     public init(
         attributed: NSAttributedString,
         blockRanges: [BlockID: NSRange],
@@ -71,7 +81,8 @@ public struct RenderedDocument {
         spliceHint: RenderSpliceHint? = nil,
         storagePatch: RenderStoragePatch? = nil,
         storagePatches: [RenderStoragePatch] = [],
-        revision: Int = 0
+        revision: Int = 0,
+        patchBaseLength: Int? = nil
     ) {
         self.attributed = attributed
         self.blockRanges = blockRanges
@@ -81,6 +92,7 @@ public struct RenderedDocument {
         self.spliceHint = spliceHint
         self.storagePatches = storagePatch.map { [$0] } ?? storagePatches
         self.revision = revision
+        self.patchBaseLength = patchBaseLength
     }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])

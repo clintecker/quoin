@@ -137,6 +137,39 @@ extension MarkdownReaderView {
             return NSRange(location: patch.oldRange.location, length: patch.replacement.length)
         }
 
+        /// How a projection landed in the live storage: bounded patches, or
+        /// a computed splice (which includes the resync fallback).
+        enum ProjectionApplication {
+            case patched([RenderStoragePatch])
+            case spliced(NSRange?)
+        }
+
+        /// Applies a published projection to the live storage. Patches are
+        /// trusted ONLY when the storage is exactly the state they were
+        /// computed against (`patchBaseLength`): SwiftUI coalesces rapid
+        /// publishes, so a view can skip an intermediate patch revision —
+        /// applying the next batch to that stale storage would silently
+        /// corrupt the projection (the caret mapping drifts and keystrokes
+        /// near the block end fall outside the editable range and get
+        /// swallowed). Any mismatch falls back to a full splice against
+        /// `attributed`, which the model keeps authoritative — one O(scan)
+        /// resync instead of compounding corruption.
+        static func applyProjection(
+            _ rendered: RenderedDocument, to storage: NSTextStorage
+        ) -> ProjectionApplication {
+            if !rendered.storagePatches.isEmpty,
+               rendered.patchBaseLength == storage.length,
+               rendered.storagePatches.allSatisfy({
+                   $0.oldRange.location >= 0 && NSMaxRange($0.oldRange) <= storage.length
+               }) {
+                for patch in rendered.storagePatches {
+                    _ = applyStoragePatch(in: storage, patch: patch)
+                }
+                return .patched(rendered.storagePatches)
+            }
+            return .spliced(spliceChanges(in: storage, to: rendered.attributed, hint: rendered.spliceHint))
+        }
+
         init(parent: MarkdownReaderView) {
             self.parent = parent
         }
