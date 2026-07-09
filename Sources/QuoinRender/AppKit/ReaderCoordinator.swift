@@ -16,6 +16,10 @@ extension MarkdownReaderView {
         weak var textView: NSTextView?
         var renderedGeneration: NSAttributedString?
         var blockRanges: [BlockID: NSRange] = [:]
+        /// The active block id as of the last applied update — what lets a
+        /// re-render recognize an activate/deactivate FLIP (chart ↔ source)
+        /// and pin the flipped block on screen across the height change.
+        var lastActiveBlockID: BlockID?
         var appliedScrollGeneration = 0
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
@@ -382,6 +386,42 @@ extension MarkdownReaderView {
         }
 
         // MARK: Scroll anchoring
+
+        /// The on-screen y (distance from the viewport's top) of a block's
+        /// first laid-out fragment, or nil when geometry is unavailable.
+        /// Captured BEFORE an activate/deactivate splice so the flipped
+        /// block can be pinned at the same place afterward.
+        func blockTopScreenY(_ range: NSRange, in textView: NSTextView) -> CGFloat? {
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let textRange = nsTextRange(range, in: contentStorage),
+                  let clip = textView.enclosingScrollView?.contentView
+            else { return nil }
+            layoutManager.ensureLayout(for: textRange)
+            guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { return nil }
+            let documentY = fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y
+            return documentY - clip.bounds.origin.y
+        }
+
+        /// Scrolls so the block's top sits at `screenY` from the viewport's
+        /// top. Forcing layout for the block's new range FIRST matters twice
+        /// over: the scroll math needs real (not estimated) geometry, and an
+        /// un-laid-out splice region is what briefly draws overlapping
+        /// lines. Content above the splice is untouched by the flip, so the
+        /// fragment frame is exact once the range itself is laid out.
+        func scrollBlockTop(_ range: NSRange, toScreenY screenY: CGFloat, in textView: NSTextView) {
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let textRange = nsTextRange(range, in: contentStorage),
+                  let clip = textView.enclosingScrollView?.contentView
+            else { return }
+            layoutManager.ensureLayout(for: textRange)
+            guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { return }
+            let documentY = fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y
+            let y = max(0, documentY - screenY)
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+            textView.enclosingScrollView?.reflectScrolledClipView(clip)
+        }
 
         /// The block ID at the top of the current viewport, used to keep the
         /// reading position stable across live reloads.

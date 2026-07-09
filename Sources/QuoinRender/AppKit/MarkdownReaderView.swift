@@ -159,6 +159,22 @@ public struct MarkdownReaderView: NSViewRepresentable {
         if (coordinator.renderedGeneration !== rendered.attributed || rendered.storagePatch != nil),
            let storage = textView.textContentStorage?.textStorage {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
+            // An activate/deactivate FLIP (chart ↔ source) can change the
+            // block's height dramatically; pin the flipped block where the
+            // user is looking so the viewport doesn't lurch by the height
+            // delta. Captured before the splice, restored after.
+            var flipAnchor: (id: BlockID, screenY: CGFloat)?
+            if rendered.activeBlockID != coordinator.lastActiveBlockID,
+               let flipID = rendered.activeBlockID ?? coordinator.lastActiveBlockID,
+               let oldRange = coordinator.blockRanges[flipID],
+               let screenY = coordinator.blockTopScreenY(oldRange, in: textView) {
+                let viewport = scrollView.contentView.bounds.height
+                // Only pin when the flip is near the viewport — a far-away
+                // programmatic flip shouldn't drag the scroll position to it.
+                if screenY > -viewport * 2, screenY < viewport * 2 {
+                    flipAnchor = (flipID, screenY)
+                }
+            }
             coordinator.suppressSelectionCallback = true
             // Splice only the changed span into the live storage rather than
             // replacing the whole document. TextKit 2 then re-lays-out just
@@ -180,15 +196,23 @@ public struct MarkdownReaderView: NSViewRepresentable {
             }
             coordinator.renderedGeneration = rendered.attributed
             coordinator.blockRanges = rendered.blockRanges
-            // Re-anchor only on a full/large replacement (splice returned nil);
-            // an in-place splice preserves the viewport by construction.
-            if splicedRange == nil, caretInActiveBlock == nil,
-               let anchorID, let range = rendered.blockRanges[anchorID] {
+            if let flipAnchor, let newRange = rendered.blockRanges[flipAnchor.id] {
+                // Pin the flipped block exactly where it was; this also
+                // forces real layout for the spliced region, so the first
+                // paint after the flip uses settled geometry instead of
+                // estimates (which briefly drew stacked lines).
+                coordinator.scrollBlockTop(newRange, toScreenY: flipAnchor.screenY, in: textView)
+            } else if splicedRange == nil, caretInActiveBlock == nil,
+                      let anchorID, let range = rendered.blockRanges[anchorID] {
+                // Re-anchor only on a full/large replacement (splice returned
+                // nil); an in-place splice preserves the viewport by
+                // construction.
                 textView.scrollRangeToVisible(range)
             }
             coordinator.suppressSelectionCallback = false
             coordinator.appliedQuery = nil // force re-highlight on new content
         }
+        coordinator.lastActiveBlockID = rendered.activeBlockID
 
         // Restore the caret into the active block after an edit round-trip.
         if let caret = caretInActiveBlock,
