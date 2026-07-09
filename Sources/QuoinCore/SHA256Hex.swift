@@ -1,15 +1,40 @@
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 
-/// A small, dependency-free SHA-256 (FIPS 180-4). Used for source-content
-/// identity (self-inflicted file-event detection) and render-cache keys.
-/// Pure Swift so QuoinCore stays portable to Linux CI without CryptoKit.
+/// SHA-256 (FIPS 180-4) hex digests. Used for source-content identity
+/// (self-inflicted file-event detection) and render-cache keys.
+///
+/// On Apple platforms this dispatches to CryptoKit — a system framework,
+/// not a package dependency — because the digest is computed on EVERY
+/// keystroke (the new snapshot's `sourceHash`), and the pure-Swift fallback
+/// costs ~350 ns/byte in debug builds: ~400 ms per keystroke in a
+/// novel-length document, single-handedly blowing the typing budget. The
+/// dependency-free implementation remains for Linux portability.
 public enum SHA256Hex {
 
     public static func hash(of string: String) -> String {
-        hash(of: Array(string.utf8))
+        #if canImport(CryptoKit)
+        return CryptoKit.SHA256.hash(data: Data(string.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        #else
+        return hash(of: Array(string.utf8))
+        #endif
     }
 
     public static func hash(of bytes: [UInt8]) -> String {
+        #if canImport(CryptoKit)
+        return CryptoKit.SHA256.hash(data: Data(bytes))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        #else
+        return pureSwiftHash(of: bytes)
+        #endif
+    }
+
+    static func pureSwiftHash(of bytes: [UInt8]) -> String {
         var h: [UInt32] = [
             0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,

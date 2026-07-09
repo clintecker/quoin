@@ -20,28 +20,54 @@ public struct SourceEdit: Hashable, Sendable {
 
     /// Applies the edit, returning the new source and the inverse edit
     /// (for undo). Byte-precise: everything outside `range` is untouched.
+    ///
+    /// This runs on every keystroke, so it must not materialize the whole
+    /// source as byte arrays (the original implementation copied the
+    /// document ~5×, which alone cost hundreds of milliseconds per keystroke
+    /// in a novel-length file). Scalar-boundary safety is checked directly:
+    /// an edit splits a UTF-8 scalar exactly when a range endpoint lands on
+    /// a continuation byte (0b10xxxxxx). `replacement` is a Swift String and
+    /// therefore always valid UTF-8 on its own.
     public func apply(to source: String) throws -> (result: String, inverse: SourceEdit) {
-        let bytes = Array(source.utf8)
-        guard range.offset >= 0, range.upperBound <= bytes.count else {
+        let utf8 = source.utf8
+        let count = utf8.count
+        guard range.offset >= 0, range.upperBound <= count else {
             throw EditError.rangeOutOfBounds
         }
-        let removedBytes = Array(bytes[range.offset..<range.upperBound])
-        var newBytes = Array(bytes[0..<range.offset])
-        newBytes.append(contentsOf: Array(replacement.utf8))
-        newBytes.append(contentsOf: bytes[range.upperBound...])
 
-        // Refuse edits that split a UTF-8 scalar: decoding must round-trip.
-        let result = String(decoding: newBytes, as: UTF8.self)
-        guard Array(result.utf8) == newBytes else {
+        let start = utf8.index(utf8.startIndex, offsetBy: range.offset)
+        let end = utf8.index(start, offsetBy: range.length)
+        func isContinuationByte(_ index: String.UTF8View.Index) -> Bool {
+            index < utf8.endIndex && utf8[index] & 0b1100_0000 == 0b1000_0000
+        }
+        guard !isContinuationByte(start), !isContinuationByte(end) else {
             throw EditError.rangeNotOnCharacterBoundary
         }
-        let removed = String(decoding: removedBytes, as: UTF8.self)
-        guard Array(removed.utf8) == removedBytes else {
-            throw EditError.rangeNotOnCharacterBoundary
+
+        let removed: String
+        var result: String
+        if let startIndex = start.samePosition(in: source),
+           let endIndex = end.samePosition(in: source) {
+            // Grapheme-aligned (the overwhelmingly common case): substring
+            // concatenation, no byte materialization.
+            removed = String(source[startIndex..<endIndex])
+            result = String(source[..<startIndex])
+            result.reserveCapacity(count + replacement.utf8.count - range.length)
+            result += replacement
+            result += source[endIndex...]
+        } else {
+            // Scalar-aligned but inside a grapheme cluster (combining marks,
+            // flags): rare enough that the byte-copy path's cost is fine.
+            let bytes = Array(utf8)
+            removed = String(decoding: bytes[range.offset..<range.upperBound], as: UTF8.self)
+            var newBytes = Array(bytes[0..<range.offset])
+            newBytes.append(contentsOf: Array(replacement.utf8))
+            newBytes.append(contentsOf: bytes[range.upperBound...])
+            result = String(decoding: newBytes, as: UTF8.self)
         }
 
         let inverse = SourceEdit(
-            range: ByteRange(offset: range.offset, length: Array(replacement.utf8).count),
+            range: ByteRange(offset: range.offset, length: replacement.utf8.count),
             replacement: removed
         )
         return (result, inverse)

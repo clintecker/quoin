@@ -67,11 +67,23 @@ extension String {
     /// back to bytes: a mismatch means the repair fired, which happens exactly
     /// when a boundary landed mid-scalar.
     public func substring(in range: ByteRange) -> String? {
-        let bytes = Array(utf8)
-        guard range.offset >= 0, range.length >= 0, range.upperBound <= bytes.count else { return nil }
-        let slice = bytes[range.offset..<range.upperBound]
-        let decoded = String(decoding: slice, as: UTF8.self)
-        guard decoded.utf8.elementsEqual(slice) else { return nil }
-        return decoded
+        // Hot path — called per keystroke. Avoid materializing the whole
+        // string's bytes: check scalar alignment directly (a boundary is
+        // invalid exactly when it lands on a UTF-8 continuation byte) and
+        // slice via string indices.
+        let view = utf8
+        guard range.offset >= 0, range.length >= 0, range.upperBound <= view.count else { return nil }
+        let start = view.index(view.startIndex, offsetBy: range.offset)
+        let end = view.index(start, offsetBy: range.length)
+        func isContinuationByte(_ index: String.UTF8View.Index) -> Bool {
+            index < view.endIndex && view[index] & 0b1100_0000 == 0b1000_0000
+        }
+        guard !isContinuationByte(start), !isContinuationByte(end) else { return nil }
+        if let startIndex = start.samePosition(in: self), let endIndex = end.samePosition(in: self) {
+            return String(self[startIndex..<endIndex])
+        }
+        // Scalar-aligned but mid-grapheme boundaries: byte-copy fallback.
+        let bytes = Array(view)
+        return String(decoding: bytes[range.offset..<range.upperBound], as: UTF8.self)
     }
 }

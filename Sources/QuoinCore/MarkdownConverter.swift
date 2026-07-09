@@ -12,6 +12,10 @@ public enum MarkdownConverter {
     public enum ParseStrategy: Equatable, Sendable {
         case full
         case plainParagraphFastPath
+        /// Block-local re-parse of an edit inside a fenced embed block
+        /// (code / mermaid / math). Typing in a chart's source used to
+        /// re-parse the whole document on every keystroke.
+        case fencedBlockFastPath
     }
 
     public struct IncrementalParseResult: Sendable {
@@ -66,7 +70,139 @@ public enum MarkdownConverter {
         if let fast = plainParagraphFastPath(previous: previous, edit: edit, newSource: newSource) {
             return IncrementalParseResult(document: fast, inverse: inverse, strategy: .plainParagraphFastPath)
         }
+        if let fast = fencedBlockFastPath(previous: previous, edit: edit, newSource: newSource) {
+            return IncrementalParseResult(document: fast, inverse: inverse, strategy: .fencedBlockFastPath)
+        }
         return IncrementalParseResult(document: parse(newSource), inverse: inverse, strategy: .full)
+    }
+
+    /// Block-local re-parse for an edit inside a fenced embed block (code /
+    /// mermaid / math) — the other thing a caret does all day. Typing inside
+    /// a chart's revealed source used to fall through to a whole-document
+    /// re-parse per keystroke, which is why editing a diagram in a long
+    /// document felt sluggish while prose stayed snappy.
+    ///
+    /// Strategy: re-parse ONLY the block's source slice, before and after the
+    /// edit, with the real parser. The old slice must reproduce the old block
+    /// exactly (self-calibration — no duplicated fence rules here); the new
+    /// slice must yield exactly one block of the same family whose relative
+    /// range grew by exactly the edit's byte delta. Any early fence close,
+    /// fence break, category flip, or structural surprise fails one of those
+    /// checks and falls back to the full parse. Conservative rejections are
+    /// always safe.
+    private static func fencedBlockFastPath(
+        previous: QuoinDocument,
+        edit: SourceEdit,
+        newSource: String
+    ) -> QuoinDocument? {
+        guard previous.footnotes.isEmpty,
+              let blockIndex = previous.blocks.firstIndex(where: {
+                  $0.range.offset <= edit.range.offset && edit.range.upperBound <= $0.range.upperBound
+              })
+        else { return nil }
+
+        let block = previous.blocks[blockIndex]
+        switch block.kind {
+        case .codeBlock, .mermaid, .mathBlock: break
+        default: return nil
+        }
+        guard let oldSlice = previous.source.substring(in: block.range) else { return nil }
+
+        // The edit must stay strictly inside the content region: past the
+        // opening fence line (so the info string can't change) and before the
+        // closing fence line (so the terminator stays intact — an edit that
+        // deletes the closer would make the fence swallow following blocks,
+        // which a slice-local parse cannot see).
+        let sliceBytes = Array(oldSlice.utf8)
+        guard let firstNewline = sliceBytes.firstIndex(of: UInt8(ascii: "\n")) else { return nil }
+        var lastLineStart = sliceBytes.count
+        var i = sliceBytes.count - 1
+        // Skip trailing newlines, then walk back to the closing line's start.
+        while i >= 0, sliceBytes[i] == UInt8(ascii: "\n") { i -= 1 }
+        while i >= 0, sliceBytes[i] != UInt8(ascii: "\n") { i -= 1 }
+        lastLineStart = i + 1
+        let relStart = edit.range.offset - block.range.offset
+        let relEnd = edit.range.upperBound - block.range.offset
+        guard relStart > firstNewline, relEnd <= lastLineStart else { return nil }
+
+        // Self-calibrating slice parses: old must round-trip to the old
+        // block; new must be one block of the same family, grown by delta.
+        let relativeEdit = SourceEdit(
+            range: ByteRange(offset: relStart, length: edit.range.length),
+            replacement: edit.replacement
+        )
+        guard let (newSlice, _) = try? relativeEdit.apply(to: oldSlice) else { return nil }
+        let oldParse = parse(oldSlice)
+        guard oldParse.blocks.count == 1,
+              oldParse.blocks[0].kind == block.kind
+        else { return nil }
+        let byteDelta = edit.replacement.utf8.count - edit.range.length
+        let newParse = parse(newSlice)
+        guard newParse.blocks.count == 1,
+              sameEmbedFamily(newParse.blocks[0].kind, block.kind),
+              newParse.blocks[0].range.offset == oldParse.blocks[0].range.offset,
+              newParse.blocks[0].range.length == oldParse.blocks[0].range.length + byteDelta
+        else { return nil }
+
+        // Identity: same uniqueness rules as the paragraph fast path, so the
+        // occurrence indices a full parse would assign are reproduced.
+        let newKind = newParse.blocks[0].kind
+        let newContentHash = contentHash(for: newKind)
+        let oldContentHash = block.id.contentHash
+        let oldHashCount = previous.blocks.filter { $0.id.contentHash == oldContentHash }.count
+        let newHashAlreadyExists = previous.blocks.enumerated().contains { index, candidate in
+            index != blockIndex && candidate.id.contentHash == newContentHash
+        }
+        guard oldHashCount == 1, !newHashAlreadyExists else { return nil }
+
+        var blocks = previous.blocks
+        blocks[blockIndex] = Block(
+            id: BlockID(contentHash: newContentHash, occurrence: 0),
+            kind: newKind,
+            range: ByteRange(offset: block.range.offset, length: block.range.length + byteDelta)
+        )
+        shiftAndReassignIDs(&blocks, from: blockIndex, by: byteDelta)
+
+        let shiftedOutline = previous.outline.map { heading in
+            guard heading.range.offset > block.range.offset else { return heading }
+            return HeadingInfo(
+                id: heading.id,
+                level: heading.level,
+                title: heading.title,
+                slug: heading.slug,
+                range: ByteRange(offset: heading.range.offset + byteDelta, length: heading.range.length)
+            )
+        }
+
+        var stats = previous.stats
+        // Diff, not recount — same reasoning as the paragraph path.
+        stats.characterCount += newSlice.count - oldSlice.count
+        // Only code-block bodies feed the prose word count (mermaid and math
+        // sources are diagrams, not words — see convertCodeBlock).
+        if case .codeBlock(_, let oldCode) = block.kind,
+           case .codeBlock(_, let newCode) = newKind {
+            stats.wordCount += wordCount(in: newCode) - wordCount(in: oldCode)
+        }
+
+        return QuoinDocument(
+            source: newSource,
+            blocks: blocks,
+            outline: shiftedOutline,
+            stats: stats,
+            sourceHash: SHA256Hex.hash(of: newSource)
+        )
+    }
+
+    /// True when both kinds belong to the same fenced-embed family, so an
+    /// edit can't silently reclassify a block (mermaid → plain code, say)
+    /// without the full parse seeing it.
+    private static func sameEmbedFamily(_ a: BlockKind, _ b: BlockKind) -> Bool {
+        switch (a, b) {
+        case (.codeBlock(let la, _), .codeBlock(let lb, _)): return la == lb
+        case (.mermaid, .mermaid): return true
+        case (.mathBlock, .mathBlock): return true
+        default: return false
+        }
     }
 
     private static func plainParagraphFastPath(
@@ -103,7 +239,24 @@ public enum MarkdownConverter {
               isSafePlainParagraphSource(newSlice)
         else { return nil }
 
-        let newKind = BlockKind.paragraph(inlines: plainParagraphInlines(from: newSlice))
+        // Self-calibrating slice re-parse, never a hand-rolled imitation of
+        // cmark: the parser applies smart punctuation (straight quotes come
+        // out curly), so synthesizing inlines from the raw slice produced
+        // documents that differed from a full parse wherever the paragraph
+        // contained an apostrophe. Parse the slice with the real pipeline;
+        // the old slice must reproduce the old block exactly, and the new
+        // slice must stay one paragraph grown by exactly the edit's delta.
+        let oldParse = parse(oldSlice)
+        guard oldParse.blocks.count == 1, oldParse.blocks[0].kind == block.kind else { return nil }
+        let sliceByteDelta = edit.replacement.utf8.count - edit.range.length
+        let newParse = parse(newSlice)
+        guard newParse.blocks.count == 1,
+              case .paragraph = newParse.blocks[0].kind,
+              newParse.blocks[0].range.offset == oldParse.blocks[0].range.offset,
+              newParse.blocks[0].range.length == oldParse.blocks[0].range.length + sliceByteDelta
+        else { return nil }
+
+        let newKind = newParse.blocks[0].kind
         let newContentHash = contentHash(for: newKind)
         let oldContentHash = block.id.contentHash
         let oldHashCount = previous.blocks.filter { $0.id.contentHash == oldContentHash }.count
@@ -119,11 +272,7 @@ public enum MarkdownConverter {
             kind: newKind,
             range: ByteRange(offset: block.range.offset, length: block.range.length + byteDelta)
         )
-        if byteDelta != 0, blockIndex + 1 < blocks.count {
-            for index in (blockIndex + 1)..<blocks.count {
-                blocks[index] = shift(block: blocks[index], by: byteDelta)
-            }
-        }
+        shiftAndReassignIDs(&blocks, from: blockIndex, by: byteDelta)
 
         let shiftedOutline = previous.outline.map { heading in
             guard heading.range.offset > block.range.offset else { return heading }
@@ -136,7 +285,10 @@ public enum MarkdownConverter {
             )
         }
         var stats = previous.stats
-        stats.characterCount = newSource.count
+        // Diff, not recount: `newSource.count` walks every grapheme in the
+        // document (tens of ms in a novel). The slice boundaries are
+        // identical before and after, so the slice-count delta is exact.
+        stats.characterCount += newSlice.count - oldSlice.count
         stats.wordCount += wordCount(in: newSlice) - wordCount(in: oldSlice)
 
         return QuoinDocument(
@@ -198,6 +350,93 @@ public enum MarkdownConverter {
             words += 1
         }
         return words
+    }
+
+    /// Shifts every block at `from+1`… by `delta` bytes AND re-derives block
+    /// identities from `from` onward so the result is indistinguishable from
+    /// a full parse.
+    ///
+    /// Two forces make plain range-shifting insufficient:
+    /// - Container kinds (list / blockQuote / callout) embed their child
+    ///   `Block`s — ranges included — so `BlockID.contentHash` (a hash of
+    ///   the kind) CHANGES when a container merely moves. Keeping the old id
+    ///   left stale identities on every container below the caret; a later
+    ///   full parse would then assign different ids and defeat every
+    ///   BlockID-keyed cache.
+    /// - Occurrence numbering is global and assigned in the Builder's
+    ///   makeBlock order (children before their container, document order
+    ///   otherwise). Changing one block's hash can renumber a later
+    ///   duplicate, so occurrences must be replayed, not preserved.
+    ///
+    /// The walk replays exactly that: counts are seeded from the untouched
+    /// prefix (kinds unchanged there ⇒ existing hashes are the parser's),
+    /// then every block from `from` onward gets its hash re-derived (only
+    /// where the kind value actually changed) and its occurrence assigned
+    /// in order.
+    private static func shiftAndReassignIDs(_ blocks: inout [Block], from: Int, by delta: Int) {
+        var seen: [Int: Int] = [:]
+        for index in 0..<from {
+            countInMakeOrder(blocks[index], into: &seen)
+        }
+        for index in from..<blocks.count {
+            let shifted = index == from ? blocks[index] : shift(block: blocks[index], by: delta)
+            blocks[index] = reassignIDs(shifted, seen: &seen)
+        }
+    }
+
+    /// Replays the Builder's makeBlock counting order (children first) over
+    /// an untouched block, using the existing ids' hashes.
+    private static func countInMakeOrder(_ block: Block, into seen: inout [Int: Int]) {
+        for child in childBlocks(of: block.kind) {
+            countInMakeOrder(child, into: &seen)
+        }
+        seen[block.id.contentHash, default: 0] += 1
+    }
+
+    /// Re-derives ids for a (possibly shifted) block and its children in
+    /// makeBlock order. Only container kinds embed ranges, so only they need
+    /// a fresh hash; leaf kinds keep their content hash and just replay
+    /// their occurrence.
+    private static func reassignIDs(_ block: Block, seen: inout [Int: Int]) -> Block {
+        let kind: BlockKind
+        let hash: Int
+        switch block.kind {
+        case .list(let items, let ordered, let start):
+            kind = .list(
+                items: items.map { item in
+                    ListItem(
+                        blocks: item.blocks.map { reassignIDs($0, seen: &seen) },
+                        task: item.task,
+                        taskMarkerRange: item.taskMarkerRange
+                    )
+                },
+                ordered: ordered, start: start
+            )
+            hash = contentHash(for: kind)
+        case .blockQuote(let children):
+            kind = .blockQuote(children: children.map { reassignIDs($0, seen: &seen) })
+            hash = contentHash(for: kind)
+        case .callout(let calloutKind, let children):
+            kind = .callout(kind: calloutKind, children: children.map { reassignIDs($0, seen: &seen) })
+            hash = contentHash(for: kind)
+        default:
+            kind = block.kind
+            hash = block.id.contentHash
+        }
+        let occurrence = seen[hash, default: 0]
+        seen[hash] = occurrence + 1
+        return Block(id: BlockID(contentHash: hash, occurrence: occurrence), kind: kind, range: block.range)
+    }
+
+    /// A container kind's direct child blocks, in the Builder's makeBlock
+    /// order (list items left to right).
+    private static func childBlocks(of kind: BlockKind) -> [Block] {
+        switch kind {
+        case .list(let items, _, _): return items.flatMap(\.blocks)
+        case .blockQuote(let children): return children
+        case .callout(_, let children): return children
+        default: return []
+        }
     }
 
     private static func shift(block: Block, by delta: Int) -> Block {

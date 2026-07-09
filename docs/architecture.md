@@ -68,6 +68,24 @@ and publishes immutable `QuoinDocument` snapshots. External changes while
 edits are unsaved surface as a non-blocking conflict banner (keep mine / take
 disk); self-inflicted file events are recognised by source hash.
 
+**Keystroke fast paths.** `MarkdownConverter.parseAfterEdit` re-parses
+block-locally for the two things a caret does all day: typing in a plain
+paragraph and typing inside a fenced embed block (code / mermaid / math).
+Both paths re-parse only the edited block's source slice with the real
+parser — never a hand-rolled imitation (cmark's smart punctuation once made
+an imitation diverge) — and self-calibrate: the old slice must reproduce the
+old block exactly, and the new slice must stay one block of the same family,
+grown by exactly the edit's byte delta. Anything structural (a new fence, a
+paragraph turning into a list, a footnote in the document) falls back to the
+full parse; conservative rejections are always safe. Container blocks below
+the edit get their ids re-derived, because a container's `contentHash`
+covers its children's ranges and moves with every byte inserted above it.
+The editing-latency contract — every keystroke's core slice fits in a 60 Hz
+frame at ANY document size, charts or not — is enforced in CI by
+`EditingLatencyTests` (strategy assertions + wall-clock ceilings over
+generated small/medium/large/novel fixtures) and, for the render slice, by
+`EditingRenderLatencyTests`.
+
 ### Project (QuoinRender)
 
 `AttributedRenderer.render` walks the block list and emits one attributed
