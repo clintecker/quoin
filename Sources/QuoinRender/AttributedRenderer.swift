@@ -169,7 +169,7 @@ public struct AttributedRenderer {
                 // editable in place. Only the caret's span reveals its
                 // delimiters (handoff span-level rule). Never cached — its
                 // fragment changes as the caret moves.
-                let editable = renderEditableSource(slice, caretOffset: activeCaret)
+                let editable = renderEditableSource(slice, caretOffset: activeCaret, kind: block.kind)
                 activeEditableRange = NSRange(location: start, length: editable.length)
                 activeSourceText = slice
                 output.append(editable)
@@ -214,8 +214,10 @@ public struct AttributedRenderer {
         )
     }
 
-    public func renderEditableSourceFragment(_ slice: String, caretOffset: Int? = nil) -> NSAttributedString {
-        renderEditableSource(slice, caretOffset: caretOffset)
+    public func renderEditableSourceFragment(
+        _ slice: String, caretOffset: Int? = nil, kind: BlockKind? = nil
+    ) -> NSAttributedString {
+        renderEditableSource(slice, caretOffset: caretOffset, kind: kind)
     }
 
     /// One block's READ fragment, exactly as the full render loop would
@@ -305,7 +307,7 @@ public struct AttributedRenderer {
                 : 0
             let fragmentLength = blockRange.length - separator
             guard fragmentLength >= 0 else { return nil }
-            let editable = renderEditableSourceFragment(slice, caretOffset: caret)
+            let editable = renderEditableSourceFragment(slice, caretOffset: caret, kind: block.kind)
             patches.append((
                 location: blockRange.location,
                 patch: RenderStoragePatch(
@@ -411,8 +413,72 @@ public struct AttributedRenderer {
     /// The active block's raw markdown, styled for in-place editing:
     /// content approximates its rendered look, delimiters stay visible at
     /// 35% ink mono (syntax reveal), and the character mapping stays 1:1.
-    private func renderEditableSource(_ slice: String, caretOffset: Int? = nil) -> NSAttributedString {
-        MarkdownSourceStyler(theme: theme).style(slice, caretOffset: caretOffset)
+    ///
+    /// The revealed fragment mirrors the READ fragment's outer vertical
+    /// metrics (a heading's spacing-above, a paragraph's trailing spacing) —
+    /// without them the block's height collapsed on activation and the
+    /// content below shifted up, nudging the viewport on every click-in.
+    private func renderEditableSource(
+        _ slice: String, caretOffset: Int? = nil, kind: BlockKind? = nil
+    ) -> NSAttributedString {
+        let styled = NSMutableAttributedString(
+            attributedString: MarkdownSourceStyler(theme: theme).style(slice, caretOffset: caretOffset))
+        guard styled.length > 0 else { return styled }
+
+        let spacingBefore: CGFloat
+        let spacingAfter: CGFloat
+        var lineHeightMultiple: CGFloat?
+        if case .heading(let level, _, _) = kind {
+            let spacing = theme.headingSpacing(level: level)
+            spacingBefore = spacing.above
+            spacingAfter = spacing.below
+        } else {
+            spacingBefore = 0
+            spacingAfter = theme.paragraphSpacing
+            // Same font, same multiple ⇒ a plain paragraph's revealed height
+            // equals its rendered height exactly — zero viewport shift for
+            // the most common click-to-edit.
+            lineHeightMultiple = theme.bodyLineHeightMultiple
+        }
+
+        // First and last non-empty paragraphs carry the block's outer gaps.
+        let text = styled.string as NSString
+        let full = NSRange(location: 0, length: text.length)
+        var firstParagraph = full
+        var lastParagraph = full
+        var seenFirst = false
+        text.enumerateSubstrings(in: full, options: [.byParagraphs, .substringNotRequired]) { _, range, _, _ in
+            guard range.length > 0 else { return }
+            if !seenFirst { firstParagraph = range; seenFirst = true }
+            lastParagraph = range
+        }
+
+        mutateParagraphStyles(in: styled, range: full) { style, _ in
+            if let lineHeightMultiple { style.lineHeightMultiple = lineHeightMultiple }
+        }
+        mutateParagraphStyles(in: styled, range: firstParagraph) { style, _ in
+            style.paragraphSpacingBefore = spacingBefore
+        }
+        mutateParagraphStyles(in: styled, range: lastParagraph) { style, _ in
+            style.paragraphSpacing = spacingAfter
+        }
+        return styled
+    }
+
+    /// Mutates a copy of each effective paragraph style run within `range`.
+    private func mutateParagraphStyles(
+        in output: NSMutableAttributedString, range: NSRange,
+        _ mutate: (NSMutableParagraphStyle, NSRange) -> Void
+    ) {
+        guard range.length > 0, range.location < output.length else { return }
+        let clamped = NSRange(location: range.location,
+                              length: min(range.length, output.length - range.location))
+        output.enumerateAttribute(.paragraphStyle, in: clamped) { value, runRange, _ in
+            let style = ((value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle)
+                ?? NSMutableParagraphStyle()
+            mutate(style, runRange)
+            output.addAttribute(.paragraphStyle, value: style, range: runRange)
+        }
     }
 
     // MARK: - Blocks

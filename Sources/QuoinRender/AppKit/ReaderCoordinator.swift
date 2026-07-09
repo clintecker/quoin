@@ -89,6 +89,18 @@ extension MarkdownReaderView {
 
             let oldChanged = NSRange(location: prefix, length: oldLen - prefix - suffix)
             let newChangedLen = newLen - prefix - suffix
+
+            // Identical STRINGS can still carry different ATTRIBUTES — a
+            // plain paragraph's revealed source is the same characters as
+            // its rendered text, differing only in the reveal tint and
+            // fonts. A string-only splice would "change nothing" and leave
+            // the old attributes behind (the shipped symptom: the reveal
+            // highlight lingering on a block after clicking away). Sync
+            // attribute runs in place — no text edit, so no layout jump.
+            if oldChanged.length == 0, newChangedLen == 0 {
+                return syncAttributesWhereDifferent(in: storage, to: newAttr)
+            }
+
             // If most of the document changed, a single set is simpler and a
             // scroll re-anchor is warranted.
             if oldChanged.length + newChangedLen > (oldLen + newLen) * 3 / 4 {
@@ -103,6 +115,35 @@ extension MarkdownReaderView {
             storage.replaceCharacters(in: oldChanged, with: replacement)
             storage.endEditing()
             return NSRange(location: prefix, length: newChangedLen)
+        }
+
+        /// Replaces attribute runs wherever they differ between the storage
+        /// and `newAttr` (same string in both, by precondition). Returns the
+        /// union range of the synced runs, or a zero range when nothing
+        /// differed — non-nil either way, so callers don't re-anchor scroll
+        /// for what is at most an attribute repaint.
+        private static func syncAttributesWhereDifferent(
+            in storage: NSTextStorage, to newAttr: NSAttributedString
+        ) -> NSRange {
+            var synced: NSRange?
+            var location = 0
+            storage.beginEditing()
+            while location < newAttr.length {
+                var newRunRange = NSRange()
+                let newAttrs = newAttr.attributes(at: location, effectiveRange: &newRunRange)
+                var oldRunRange = NSRange()
+                let oldAttrs = storage.attributes(at: location, effectiveRange: &oldRunRange)
+                // Compare over the shared extent of the two runs.
+                let step = min(NSMaxRange(newRunRange), NSMaxRange(oldRunRange)) - location
+                if !(newAttrs as NSDictionary).isEqual(to: oldAttrs) {
+                    let range = NSRange(location: location, length: step)
+                    storage.setAttributes(newAttrs, range: range)
+                    synced = synced.map { NSUnionRange($0, range) } ?? range
+                }
+                location += max(step, 1)
+            }
+            storage.endEditing()
+            return synced ?? NSRange(location: 0, length: 0)
         }
 
         static func spliceChanges(
@@ -336,10 +377,16 @@ extension MarkdownReaderView {
             styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length)) { attrs, range, _ in
                 var merged = attrs
                 if let blockID { merged[QuoinAttribute.blockID] = blockID }
-                storage.setAttributes(
-                    merged,
-                    range: NSRange(location: active.location + range.location, length: range.length)
-                )
+                let target = NSRange(location: active.location + range.location, length: range.length)
+                // Keep the storage's paragraph styles: the revealed fragment
+                // carries the block's outer spacing (heading spacing-above,
+                // trailing paragraph gap), which the bare styler pass lacks —
+                // overwriting it here made the block's height collapse on the
+                // first caret move after activation.
+                if let existingStyle = storage.attribute(.paragraphStyle, at: target.location, effectiveRange: nil) {
+                    merged[.paragraphStyle] = existingStyle
+                }
+                storage.setAttributes(merged, range: target)
             }
             storage.endEditing()
             // Delimiter fonts flip between 1pt and full size — a reflow —

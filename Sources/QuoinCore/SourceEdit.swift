@@ -103,4 +103,73 @@ public enum EditMapping {
         else { return nil }
         return ByteRange(offset: start, length: end - start)
     }
+
+    /// Maps a caret position in a block's RENDERED text onto its SOURCE
+    /// slice (both UTF-16). The rendered projection hides or transforms
+    /// source characters — `**` delimiters, `### ` prefixes, the two
+    /// trailing spaces of a hard break, `&amp;` entities — so a raw offset
+    /// drifts by every hidden character before the caret (clicking at the
+    /// end of "…a hard line break." landed two characters early).
+    ///
+    /// Greedy two-pointer alignment: matching characters advance both
+    /// sides; a mismatch advances the SOURCE (hidden delimiter) unless the
+    /// rendered character can't exist in source at all (an attachment's
+    /// U+FFFC), which advances the rendered side. Newline and space match
+    /// each other (a soft break renders as either). The result is exact for
+    /// plain text and lands within the hidden-run for styled spans — never
+    /// several characters adrift.
+    public static func sourceOffset(
+        forRenderedOffset renderedOffset: Int,
+        renderedText: String,
+        sourceText: String
+    ) -> Int {
+        let rendered = Array(renderedText.utf16)
+        let source = Array(sourceText.utf16)
+        let target = min(max(0, renderedOffset), rendered.count)
+        let attachment: UInt16 = 0xFFFC
+        let newline = UInt16(UnicodeScalar("\n").value)
+        let space = UInt16(UnicodeScalar(" ").value)
+
+        func aligned(_ sc: UInt16, _ rc: UInt16) -> Bool {
+            sc == rc || (sc == newline && rc == space) || (sc == space && rc == newline)
+        }
+        /// First index in `source` within a bounded window that aligns with
+        /// `rc`, or nil — nil means `rc` is a TRANSFORMED character (an
+        /// entity like `&lt;` rendering as `<`) with no literal counterpart.
+        func lookahead(from start: Int, for rc: UInt16) -> Int? {
+            let limit = min(start + 24, source.count)
+            var i = start
+            while i < limit {
+                if aligned(source[i], rc) { return i }
+                i += 1
+            }
+            return nil
+        }
+
+        var s = 0
+        var r = 0
+        while r < target, s < source.count {
+            let rc = rendered[r]
+            if rc == attachment {
+                r += 1                                   // rendered-only (image, chip)
+            } else if aligned(source[s], rc) {
+                s += 1; r += 1
+            } else if let match = lookahead(from: s, for: rc) {
+                s = match                                // skip the hidden source run
+            } else {
+                s += 1; r += 1                           // transformed char: 1:1 fallback
+            }
+        }
+        // A click at the very START aligns across the leading hidden run
+        // (clicking at a heading's start lands past "### "). Applied ONLY at
+        // zero: after consuming rendered text, the caret belongs BEFORE any
+        // closing delimiter (clicking after "bold" stays inside the `**`
+        // span so continued typing extends it).
+        if target == 0, r < rendered.count, s < source.count,
+           rendered[r] != attachment, !aligned(source[s], rendered[r]),
+           let match = lookahead(from: s, for: rendered[r]) {
+            s = match
+        }
+        return s
+    }
 }

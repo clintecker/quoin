@@ -269,7 +269,23 @@ final class ReaderModel {
         if let id, let block = document.blocks.first(where: { $0.id == id }),
            let slice = document.source.substring(in: block.range) {
             let sourceLength = slice.utf16.count
-            caretInActiveBlock = min(max(0, caretHint ?? sourceLength), sourceLength)
+            if let caretHint, let renderedRange = rendered.blockRanges[id],
+               renderedRange.location + renderedRange.length <= rendered.attributed.length {
+                // The hint is an offset into the block's RENDERED text; the
+                // source hides characters the projection dropped (hard-break
+                // spaces, `**`, `### `, entity source), so align the two
+                // texts instead of reusing the raw offset.
+                let renderedText = (rendered.attributed.string as NSString)
+                    .substring(with: renderedRange)
+                let mapped = EditMapping.sourceOffset(
+                    forRenderedOffset: caretHint,
+                    renderedText: renderedText,
+                    sourceText: slice
+                )
+                caretInActiveBlock = min(max(0, mapped), sourceLength)
+            } else {
+                caretInActiveBlock = min(max(0, caretHint ?? sourceLength), sourceLength)
+            }
         } else {
             caretInActiveBlock = nil
         }
@@ -487,7 +503,8 @@ final class ReaderModel {
             "render.activeBlockPatch.fragment",
             metadata: "block_utf8=\(newDocument.blocks[newIndex].range.length)"
         ) {
-            renderer.renderEditableSourceFragment(newSlice, caretOffset: caretInActiveBlock)
+            renderer.renderEditableSourceFragment(
+                newSlice, caretOffset: caretInActiveBlock, kind: newDocument.blocks[newIndex].kind)
         }
         let delta = replacement.length - oldEditableRange.length
 
