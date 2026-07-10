@@ -63,6 +63,52 @@ final class QuoinTextView: NSTextView {
         super.paste(sender)
     }
 
+    /// Link hover (idea #8): reports the URL under the pointer (nil when
+    /// the pointer leaves links) so the coordinator can peek internal
+    /// anchor targets. Throttled by character index.
+    var onLinkHover: ((URL?, NSRect) -> Void)?
+    private var hoverTracking: NSTrackingArea?
+    private var lastHoverIndex = -1
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking {
+            removeTrackingArea(hoverTracking)
+            self.hoverTracking = nil
+        }
+        guard onLinkHover != nil else { return }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard let onLinkHover else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        let index = characterIndexForInsertion(at: point)
+        guard index != lastHoverIndex else { return }
+        lastHoverIndex = index
+        guard index >= 0,
+              let storage = textContentStorage?.textStorage,
+              index < storage.length,
+              let url = storage.attribute(.link, at: index, effectiveRange: nil) as? URL
+        else {
+            onLinkHover(nil, .zero)
+            return
+        }
+        onLinkHover(url, NSRect(x: point.x - 2, y: point.y - 2, width: 4, height: 4))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        lastHoverIndex = -1
+        onLinkHover?(nil, .zero)
+    }
+
     /// The drawn editing frame's box (text-view coordinates), reported
     /// each draw pass — nil when no block is open. The side-by-side
     /// preview panel positions itself against it.

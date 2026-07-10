@@ -818,6 +818,65 @@ extension MarkdownReaderView {
             }
         }
 
+        // MARK: Link hover peek (idea #8)
+
+        private var linkPreviewPopover: NSPopover?
+        private var linkHoverDwell: DispatchWorkItem?
+        private var linkPreviewURL: URL?
+
+        /// Hovering an INTERNAL anchor link peeks its target section in a
+        /// small card after a short dwell (Wikipedia-style); external
+        /// links stay quiet. Semitransient — moves away, it goes away.
+        func handleLinkHover(url: URL?, at rect: NSRect) {
+            linkHoverDwell?.cancel()
+            linkHoverDwell = nil
+            guard let url, QuoinLink.anchorSlug(from: url) != nil else {
+                if linkPreviewPopover?.isShown == true { linkPreviewPopover?.close() }
+                linkPreviewURL = nil
+                return
+            }
+            guard url != linkPreviewURL || linkPreviewPopover?.isShown != true else { return }
+            let work = DispatchWorkItem { [weak self] in
+                self?.presentLinkPreview(for: url, at: rect)
+            }
+            linkHoverDwell = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+        }
+
+        private func presentLinkPreview(for url: URL, at rect: NSRect) {
+            guard let textView,
+                  let slug = QuoinLink.anchorSlug(from: url),
+                  let blockID = parent.anchorResolver(slug),
+                  let storage = textView.textContentStorage?.textStorage,
+                  let range = blockRanges[blockID],
+                  range.location < storage.length
+            else { return }
+            let length = min(storage.length - range.location, max(range.length, 600))
+            let snippet = storage.attributedSubstring(
+                from: NSRange(location: range.location, length: length))
+
+            let label = NSTextField(wrappingLabelWithString: "")
+            label.attributedStringValue = snippet
+            label.preferredMaxLayoutWidth = 340
+            label.isSelectable = false
+            let fitting = label.sizeThatFits(NSSize(width: 340, height: 1000))
+            let height = min(fitting.height, 240)
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 364, height: height + 24))
+            label.frame = NSRect(x: 12, y: 12, width: 340, height: height)
+            container.addSubview(label)
+
+            let popover = linkPreviewPopover ?? NSPopover()
+            popover.behavior = .semitransient
+            popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            let controller = NSViewController()
+            controller.view = container
+            popover.contentViewController = controller
+            popover.contentSize = container.frame.size
+            popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
+            linkPreviewPopover = popover
+            linkPreviewURL = url
+        }
+
         /// Smart paste (idea #4), scoped to active-block editing: a URL
         /// pasted over selected text becomes a link; tab-separated rows
         /// pasted at the caret become a table. Anything else falls through

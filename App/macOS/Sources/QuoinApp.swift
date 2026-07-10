@@ -113,6 +113,19 @@ private struct FormatCommands: Commands {
             Button("Add Link") { post(AppDelegate.formatNotification, format: "link") }
                 .keyboardShortcut("k", modifiers: .command)
             Divider()
+            Button("Move Block Up") {
+                NotificationCenter.default.post(
+                    name: AppDelegate.moveBlockNotification, object: nil,
+                    userInfo: ["direction": "up"])
+            }
+            .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+            Button("Move Block Down") {
+                NotificationCenter.default.post(
+                    name: AppDelegate.moveBlockNotification, object: nil,
+                    userInfo: ["direction": "down"])
+            }
+            .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            Divider()
             Button(isEditingBlock == true ? "Done Editing" : "Edit Source") {
                 post(AppDelegate.toggleEditSourceNotification)
             }
@@ -143,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let toggleFocusModeNotification = Notification.Name("quoin.toggleFocusMode")
     static let toggleTypewriterNotification = Notification.Name("quoin.toggleTypewriter")
     static let toggleSentenceFocusNotification = Notification.Name("quoin.toggleSentenceFocus")
+    static let moveBlockNotification = Notification.Name("quoin.moveBlock")
     static let formatNotification = Notification.Name("quoin.format")
     static let undoNotification = Notification.Name("quoin.undo")
     static let redoNotification = Notification.Name("quoin.redo")

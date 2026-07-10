@@ -234,6 +234,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
         textView.onSmartPaste = { [weak coordinator = context.coordinator] in
             coordinator?.handleSmartPaste() ?? false
         }
+        textView.onLinkHover = { [weak coordinator = context.coordinator] url, rect in
+            coordinator?.handleLinkHover(url: url, at: rect)
+        }
+        textView.updateTrackingAreas()
         return scrollView
     }
 

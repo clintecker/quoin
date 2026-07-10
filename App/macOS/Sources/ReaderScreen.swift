@@ -144,6 +144,9 @@ struct ReaderScreen: View {
             }
             .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
         }
+        .environment(\.outlineSectionPreview, { headingID in
+            sectionPreview(for: headingID)
+        })
         // Reading progress hairline (idea #12): a quiet accent line along
         // the editor's top edge, width = scroll fraction.
         .overlay(alignment: .top) {
@@ -267,6 +270,13 @@ struct ReaderScreen: View {
         // View ▸ Sentence Focus (granularity for focus mode).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleSentenceFocusNotification)) { _ in
             isSentenceFocus.toggle()
+        }
+        // Format ▸ Move Block Up/Down (⌥⌘↑ / ⌥⌘↓) — acts on the caret's
+        // block (idea #9's keyboard grammar).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.moveBlockNotification)) { note in
+            guard let id = model.activeBlockID else { return }
+            let direction = note.userInfo?["direction"] as? String
+            model.perform(direction == "up" ? .moveUp : .moveDown, on: id)
         }
         // Lets the Format menu title follow the editing state.
         .focusedSceneValue(\.quoinIsEditingBlock, model.activeBlockID != nil)
@@ -401,6 +411,29 @@ struct ReaderScreen: View {
         if let here = topBlockID { backStack.append(here) }
         scrollTarget = target
         scrollGeneration += 1
+    }
+
+    /// A short rendered snippet of a heading's section, for the outline's
+    /// hover peek (idea #5). Uses the LIVE projection — what you peek is
+    /// exactly what's rendered.
+    private func sectionPreview(for headingID: BlockID) -> AttributedString? {
+        guard let start = model.rendered.blockRanges[headingID],
+              let index = model.outline.firstIndex(where: { $0.id == headingID })
+        else { return nil }
+        let level = model.outline[index].level
+        var end = model.rendered.attributed.length
+        for heading in model.outline[(index + 1)...] where heading.level <= level {
+            if let range = model.rendered.blockRanges[heading.id] {
+                end = range.location
+                break
+            }
+        }
+        let length = min(end - start.location, 1200)
+        guard length > 0,
+              start.location + length <= model.rendered.attributed.length else { return nil }
+        let snippet = model.rendered.attributed.attributedSubstring(
+            from: NSRange(location: start.location, length: length))
+        return try? AttributedString(snippet, including: \.appKit)
     }
 
     /// The ancestor chain of the current section (H1 › H2 › …), for the
@@ -575,10 +608,28 @@ struct ReaderScreen: View {
 // indent 0/16/34 by level, H1 bold / H2 semibold / H3+ regular, current
 // section in accent at weight 500)
 
+/// Section-preview provider for the outline's hover peek (idea #5).
+private struct OutlineSectionPreviewKey: EnvironmentKey {
+    static let defaultValue: (BlockID) -> AttributedString? = { _ in nil }
+}
+
+extension EnvironmentValues {
+    var outlineSectionPreview: (BlockID) -> AttributedString? {
+        get { self[OutlineSectionPreviewKey.self] }
+        set { self[OutlineSectionPreviewKey.self] = newValue }
+    }
+}
+
 struct OutlinePanel: View {
     let outline: [HeadingInfo]
     let currentSectionID: BlockID?
     let onSelect: (BlockID) -> Void
+
+    @Environment(\.outlineSectionPreview) private var sectionPreview
+    /// Hover peek state: the row under the pointer, admitted after a
+    /// short dwell so scrubbing the list doesn't strobe the card.
+    @State private var hoveredID: BlockID?
+    @State private var peekedID: BlockID?
 
     /// Collapsed heading subtrees (session-scoped). A heading hides when
     /// any ancestor — the nearest preceding heading of a shallower level —
@@ -645,7 +696,37 @@ struct OutlinePanel: View {
                             }
                         }
                     )
+                    .onHover { inside in
+                        hoveredID = inside ? heading.id : (hoveredID == heading.id ? nil : hoveredID)
+                        if inside {
+                            let candidate = heading.id
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(350))
+                                if hoveredID == candidate {
+                                    withAnimation(.easeOut(duration: 0.12)) { peekedID = candidate }
+                                }
+                            }
+                        } else if peekedID == heading.id {
+                            withAnimation(.easeOut(duration: 0.12)) { peekedID = nil }
+                        }
+                    }
                 }
+            }
+        }
+        // Hover peek (idea #5): a calm card pinned to the panel's bottom
+        // with the hovered section's LIVE rendering — no popover flicker.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let peekedID, let preview = sectionPreview(peekedID) {
+                ScrollView {
+                    Text(preview)
+                        .textSelection(.disabled)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 160)
+                .background(.bar)
+                .overlay(alignment: .top) { Divider() }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .overlay {
