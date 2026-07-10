@@ -267,3 +267,38 @@ fail to compile. Supporting it means changing those guards to
 5. Never override system shortcuts (⌘P print, ⌘E use-selection-for-find,
    ⌘H hide).
 6. Decorations are drawn geometry, not text attributes.
+
+## Addendum — subsystems added in the July 2026 push
+
+- **Embed editing** (`docs/design/embed-editing-ux.md`): typed
+  `CaretHint.rendered/.source` (two coordinate spaces, one caret),
+  keystroke replay through `activateBlock(pendingInsertion:)`,
+  `RevealedFragment` (fragment + 1:1 editable subrange), `quoin-edit://`
+  chips, the drawn `✓ done`/`editingFrame` decoration, and reverse caret
+  mapping on flip-back.
+- **Live preview panel** (`PreviewPanelView` + `PreviewPanelChoreographer`):
+  the active diagram/equation renders side-by-side as a click-transparent
+  overlay; a pure clock-injected decision table paces presentation
+  (instant success, 500ms typing-idle paused badge, ghost dissolves).
+  Held last-good render survives kind flaps via slice-lineage guarding.
+- **Flip motion** (`FlipTransitionController`): snapshot-overlay
+  choreography, delta-keyed, cosmetic by construction (real layout is
+  instant). Overlay pixels ship as NSImageView-on-CGImage-crops; the
+  fidelity test self-calibrates a CARenderer readout with an NSImageView
+  anchor — no readback API is trusted about orientation.
+- **Edit-echo serialization** (`ReaderCoordinator`): keystrokes arriving
+  before the previous edit's projection echo queue and flush one per ack
+  — positions are never computed against a stale projection.
+- **Block operations** (`QuoinCore/BlockEditing`): byte-exact move/
+  duplicate/delete splices (separator bytes untouched), table row/column
+  growth, tabular smart paste.
+- **Reading chrome**: focus mode + sentence scope (TextKit rendering
+  attributes, zero reflow), typewriter scrolling (the caret-pin reused),
+  jump history, breadcrumb path, outline collapse + hover peek, link
+  hover previews, reading-progress hairline.
+- **Verification harnesses**: math golden PNGs
+  (`MathGoldenRenderTests`, `Tests/fixtures/math-golden/`) doubling as a
+  coverage ledger; compositor-truth flip fidelity; per-feature latency
+  budgets (see `docs/launch-ledger.md` for the enrollment gaps).
+- **Ledgers**: `docs/rendering-ledger.md` (field reports → fixes),
+  `docs/launch-ledger.md` (four-track pre-launch review).
