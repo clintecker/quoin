@@ -157,6 +157,30 @@ struct ReaderScreen: View {
                     try? await Task.sleep(for: .seconds(1))
                     isExportVisible = true
                 }
+            case "mermaidResilience":
+                // Self-driving repro for the live-preview resilience loop
+                // (ledger #6/#8 family): open the first chart's source,
+                // break its header, then fix it — with QUOIN_EDIT_PERF_LOG
+                // the panel.update traces record what the panel actually
+                // showed at each step.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    guard let block = model.document.blocks.first(where: {
+                        if case .mermaid = $0.kind { return true }
+                        return false
+                    }) else { return }
+                    model.activateBlock(block.id, caretHint: .source(0))
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard let active = model.activeBlockID,
+                          let activeBlock = model.document.blocks.first(where: { $0.id == active }),
+                          let slice = model.document.source.substring(in: activeBlock.range),
+                          let range = slice.range(of: "flowchart")
+                    else { return }
+                    let byteOffset = slice[..<range.lowerBound].utf8.count
+                    model.applyEdit(relativeRange: ByteRange(offset: byteOffset, length: 0), replacement: "@@@")
+                    try? await Task.sleep(for: .seconds(2))
+                    model.applyEdit(relativeRange: ByteRange(offset: byteOffset, length: 3), replacement: "")
+                }
             default:
                 break
             }

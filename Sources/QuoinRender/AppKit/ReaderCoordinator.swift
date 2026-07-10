@@ -816,6 +816,14 @@ extension MarkdownReaderView {
         /// coordinates (nil = no open block).
         func updatePreviewPanel(editingFrame frameBox: CGRect?) {
             guard let textView else { return }
+            if QuoinPerformanceTrace.isEnabled {
+                let panel = parent.rendered.previewPanel
+                QuoinPerformanceTrace.log(
+                    "panel.update", startedAt: DispatchTime.now().uptimeNanoseconds,
+                    metadata: "frame=\(frameBox.map { Int($0.minY) } ?? -1) "
+                        + "panel=\(panel == nil ? "nil" : "img@\(UInt(bitPattern: ObjectIdentifier(panel!.image).hashValue) % 100_000)")"
+                        + " status=\(panel?.statusMessage != nil) active=\(parent.rendered.activeBlockID != nil) rev=\(parent.rendered.revision)")
+            }
             guard let frameBox,
                   let panel = parent.rendered.previewPanel,
                   parent.rendered.activeBlockID != nil else {
