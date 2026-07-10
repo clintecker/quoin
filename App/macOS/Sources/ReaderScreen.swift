@@ -31,6 +31,8 @@ struct ReaderScreen: View {
     @AppStorage("QuoinFocusMode") private var isFocusMode = false
     /// Typewriter scrolling: the caret line holds a fixed height.
     @AppStorage("QuoinTypewriter") private var isTypewriter = false
+    /// Sentence-granularity focus (only meaningful with focus mode on).
+    @AppStorage("QuoinFocusSentence") private var isSentenceFocus = false
     /// Word-count goal (0 = off): progress shows in the status bar.
     @AppStorage("QuoinWordGoal") private var wordGoal = 0
     /// Jump history (TOC clicks, anchor links, breadcrumbs): ⌘[ / ⌘].
@@ -91,7 +93,9 @@ struct ReaderScreen: View {
                 focusModeEnabled: isFocusMode,
                 typewriterEnabled: isTypewriter,
                 onAnchorJump: { from in recordJump(from: from) },
-                onScrollProgress: { progress in scrollProgress = progress }
+                onScrollProgress: { progress in scrollProgress = progress },
+                onBlockCommand: { id, command in model.perform(command, on: id) },
+                focusSentenceScope: isSentenceFocus
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -259,6 +263,10 @@ struct ReaderScreen: View {
         // View ▸ Typewriter Scrolling (⌥⌘T).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleTypewriterNotification)) { _ in
             isTypewriter.toggle()
+        }
+        // View ▸ Sentence Focus (granularity for focus mode).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleSentenceFocusNotification)) { _ in
+            isSentenceFocus.toggle()
         }
         // Lets the Format menu title follow the editing state.
         .focusedSceneValue(\.quoinIsEditingBlock, model.activeBlockID != nil)

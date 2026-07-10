@@ -8,6 +8,12 @@ public enum FormatCommand: Equatable, Sendable {
     case bold, italic, highlight, link
 }
 
+/// Block-granularity commands from the context menu (ideas #9/#10/#11);
+/// the host applies them as byte-exact source edits (BlockEditing).
+public enum BlockCommand: Sendable {
+    case moveUp, moveDown, duplicate, delete, addTableRow, addTableColumn
+}
+
 /// Where the caret should land when a block activates, tagged with the
 /// coordinate space the offset lives in. The two producers measure in
 /// different spaces — prose clicks yield an offset into the block's
@@ -90,6 +96,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// Fires before an in-document anchor jump with the block at the top
     /// of the viewport — the host records it as back/forward history.
     public let onAnchorJump: ((BlockID?) -> Void)?
+    /// Block actions from the context menu (move/duplicate/delete/table).
+    public let onBlockCommand: ((BlockID, BlockCommand) -> Void)?
+    /// Sentence-granularity focus (iA-Writer-style): dim to the caret's
+    /// SENTENCE inside the current block. Only meaningful with focus mode.
+    public let focusSentenceScope: Bool
     /// Scroll position as a 0…1 fraction of the document (reading
     /// progress hairline).
     public let onScrollProgress: ((Double) -> Void)?
@@ -116,7 +127,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         focusModeEnabled: Bool = false,
         typewriterEnabled: Bool = false,
         onAnchorJump: ((BlockID?) -> Void)? = nil,
-        onScrollProgress: ((Double) -> Void)? = nil
+        onScrollProgress: ((Double) -> Void)? = nil,
+        onBlockCommand: ((BlockID, BlockCommand) -> Void)? = nil,
+        focusSentenceScope: Bool = false
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -140,6 +153,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.typewriterEnabled = typewriterEnabled
         self.onAnchorJump = onAnchorJump
         self.onScrollProgress = onScrollProgress
+        self.onBlockCommand = onBlockCommand
+        self.focusSentenceScope = focusSentenceScope
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -215,6 +230,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         }
         textView.onEditingFrameGeometry = { [weak coordinator = context.coordinator] frameBox in
             coordinator?.updatePreviewPanel(editingFrame: frameBox)
+        }
+        textView.onSmartPaste = { [weak coordinator = context.coordinator] in
+            coordinator?.handleSmartPaste() ?? false
         }
         return scrollView
     }

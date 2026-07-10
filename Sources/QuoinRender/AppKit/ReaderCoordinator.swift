@@ -473,8 +473,16 @@ extension MarkdownReaderView {
                   let storage = textView.textContentStorage?.textStorage,
                   active.location + active.length <= storage.length
             else { return }
-            let styled = MarkdownSourceStyler(theme: parent.theme)
-                .style(source, caretOffset: relativeCaret)
+            // The restyle must use the SAME configuration the reveal used:
+            // a default styler re-interpreted mermaid/code source as
+            // markdown on the first caret move — mono flipped to
+            // proportional, fake spans lit up (the reported shape-shift).
+            var styler = MarkdownSourceStyler(theme: parent.theme)
+            if parent.rendered.revealVerbatimCode {
+                styler.collapsesNonLiteralSpans = false
+                styler.treatsSourceAsVerbatimCode = true
+            }
+            let styled = styler.style(source, caretOffset: relativeCaret)
             guard styled.length == active.length else { return }
 
             let blockID = storage.attribute(QuoinAttribute.blockID, at: active.location, effectiveRange: nil)
@@ -643,9 +651,13 @@ extension MarkdownReaderView {
             let caret = textView.selectedRange().location
             let currentBlock = enabled ? blockID(atCharIndex: min(caret, max(0, storage.length - 1))) : nil
 
+            // Sentence scope re-dims on every caret move within the block.
+            let sentenceScope = parent.focusSentenceScope
             guard enabled != focusDimmingActive
                     || currentBlock != focusDimmedForBlock
-                    || appliedRevision != focusAppliedRevision else { return }
+                    || appliedRevision != focusAppliedRevision
+                    || sentenceScope
+            else { return }
             focusDimmingActive = enabled
             focusDimmedForBlock = currentBlock
             focusAppliedRevision = appliedRevision
@@ -658,6 +670,35 @@ extension MarkdownReaderView {
                 guard let textRange = nsTextRange(range, in: contentStorage) else { continue }
                 layoutManager.addRenderingAttribute(
                     .foregroundColor, value: dimmed, for: textRange)
+            }
+            // Sentence granularity (idea #2, iA-Writer-style): inside the
+            // current block, everything but the caret's SENTENCE recedes
+            // too — same rendering-attribute engine, softer dim.
+            if sentenceScope, let currentBlock, let blockRange = blockRanges[currentBlock],
+               NSMaxRange(blockRange) <= storage.length {
+                let text = storage.string as NSString
+                var sentence: NSRange?
+                text.enumerateSubstrings(
+                    in: blockRange, options: [.bySentences, .substringNotRequired]
+                ) { _, range, _, stop in
+                    if caret >= range.location, caret <= NSMaxRange(range) {
+                        sentence = range
+                        stop.pointee = true
+                    }
+                }
+                if let sentence {
+                    let softDim = theme.ink.withAlphaComponent(0.4)
+                    let before = NSRange(location: blockRange.location,
+                                         length: sentence.location - blockRange.location)
+                    let after = NSRange(location: NSMaxRange(sentence),
+                                        length: NSMaxRange(blockRange) - NSMaxRange(sentence))
+                    for part in [before, after] where part.length > 0 {
+                        if let textRange = nsTextRange(part, in: contentStorage) {
+                            layoutManager.addRenderingAttribute(
+                                .foregroundColor, value: softDim, for: textRange)
+                        }
+                    }
+                }
             }
         }
         private var focusAppliedRevision = -2
@@ -710,6 +751,28 @@ extension MarkdownReaderView {
                 item.representedObject = source
                 items.append(item)
             }
+            // Block actions (ideas #9/#10): every block moves, duplicates,
+            // deletes from here; tables also grow rows/columns (idea #11).
+            if parent.onBlockCommand != nil {
+                items.append(NSMenuItem.separator())
+                func commandItem(_ title: String, _ name: String) -> NSMenuItem {
+                    let item = NSMenuItem(
+                        title: title, action: #selector(contextBlockCommand(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = [index, name] as [Any]
+                    return item
+                }
+                items.append(commandItem("Move Block Up", "moveUp"))
+                items.append(commandItem("Move Block Down", "moveDown"))
+                items.append(commandItem("Duplicate Block", "duplicate"))
+                items.append(commandItem("Delete Block", "delete"))
+                if let slice = parent.blockSourceProvider?(id),
+                   slice.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("|") {
+                    items.append(NSMenuItem.separator())
+                    items.append(commandItem("Add Table Row", "addTableRow"))
+                    items.append(commandItem("Add Table Column", "addTableColumn"))
+                }
+            }
             guard !items.isEmpty else { return }
             items.append(NSMenuItem.separator())
             for (offset, item) in items.enumerated() {
@@ -734,6 +797,68 @@ extension MarkdownReaderView {
             guard let source = sender.representedObject as? String else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(source, forType: .string)
+        }
+
+        @objc private func contextBlockCommand(_ sender: NSMenuItem) {
+            guard let payload = sender.representedObject as? [Any], payload.count == 2,
+                  let index = payload[0] as? Int,
+                  let commandName = payload[1] as? String,
+                  let id = blockID(atCharIndex: index) else { return }
+            let command: BlockCommand? = switch commandName {
+            case "moveUp": .moveUp
+            case "moveDown": .moveDown
+            case "duplicate": .duplicate
+            case "delete": .delete
+            case "addTableRow": .addTableRow
+            case "addTableColumn": .addTableColumn
+            default: nil
+            }
+            if let command {
+                parent.onBlockCommand?(id, command)
+            }
+        }
+
+        /// Smart paste (idea #4), scoped to active-block editing: a URL
+        /// pasted over selected text becomes a link; tab-separated rows
+        /// pasted at the caret become a table. Anything else falls through
+        /// to the ordinary paste pipeline.
+        func handleSmartPaste() -> Bool {
+            guard let textView, let onEdit = parent.onEditIntent,
+                  let active = parent.rendered.activeEditableRange,
+                  let sourceText = parent.rendered.activeSourceText,
+                  let pasted = NSPasteboard.general.string(forType: .string)
+            else { return false }
+            let selection = textView.selectedRange()
+            guard selection.location >= active.location,
+                  NSMaxRange(selection) <= NSMaxRange(active) else { return false }
+            let relStart = selection.location - active.location
+
+            let trimmed = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+            if selection.length > 0,
+               let url = URL(string: trimmed),
+               let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+               trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil {
+                let relRange = relStart..<(relStart + selection.length)
+                guard let byteRange = EditMapping.utf8Range(inText: sourceText, utf16Range: relRange) else {
+                    return false
+                }
+                let selected = (sourceText as NSString)
+                    .substring(with: NSRange(location: relStart, length: selection.length))
+                let replacement = "[\(selected)](\(trimmed))"
+                onEdit(byteRange, replacement, replacement.utf8.count)
+                return true
+            }
+
+            if selection.length == 0,
+               let table = TableEditing.markdownTable(fromTabular: pasted) {
+                let relRange = relStart..<relStart
+                guard let byteRange = EditMapping.utf8Range(inText: sourceText, utf16Range: relRange) else {
+                    return false
+                }
+                onEdit(byteRange, table, table.utf8.count)
+                return true
+            }
+            return false
         }
 
         /// Esc closes the revealed block, committing as always (Escape

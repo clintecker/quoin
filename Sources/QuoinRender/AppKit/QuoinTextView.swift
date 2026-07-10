@@ -53,6 +53,16 @@ final class QuoinTextView: NSTextView {
     /// (Edit Source / Copy Markdown Source) to the standard text menu.
     var onContextMenu: ((Int, NSMenu) -> Void)?
 
+    /// Smart paste (idea #4): the coordinator turns URLs-over-selection
+    /// into links and tabular text into tables; returning false falls
+    /// through to the ordinary paste pipeline.
+    var onSmartPaste: (() -> Bool)?
+
+    override func paste(_ sender: Any?) {
+        if onSmartPaste?() == true { return }
+        super.paste(sender)
+    }
+
     /// The drawn editing frame's box (text-view coordinates), reported
     /// each draw pass — nil when no block is open. The side-by-side
     /// preview panel positions itself against it.

@@ -232,7 +232,8 @@ final class ReaderModel {
                     storagePatch: patch.storagePatch,
                     revision: nextRevision(),
                     patchBaseLength: baseLength,
-                    previewPanel: renderer.activePreviewPanel()
+                    previewPanel: renderer.activePreviewPanel(),
+                    revealVerbatimCode: renderer.activeRevealVerbatimCode()
                 )
             } else {
                 let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
@@ -245,7 +246,8 @@ final class ReaderModel {
                     activeSourceText: next.activeSourceText,
                     spliceHint: spliceHint,
                     revision: nextRevision(),
-                    previewPanel: next.previewPanel
+                    previewPanel: next.previewPanel,
+                    revealVerbatimCode: next.revealVerbatimCode
                 )
             }
             outline = document.outline
@@ -366,7 +368,8 @@ final class ReaderModel {
             storagePatches: update.storagePatches,
             revision: nextRevision(),
             patchBaseLength: baseLength,
-            previewPanel: newID != nil ? renderer.activePreviewPanel() : nil
+            previewPanel: newID != nil ? renderer.activePreviewPanel() : nil,
+            revealVerbatimCode: newID != nil && renderer.activeRevealVerbatimCode()
         )
         return true
     }
@@ -390,6 +393,49 @@ final class ReaderModel {
         let caretUTF8 = absolute.offset + (caretDelta ?? replacement.utf8.count)
         let edit = SourceEdit(range: absolute, replacement: replacement)
         let spliceHint = makeActiveEditSpliceHint(relativeRange: relativeRange, replacement: replacement)
+        applyAbsolute(edit, caretUTF8: caretUTF8, spliceHint: spliceHint)
+    }
+
+    /// Block-granularity commands from the context menu (ideas #9/10/11):
+    /// byte-exact splices built in QuoinCore, routed through the normal
+    /// session pipeline (undo, losslessness, re-projection all apply).
+    func perform(_ command: BlockCommand, on id: BlockID) {
+        guard let index = document.blocks.firstIndex(where: { $0.id == id }) else { return }
+        let edit: SourceEdit?
+        switch command {
+        case .moveUp:
+            edit = BlockEditing.moveEdit(
+                source: document.source, blocks: document.blocks, blockIndex: index, direction: .up)
+        case .moveDown:
+            edit = BlockEditing.moveEdit(
+                source: document.source, blocks: document.blocks, blockIndex: index, direction: .down)
+        case .duplicate:
+            edit = BlockEditing.duplicateEdit(
+                source: document.source, blocks: document.blocks, blockIndex: index)
+        case .delete:
+            edit = BlockEditing.deleteEdit(
+                source: document.source, blocks: document.blocks, blockIndex: index)
+        case .addTableRow, .addTableColumn:
+            let block = document.blocks[index]
+            guard let slice = document.source.substring(in: block.range),
+                  let grown = command == .addTableRow
+                    ? TableEditing.addingRow(to: slice)
+                    : TableEditing.addingColumn(to: slice)
+            else { return }
+            edit = SourceEdit(range: block.range, replacement: grown)
+        }
+        guard let edit else { return }
+        // nil caret: keep the current reveal state — a block command must
+        // not fling the caret or open the block it touched.
+        applyAbsolute(edit, caretUTF8: nil)
+    }
+
+    /// The shared edit pipeline: serialize through the session, then adopt
+    /// the new document with caret/projection bookkeeping.
+    private func applyAbsolute(_ edit: SourceEdit, caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil) {
+        guard let session else { return }
+        let absolute = edit.range
+        let replacement = edit.replacement
         latestEditGeneration += 1
         let generation = latestEditGeneration
         let previousEditTask = editPipelineTask

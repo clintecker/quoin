@@ -72,6 +72,14 @@ public struct RenderedDocument {
     /// `attributed`, which the model keeps authoritative.
     public let patchBaseLength: Int?
 
+    /// True when the ACTIVE block's revealed source is fully verbatim
+    /// (code/mermaid/math/html/front matter): the caret-move restyle must
+    /// rebuild it with the SAME styler configuration the reveal used —
+    /// a default styler flipped mermaid source from mono-verbatim to
+    /// markdown-styled proportional text on the first click (the reported
+    /// shape-shift).
+    public let revealVerbatimCode: Bool
+
     /// Side-by-side preview for the ACTIVE diagram/equation (ledger #6b):
     /// the artifact rendered as a floating panel beside the revealed
     /// source, refreshed every keystroke; `statusMessage` is non-nil while
@@ -99,7 +107,8 @@ public struct RenderedDocument {
         storagePatches: [RenderStoragePatch] = [],
         revision: Int = 0,
         patchBaseLength: Int? = nil,
-        previewPanel: PreviewPanel? = nil
+        previewPanel: PreviewPanel? = nil,
+        revealVerbatimCode: Bool = false
     ) {
         self.attributed = attributed
         self.blockRanges = blockRanges
@@ -111,6 +120,7 @@ public struct RenderedDocument {
         self.revision = revision
         self.patchBaseLength = patchBaseLength
         self.previewPanel = previewPanel
+        self.revealVerbatimCode = revealVerbatimCode
     }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])
@@ -243,7 +253,8 @@ public struct AttributedRenderer {
             activeBlockID: activeBlockID,
             activeEditableRange: activeEditableRange,
             activeSourceText: activeSourceText,
-            previewPanel: activeBlockID != nil ? activePreviewPanel() : nil
+            previewPanel: activeBlockID != nil ? activePreviewPanel() : nil,
+            revealVerbatimCode: activeBlockID != nil && activeRevealVerbatimCode()
         )
     }
 
@@ -324,6 +335,12 @@ public struct AttributedRenderer {
     public func resetActivePreview() {
         activePreview = nil
     }
+
+    /// Whether the last revealed block styles as fully verbatim — the
+    /// caret-move restyle must match (see RenderedDocument.revealVerbatimCode).
+    private final class RevealVerbatimBox { var value = false }
+    private let revealVerbatimBox = RevealVerbatimBox()
+    public func activeRevealVerbatimCode() -> Bool { revealVerbatimBox.value }
 
     /// One block's READ fragment, exactly as the full render loop would
     /// produce it (blockID/embed tagging included) — so an activate/
@@ -554,8 +571,9 @@ public struct AttributedRenderer {
         case .htmlBlock, .codeBlock, .mermaid, .mathBlock, .frontMatter:
             // Verbatim blocks: their markup IS the content — never collapse.
             styler.collapsesNonLiteralSpans = false
+            revealVerbatimBox.value = true
         default:
-            break
+            revealVerbatimBox.value = false
         }
         if case .codeBlock = block?.kind {
             // INDENTED code has no fences for the styler's per-match code

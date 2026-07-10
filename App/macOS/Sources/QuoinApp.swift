@@ -50,6 +50,9 @@ struct QuoinApp: App {
                     NotificationCenter.default.post(name: AppDelegate.toggleTypewriterNotification, object: nil)
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
+                Button("Sentence Focus") {
+                    NotificationCenter.default.post(name: AppDelegate.toggleSentenceFocusNotification, object: nil)
+                }
                 Divider()
             }
             CommandGroup(after: .importExport) {
@@ -139,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let toggleEditSourceNotification = Notification.Name("quoin.toggleEditSource")
     static let toggleFocusModeNotification = Notification.Name("quoin.toggleFocusMode")
     static let toggleTypewriterNotification = Notification.Name("quoin.toggleTypewriter")
+    static let toggleSentenceFocusNotification = Notification.Name("quoin.toggleSentenceFocus")
     static let formatNotification = Notification.Name("quoin.format")
     static let undoNotification = Notification.Name("quoin.undo")
     static let redoNotification = Notification.Name("quoin.redo")
