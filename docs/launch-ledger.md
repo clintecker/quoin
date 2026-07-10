@@ -122,8 +122,11 @@ top-down; nothing ships while a BLOCKER is open.*
 - [OPEN] Flip capture rasterizes viewport+overscan before knowing the plan
   is `.none` (most prose clicks) — pre-estimate delta; 1x capture. #9.
 - [OPEN] Panel geometry callback dispatches per draw pass — dedupe. #10.
-- [OPEN] blockID()/topVisibleBlockID are O(blocks) linear scans on
-  caret/scroll paths (string alloc per key in the scroll path!). #11.
+- [FIXED] blockID()/topVisibleBlockID are O(blocks) linear scans on
+  caret/scroll paths (string alloc per key in the scroll path!) — now a
+  sorted-ranges `BlockRangeIndex` (built lazily once per projection,
+  binary-searched per query); the scroll path resolves id strings through
+  a prebuilt map. `ReaderCoordinator`. Budgeted in RenderPathLatencyTests. #11.
 - [OPEN] Startup: only the parse half of "<1s to interactive" is budgeted;
   cold diagram rasterization is unmeasured. #13. Memory: AsyncImageStore
   count-limited not cost-limited (~1.5GB worst case). #14.

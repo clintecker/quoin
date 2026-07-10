@@ -19,7 +19,21 @@ extension MarkdownReaderView {
         /// updateNSView runs on every SwiftUI pass; this is what stops a
         /// patch-bearing projection from re-applying its patches.
         var appliedRevision = -1
-        var blockRanges: [BlockID: NSRange] = [:]
+        var blockRanges: [BlockID: NSRange] = [:] {
+            didSet { blockRangeIndex = nil }
+        }
+        /// Sorted-ranges index over `blockRanges` (ledger perf #11): built
+        /// lazily once per projection, binary-searched per query.
+        /// `blockID(atCharIndex:)` and `topVisibleBlockID` were O(blocks)
+        /// linear scans on every caret move and scroll tick — the scroll
+        /// path even allocated a description string per key per query.
+        private var blockRangeIndex: BlockRangeIndex?
+        private var rangeIndex: BlockRangeIndex {
+            if let blockRangeIndex { return blockRangeIndex }
+            let built = BlockRangeIndex(blockRanges)
+            blockRangeIndex = built
+            return built
+        }
         /// The active block id as of the last applied update — what lets a
         /// re-render recognize an activate/deactivate FLIP (chart ↔ source)
         /// and pin the flipped block on screen across the height change.
@@ -1023,10 +1037,93 @@ extension MarkdownReaderView {
             // Ranges include their trailing separator, so boundaries can
             // match two blocks; prefer the strictly-containing (earlier) one
             // deterministically by picking the largest containing start.
-            blockRanges
-                .filter { index >= $0.value.location && index < $0.value.location + $0.value.length }
-                .max { $0.value.location < $1.value.location }?
-                .key
+            rangeIndex.blockID(at: index)
+        }
+
+        /// Enumerates the blocks whose ranges intersect `query`, in
+        /// document order — binary-searched, so viewport-scoped passes
+        /// (focus dimming) touch only on-screen blocks.
+        func forEachBlockRange(intersecting query: NSRange, _ body: (BlockID, NSRange) -> Void) {
+            rangeIndex.forEachEntry(intersecting: query, body)
+        }
+
+        /// Sorted-ranges index (ledger perf #11). Entries are sorted by
+        /// location; `prefixMaxEnd` is the non-decreasing running max of
+        /// range ends, which lets containment walks and intersection scans
+        /// stop with binary searches even though neighboring block ranges
+        /// can overlap at their boundaries (trailing separators).
+        struct BlockRangeIndex {
+            private let entries: [(range: NSRange, id: BlockID)]
+            private let prefixMaxEnd: [Int]
+            /// For `topVisibleBlockID`: the storage attribute carries the
+            /// id's STRING form; resolving it used to allocate a
+            /// description per key per scroll tick.
+            let idsByDescription: [String: BlockID]
+
+            init(_ blockRanges: [BlockID: NSRange]) {
+                var sorted = blockRanges.map { (range: $0.value, id: $0.key) }
+                sorted.sort {
+                    if $0.range.location != $1.range.location {
+                        return $0.range.location < $1.range.location
+                    }
+                    if $0.range.length != $1.range.length {
+                        return $0.range.length < $1.range.length
+                    }
+                    // Deterministic order for exact duplicates.
+                    return ($0.id.contentHash, $0.id.occurrence)
+                        < ($1.id.contentHash, $1.id.occurrence)
+                }
+                entries = sorted
+                var runningMax = 0
+                prefixMaxEnd = sorted.map { entry in
+                    runningMax = max(runningMax, NSMaxRange(entry.range))
+                    return runningMax
+                }
+                var byDescription = [String: BlockID](minimumCapacity: sorted.count)
+                for entry in sorted { byDescription[entry.id.description] = entry.id }
+                idsByDescription = byDescription
+            }
+
+            /// Containment query with the historical tie-break: among
+            /// ranges containing `index`, the largest location wins.
+            func blockID(at index: Int) -> BlockID? {
+                // Binary search: first entry with location > index.
+                var lo = 0, hi = entries.count
+                while lo < hi {
+                    let mid = (lo + hi) / 2
+                    if entries[mid].range.location <= index { lo = mid + 1 } else { hi = mid }
+                }
+                // Walk back while a containing range is still possible;
+                // the first hit has the largest location by construction.
+                var i = lo - 1
+                while i >= 0, prefixMaxEnd[i] > index {
+                    let range = entries[i].range
+                    if index >= range.location, index < NSMaxRange(range) {
+                        return entries[i].id
+                    }
+                    i -= 1
+                }
+                return nil
+            }
+
+            func forEachEntry(intersecting query: NSRange, _ body: (BlockID, NSRange) -> Void) {
+                guard !entries.isEmpty else { return }
+                // First candidate: the first entry whose running max end
+                // exceeds the query start (prefixMaxEnd is non-decreasing).
+                var lo = 0, hi = entries.count
+                while lo < hi {
+                    let mid = (lo + hi) / 2
+                    if prefixMaxEnd[mid] <= query.location { lo = mid + 1 } else { hi = mid }
+                }
+                let queryEnd = NSMaxRange(query)
+                var i = lo
+                while i < entries.count, entries[i].range.location < queryEnd {
+                    if NSIntersectionRange(entries[i].range, query).length > 0 {
+                        body(entries[i].id, entries[i].range)
+                    }
+                    i += 1
+                }
+            }
         }
 
         /// True when the character sits in an embed block (code/math/mermaid
@@ -1477,7 +1574,7 @@ extension MarkdownReaderView {
             guard offset >= 0, offset < storage.length,
                   let idString = storage.attribute(QuoinAttribute.blockID, at: offset, effectiveRange: nil) as? String
             else { return nil }
-            return blockRanges.first(where: { $0.key.description == idString })?.key
+            return rangeIndex.idsByDescription[idString]
         }
 
         // MARK: Search highlighting
