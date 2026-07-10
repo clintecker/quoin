@@ -33,6 +33,14 @@ public actor DocumentSession {
     /// the disk version while the banner asked the user to decide (launch
     /// ledger, data integrity #5).
     public private(set) var hasUnresolvedConflict = false
+    /// True once the file has vanished from `fileURL` (moved or deleted
+    /// externally and not followable). A detached session never writes:
+    /// autosave silently recreating the dead path forked the document
+    /// (launch ledger, data integrity #6). `relocate(to:)` re-attaches.
+    public private(set) var isDetached = false
+    private var vanishCheckTask: Task<Void, Never>?
+    /// Dedupes the save-failure banner while typing into a detached session.
+    private var didReportDetachedEdit = false
 
     private var watcher: FileWatcher?
     private var continuations: [UUID: AsyncStream<QuoinDocument>.Continuation] = [:]
@@ -64,10 +72,17 @@ public actor DocumentSession {
     /// Begins publishing snapshots for external file changes. Idempotent.
     public func startWatching() {
         guard watcher == nil, let fileURL else { return }
-        let newWatcher = FileWatcher(url: fileURL) { [weak self] in
-            guard let self else { return }
-            Task { await self.reloadFromDisk() }
-        }
+        let newWatcher = FileWatcher(
+            url: fileURL,
+            onChange: { [weak self] in
+                guard let self else { return }
+                Task { await self.reloadFromDisk() }
+            },
+            onRelocate: { [weak self] newURL in
+                guard let self else { return }
+                Task { await self.followExternalMove(to: newURL) }
+            }
+        )
         watcher = newWatcher
         newWatcher.start()
     }
@@ -90,12 +105,27 @@ public actor DocumentSession {
     private var onSaveFailure: (@Sendable (String) -> Void)?
 
     /// Follows a file rename (first-H1-renames-file): future saves and
-    /// watching target the new URL.
+    /// watching target the new URL. Also re-attaches a detached session.
     public func relocate(to url: URL) {
-        let wasWatching = watcher != nil
+        let wasWatching = watcher != nil || isDetached
         stopWatching()
+        vanishCheckTask?.cancel()
+        vanishCheckTask = nil
+        isDetached = false
+        didReportDetachedEdit = false
         fileURL = url
         if wasWatching { startWatching() }
+    }
+
+    /// The watcher followed a live inode to its new path (external move):
+    /// adopt the new URL so saves keep targeting the user's file instead of
+    /// resurrecting the old name. The watcher has already re-armed itself.
+    private func followExternalMove(to url: URL) {
+        vanishCheckTask?.cancel()
+        vanishCheckTask = nil
+        isDetached = false
+        didReportDetachedEdit = false
+        fileURL = url
     }
 
     // MARK: - Snapshots
@@ -141,11 +171,23 @@ public actor DocumentSession {
 
     /// Reloads from disk after an external change. No-ops when the content
     /// is unchanged or was written by this session (checkbox write-back).
+    /// When the file has vanished from its path, schedules a confirmation
+    /// check (atomic replaces briefly unlink the path) and then detaches.
     public func reloadFromDisk() {
-        guard let fileURL,
-              let data = try? Data(contentsOf: fileURL),
+        guard let fileURL else { return }
+        guard let data = try? Data(contentsOf: fileURL),
               let source = String(data: data, encoding: .utf8)
-        else { return }
+        else {
+            scheduleVanishCheck(for: fileURL)
+            return
+        }
+        vanishCheckTask?.cancel()
+        vanishCheckTask = nil
+        if isDetached {
+            // The path is readable again (file restored): re-attach.
+            isDetached = false
+            didReportDetachedEdit = false
+        }
 
         let hash = SHA256Hex.hash(of: source)
         if hash == document.sourceHash { return }
@@ -164,6 +206,48 @@ public actor DocumentSession {
             return
         }
         adoptExternal(MarkdownConverter.parse(source))
+    }
+
+    /// The file couldn't be read at its path. That's either an atomic
+    /// replace mid-flight (the path comes back within milliseconds) or a
+    /// real external move/delete. Confirm after a short delay before
+    /// declaring the session detached.
+    private func scheduleVanishCheck(for url: URL) {
+        guard !isDetached, vanishCheckTask == nil else { return }
+        vanishCheckTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await self.confirmVanished(expecting: url)
+        }
+    }
+
+    private func confirmVanished(expecting url: URL) {
+        vanishCheckTask = nil
+        guard fileURL == url, !isDetached else { return }
+        if let data = try? Data(contentsOf: url), String(data: data, encoding: .utf8) != nil {
+            // Transient (mid-replace): route through the normal reload so
+            // the hash/conflict logic applies.
+            reloadFromDisk()
+            return
+        }
+        if FileManager.default.fileExists(atPath: url.path) {
+            // Exists but unreadable (encoding/permissions) — not a vanish.
+            return
+        }
+        // The file is gone from its path. This session must never write the
+        // dead path back into existence (ledger #6): cancel the pending
+        // autosave and block future ones. The watcher keeps retrying the
+        // path, so a restored file re-attaches automatically; an external
+        // MOVE never reaches here because the watcher follows the inode.
+        isDetached = true
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        if isDirty {
+            didReportDetachedEdit = true
+            onSaveFailure?(
+                "“\(url.lastPathComponent)” was moved or deleted outside Quoin. "
+                + "Your edits are held in memory — saving is paused until the file returns.")
+        }
     }
 
     /// Merge-banner resolution: overwrite disk with the local version.
@@ -238,6 +322,15 @@ public actor DocumentSession {
         // Conflict pending: the edit is held in memory, but no write may
         // land until the user picks a side (ledger #5).
         guard !hasUnresolvedConflict else { return }
+        // Detached (file vanished): writing would resurrect the dead path
+        // and fork the document (ledger #6). Tell the user once.
+        if isDetached {
+            if !didReportDetachedEdit {
+                didReportDetachedEdit = true
+                reportSaveFailure()
+            }
+            return
+        }
         autosaveTask?.cancel()
         autosaveTask = Task { [autosaveDelay] in
             try? await Task.sleep(for: autosaveDelay)
@@ -270,6 +363,11 @@ public actor DocumentSession {
             // Even an explicit flush (⌘Q drain) must not clobber the disk
             // side while the merge banner is unanswered.
             throw SessionError.conflictUnresolved(fileURL)
+        }
+        guard !isDetached else {
+            // The file vanished from this path; recreating it would fork
+            // the document (ledger #6).
+            throw SessionError.fileWriteFailed(fileURL, "file was moved or deleted externally")
         }
         let source = document.source
         let wasDirty = isDirty
@@ -324,6 +422,11 @@ public actor DocumentSession {
         let newSource = try TaskToggler.toggle(source: base.source, markerRange: effectiveRange)
 
         if let fileURL {
+            guard !isDetached else {
+                // A detached session's write would recreate the vanished
+                // path and fork the document (ledger #6).
+                throw SessionError.fileWriteFailed(fileURL, "file was moved or deleted externally")
+            }
             do {
                 try Data(newSource.utf8).write(to: fileURL, options: .atomic)
                 selfWriteHash = SHA256Hex.hash(of: newSource)

@@ -85,6 +85,16 @@ final class EditMappingTests: XCTestCase {
     }
 }
 
+/// A tiny thread-safe box for capturing values out of @Sendable handlers.
+private final class LockedBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: T?
+    var value: T? {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); defer { lock.unlock() }; stored = newValue }
+    }
+}
+
 final class SessionEditingTests: XCTestCase {
 
     func testApplyEditPublishesAndTracksUndo() async throws {
@@ -337,6 +347,120 @@ final class SessionEditingTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(700))
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "typed " + external,
                        "autosave must resume after taking the disk side")
+    }
+
+    // MARK: External rename/move (ledger, data integrity #6)
+
+    private func makeTempDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func testExternalDeleteDetachesDirtySessionAndBlocksResurrection() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("original".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        let failureMessage = LockedBox<String>()
+        await session.setSaveFailureHandler { failureMessage.value = $0 }
+
+        // Dirty edit, then the file vanishes before the autosave lands.
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 8, length: 0), replacement: " plus edits"))
+        try FileManager.default.removeItem(at: file)
+        await session.reloadFromDisk()
+
+        // Vanish confirm (250ms) must beat the autosave debounce (400ms);
+        // wait past both plus margin.
+        try await Task.sleep(for: .milliseconds(1000))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path),
+                       "autosave must not resurrect the deleted path")
+        let detached = await session.isDetached
+        XCTAssertTrue(detached)
+        XCTAssertNotNil(failureMessage.value,
+                        "a dirty session losing its file must surface a save failure")
+
+        // Continued typing stays in memory; still no file.
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "more "))
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+
+        // Explicit saves refuse rather than fork the document.
+        do {
+            try await session.saveNow()
+            XCTFail("saveNow must refuse while detached")
+        } catch SessionError.fileWriteFailed { }
+
+        // Relocating (the app resolving the situation) re-attaches.
+        let newFile = dir.appendingPathComponent("moved.md")
+        await session.relocate(to: newFile)
+        try await session.saveNow()
+        let source = await session.document.source
+        XCTAssertEqual(try String(contentsOf: newFile, encoding: .utf8), source)
+    }
+
+    func testExternalDeleteWhileCleanDetachesQuietly() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("clean content".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        let failureMessage = LockedBox<String>()
+        await session.setSaveFailureHandler { failureMessage.value = $0 }
+
+        try FileManager.default.removeItem(at: file)
+        await session.reloadFromDisk()
+        try await Task.sleep(for: .milliseconds(500))
+
+        let detached = await session.isDetached
+        XCTAssertTrue(detached, "a clean session losing its file is marked detached")
+        XCTAssertNil(failureMessage.value, "no edits at risk — no failure banner")
+        let source = await session.document.source
+        XCTAssertEqual(source, "clean content", "content stays available in memory")
+    }
+
+    func testWatcherFollowsExternalMoveAndSavesToTheNewPath() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let oldFile = dir.appendingPathComponent("before.md")
+        let newFile = dir.appendingPathComponent("after.md")
+        try Data("movable content".utf8).write(to: oldFile)
+
+        let session = try DocumentSession.open(fileURL: oldFile)
+        await session.startWatching()
+        defer { Task { await session.stopWatching() } }
+        // Let the watcher arm before moving.
+        try await Task.sleep(for: .milliseconds(200))
+
+        try FileManager.default.moveItem(at: oldFile, to: newFile)
+
+        // The watcher follows the live inode via F_GETPATH; poll briefly.
+        // F_GETPATH yields symlink-resolved paths (/private/var/…), so
+        // compare resolved forms.
+        let expectedPath = newFile.resolvingSymlinksInPath().path
+        var followed = false
+        for _ in 0..<40 {
+            if await session.fileURL?.resolvingSymlinksInPath().path == expectedPath {
+                followed = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertTrue(followed, "session must follow the external move to the new URL")
+
+        // Edits now save to the NEW path; the old one must not come back.
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "edited "))
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(try String(contentsOf: newFile, encoding: .utf8), "edited movable content")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldFile.path),
+                       "the old filename must not be resurrected")
     }
 
     func testUntouchedRegionsAreByteLossless() throws {
