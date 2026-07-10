@@ -295,16 +295,25 @@ extension MarkdownReaderView {
             }
 
             // Keystroke outside the revealed region: open that block at the
-            // keystroke's position. Embed blocks (code/table/…) map through the
-            // 1:1 body tag; plain prose uses the rendered offset directly.
+            // keystroke's position — and REPLAY the keystroke there. Typing
+            // on a rendered block must reveal the source AND insert the
+            // character (dropping it was the editor's worst mode error: the
+            // flip looked like feedback, but the input was gone). Embed
+            // blocks (code/table/…) map through the 1:1 body tag; plain
+            // prose uses the rendered offset. Deletes and range replacements
+            // just activate — their extent has no defined image in the
+            // still-hidden source.
             if let id = blockID(atCharIndex: affectedCharRange.location) {
-                let hint: Int?
+                var hint: CaretHint?
                 if isEmbedBlock(atCharIndex: affectedCharRange.location) {
-                    hint = embedCaretHint(atCharIndex: affectedCharRange.location)
-                } else {
-                    hint = blockRanges[id].map { affectedCharRange.location - $0.location }
+                    hint = embedCaretHint(atCharIndex: affectedCharRange.location).map { .source($0) }
                 }
-                parent.onActivateBlock?(id, hint)
+                if hint == nil {
+                    hint = blockRanges[id].map { .rendered(affectedCharRange.location - $0.location) }
+                }
+                let insertion = (affectedCharRange.length == 0 && replacementString?.isEmpty == false)
+                    ? replacementString : nil
+                parent.onActivateBlock?(id, hint, insertion)
             }
             return false
         }
@@ -342,7 +351,7 @@ extension MarkdownReaderView {
                !isEmbedBlock(atCharIndex: selection.location) {
                 if let id = blockID(atCharIndex: selection.location),
                    id != parent.rendered.activeBlockID {
-                    parent.onActivateBlock?(id, nil)
+                    parent.onActivateBlock?(id, nil, nil)
                 }
                 return
             }
@@ -352,8 +361,8 @@ extension MarkdownReaderView {
             guard let id = blockID(atCharIndex: selection.location) else { return }
             if id != parent.rendered.activeBlockID {
                 // Land the caret where the click fell, not at the block end.
-                let hint = blockRanges[id].map { selection.location - $0.location }
-                parent.onActivateBlock?(id, hint)
+                let hint = blockRanges[id].map { CaretHint.rendered(selection.location - $0.location) }
+                parent.onActivateBlock?(id, hint, nil)
             }
         }
 
@@ -440,7 +449,7 @@ extension MarkdownReaderView {
         public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.cancelOperation(_:)),
                parent.rendered.activeBlockID != nil {
-                parent.onActivateBlock?(nil, nil)
+                parent.onActivateBlock?(nil, nil, nil)
                 return true
             }
             return false
@@ -478,9 +487,9 @@ extension MarkdownReaderView {
             guard isEmbedBlock(atCharIndex: index),
                   let id = blockID(atCharIndex: index),
                   id != parent.rendered.activeBlockID else { return false }
-            let hint = embedCaretHint(atCharIndex: index)
-                ?? blockRanges[id].map { index - $0.location }
-            parent.onActivateBlock?(id, hint)
+            let hint: CaretHint? = embedCaretHint(atCharIndex: index).map { .source($0) }
+                ?? blockRanges[id].map { .rendered(index - $0.location) }
+            parent.onActivateBlock?(id, hint, nil)
             return true
         }
 

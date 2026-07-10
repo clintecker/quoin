@@ -8,6 +8,22 @@ public enum FormatCommand: Equatable, Sendable {
     case bold, italic, highlight, link
 }
 
+/// Where the caret should land when a block activates, tagged with the
+/// coordinate space the offset lives in. The two producers measure in
+/// different spaces — prose clicks yield an offset into the block's
+/// RENDERED text (which hides delimiters the projection dropped), while
+/// embed bodies map 1:1 into the SOURCE slice via `embedSourceStart` — and
+/// funneling both through a bare `Int` let a source offset get re-mapped
+/// as if it were rendered, landing the caret a few characters early in
+/// code bodies. The enum makes the space explicit at every call site.
+public enum CaretHint: Equatable, Sendable {
+    /// Offset into the block's rendered (projected) text; the model aligns
+    /// it to the source through `EditMapping.sourceOffset`.
+    case rendered(Int)
+    /// Offset directly into the block's source slice; used verbatim.
+    case source(Int)
+}
+
 /// The reading surface: a TextKit 2 `NSTextView` wrapped for SwiftUI.
 ///
 /// TextKit 2 does viewport-based layout — only visible content is laid out —
@@ -43,8 +59,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// from the range start; nil = end of replacement) — smart pairs use it
     /// to park the caret between the inserted delimiters.
     public let onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String, _ caretDelta: Int?) -> Void)?
-    /// Caret entered a block (nil = deactivate, Esc).
-    public let onActivateBlock: ((BlockID?, Int?) -> Void)?
+    /// Caret entered a block (nil id = deactivate, Esc). The `String?` is a
+    /// pending insertion: the keystroke that triggered the activation by
+    /// landing on a rendered block. The model applies it at the mapped caret
+    /// position through the normal session edit path, so typing on a
+    /// rendered block reveals the source AND inserts the character — the
+    /// keystroke is never swallowed.
+    public let onActivateBlock: ((BlockID?, CaretHint?, String?) -> Void)?
     /// Caret position (UTF-16, relative to the active block's source text)
     /// to restore after a re-render; `caretGeneration` bumps to re-apply.
     public let caretInActiveBlock: Int?
@@ -66,7 +87,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         anchorResolver: @escaping (String) -> BlockID? = { _ in nil },
         onTopBlockChange: @escaping (BlockID?) -> Void = { _ in },
         onEditIntent: ((_ relativeRange: ByteRange, _ replacement: String, _ caretDelta: Int?) -> Void)? = nil,
-        onActivateBlock: ((BlockID?, Int?) -> Void)? = nil,
+        onActivateBlock: ((BlockID?, CaretHint?, String?) -> Void)? = nil,
         caretInActiveBlock: Int? = nil,
         caretGeneration: Int = 0,
         formatCommand: FormatCommand? = nil,

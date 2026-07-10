@@ -257,34 +257,43 @@ final class ReaderModel {
 
     // MARK: - Syntax reveal
 
-    /// Activates a block for editing. `caretHint` is the caret's offset in the
-    /// block's *rendered* text (UTF-16); we land the caret near there in the
-    /// revealed source so a click doesn't teleport it to the block end and
-    /// reveal the wrong span. For plain text the mapping is exact; markup makes
-    /// it land a little early (hidden delimiters), which still feels right.
-    func activateBlock(_ id: BlockID?, caretHint: Int? = nil) {
+    /// Activates a block for editing. `caretHint` carries the caret's target
+    /// offset tagged with its coordinate space (`CaretHint`): `.rendered`
+    /// offsets are aligned to the source through the projection mapper
+    /// (the source hides characters the projection dropped — hard-break
+    /// spaces, `**`, `### `, entity source); `.source` offsets (embed
+    /// bodies, 1:1 by construction) are used verbatim — running them
+    /// through the mapper again landed the caret early by the header run's
+    /// width. `pendingInsertion` is a keystroke that triggered this
+    /// activation by landing on the rendered block: it is applied at the
+    /// mapped caret through the normal session edit path, so the character
+    /// is inserted, not swallowed.
+    func activateBlock(_ id: BlockID?, caretHint: CaretHint? = nil, pendingInsertion: String? = nil) {
         guard id != activeBlockID else { return }
         let previousActiveID = activeBlockID
         activeBlockID = id
         if let id, let block = document.blocks.first(where: { $0.id == id }),
            let slice = document.source.substring(in: block.range) {
             let sourceLength = slice.utf16.count
-            if let caretHint, let renderedRange = rendered.blockRanges[id],
-               renderedRange.location + renderedRange.length <= rendered.attributed.length {
-                // The hint is an offset into the block's RENDERED text; the
-                // source hides characters the projection dropped (hard-break
-                // spaces, `**`, `### `, entity source), so align the two
-                // texts instead of reusing the raw offset.
-                let renderedText = (rendered.attributed.string as NSString)
-                    .substring(with: renderedRange)
-                let mapped = EditMapping.sourceOffset(
-                    forRenderedOffset: caretHint,
-                    renderedText: renderedText,
-                    sourceText: slice
-                )
-                caretInActiveBlock = min(max(0, mapped), sourceLength)
-            } else {
-                caretInActiveBlock = min(max(0, caretHint ?? sourceLength), sourceLength)
+            switch caretHint {
+            case .source(let offset):
+                caretInActiveBlock = min(max(0, offset), sourceLength)
+            case .rendered(let offset):
+                if let renderedRange = rendered.blockRanges[id],
+                   renderedRange.location + renderedRange.length <= rendered.attributed.length {
+                    let renderedText = (rendered.attributed.string as NSString)
+                        .substring(with: renderedRange)
+                    let mapped = EditMapping.sourceOffset(
+                        forRenderedOffset: offset,
+                        renderedText: renderedText,
+                        sourceText: slice
+                    )
+                    caretInActiveBlock = min(max(0, mapped), sourceLength)
+                } else {
+                    caretInActiveBlock = min(max(0, offset), sourceLength)
+                }
+            case nil:
+                caretInActiveBlock = sourceLength
             }
         } else {
             caretInActiveBlock = nil
@@ -302,8 +311,27 @@ final class ReaderModel {
         // is untouched. Patch just those fragments into the live storage
         // instead of re-rendering the whole document (which costs ~half a
         // second at novel length even with a warm fragment cache).
-        if applyActivationFlipPatch(from: previousActiveID, to: id) { return }
-        rerender()
+        if !applyActivationFlipPatch(from: previousActiveID, to: id) {
+            rerender()
+        }
+        replayPendingInsertion(pendingInsertion)
+    }
+
+    /// The keystroke that opened the block, applied at the freshly mapped
+    /// caret through the ordinary edit path — one async round-trip later
+    /// the revealed source carries the character with the caret after it,
+    /// exactly as if the block had been open when the key went down. Runs
+    /// AFTER the flip publish so the edit's splice hint and block-local
+    /// fast path see the revealed projection they patch against.
+    private func replayPendingInsertion(_ insertion: String?) {
+        guard let insertion, !insertion.isEmpty,
+              let id = activeBlockID,
+              let caret = caretInActiveBlock,
+              let block = document.blocks.first(where: { $0.id == id }),
+              let slice = document.source.substring(in: block.range),
+              let caretBytes = EditMapping.utf8Offset(inText: slice, utf16Offset: caret)
+        else { return }
+        applyEdit(relativeRange: ByteRange(offset: caretBytes, length: 0), replacement: insertion)
     }
 
     /// Publishes storage patches for an activate/deactivate flip (built by
