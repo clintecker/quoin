@@ -461,6 +461,8 @@ public struct AttributedRenderer {
             case .paragraph, .heading, .list, .blockQuote, .callout, .thematicBreak, .table:
                 let read = render(block: block, depth: 0, document: document)
                 transplantParagraphStyles(from: read, onto: styled, source: slice)
+                compressInteriorBlankLines(in: styled, caretOffset: caretOffset)
+                clampTrailingNewlinePhantom(in: styled, caretOffset: caretOffset)
                 return styled
             default:
                 break
@@ -471,6 +473,57 @@ public struct AttributedRenderer {
         // canvas's line metrics and the body's trailing gap.
         applyFallbackMetrics(to: styled, kind: block?.kind)
         return styled
+    }
+
+    /// A slice ending in a newline with NO separator after it (the
+    /// document's last block) lays out a phantom empty final line from its
+    /// own terminator. The phantom's metrics come from the terminator
+    /// character's attributes, so clamping just that character collapses
+    /// the phantom without touching the last content line. Harmless when a
+    /// separator follows (the separator clamp handles that case).
+    private func clampTrailingNewlinePhantom(
+        in styled: NSMutableAttributedString, caretOffset: Int?
+    ) {
+        let text = styled.string as NSString
+        guard text.length > 0,
+              text.character(at: text.length - 1) == UInt16(UnicodeScalar("\n").value)
+        else { return }
+        if let caretOffset, caretOffset >= text.length { return }
+        mutateParagraphStyles(in: styled, range: NSRange(location: text.length - 1, length: 1)) { style, _ in
+            style.maximumLineHeight = 2
+            style.minimumLineHeight = 0
+            style.lineHeightMultiple = 1
+            style.paragraphSpacing = 0
+        }
+    }
+
+    /// Source blank lines (a loose list's item separators, the gaps inside
+    /// a structured blockquote) render as FULL empty lines (~33pt each)
+    /// where the reading projection shows a ~12pt paragraph gap — revealing
+    /// a loose list grew it by a line per item (measured +194pt; the
+    /// reported viewport churn). Compress each interior blank line to the
+    /// paragraph-gap height — unless the caret is ON it, where it opens to
+    /// full height for editing.
+    private func compressInteriorBlankLines(
+        in styled: NSMutableAttributedString, caretOffset: Int?
+    ) {
+        let text = styled.string as NSString
+        var location = 0
+        while location < text.length {
+            let line = text.lineRange(for: NSRange(location: location, length: 0))
+            defer { location = NSMaxRange(line) }
+            // Blank = just the terminator (or whitespace-only).
+            let content = text.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard content.isEmpty, line.length > 0 else { continue }
+            if let caretOffset, caretOffset >= line.location, caretOffset <= NSMaxRange(line) { continue }
+            mutateParagraphStyles(in: styled, range: line) { style, _ in
+                style.maximumLineHeight = theme.paragraphSpacing
+                style.minimumLineHeight = 0
+                style.lineHeightMultiple = 1
+                style.paragraphSpacing = 0
+                style.paragraphSpacingBefore = 0
+            }
+        }
     }
 
     /// True when an active block's revealed slice ends with its own newline
@@ -484,11 +537,18 @@ public struct AttributedRenderer {
         slice.hasSuffix("\n")
     }
 
-    /// The block separator, styled to near-zero height (same characters).
+    /// The block separator with ONLY ITS FIRST newline styled to near-zero
+    /// height (same characters throughout). The revealed slice's own
+    /// trailing newline turns the separator's first newline into a phantom
+    /// empty paragraph the reading projection never shows — but a wide
+    /// separator's REMAINING newlines are real spacing the reading
+    /// projection DOES show, and clamping those made reveals shorter than
+    /// their reading form (the ratchet caught thematic breaks at −80pt).
     func clampedSeparator(after kind: BlockKind, before nextKind: BlockKind) -> NSAttributedString {
         let separator = NSMutableAttributedString(
             attributedString: blockSeparator(after: kind, before: nextKind))
-        mutateParagraphStyles(in: separator, range: NSRange(location: 0, length: separator.length)) { style, _ in
+        guard separator.length > 0 else { return separator }
+        mutateParagraphStyles(in: separator, range: NSRange(location: 0, length: 1)) { style, _ in
             style.maximumLineHeight = 2
             style.minimumLineHeight = 0
             style.paragraphSpacing = 0
@@ -552,6 +612,16 @@ public struct AttributedRenderer {
         }
         mutateParagraphStyles(in: styled, range: lastParagraph) { style, _ in
             style.paragraphSpacing = theme.paragraphSpacing
+        }
+        // The canvas sets its body in the 12pt code face; the styler's
+        // 14pt body face made every revealed code line ~2pt taller — ~60pt
+        // across a long block. Only the base-font runs are retargeted (the
+        // styler's own token/delimiter fonts stay).
+        let baseFont = theme.bodyFont()
+        styled.enumerateAttribute(.font, in: full) { value, range, _ in
+            if let font = value as? PlatformFont, font == baseFont {
+                styled.addAttribute(.font, value: theme.codeBlockFont(), range: range)
+            }
         }
     }
 

@@ -51,10 +51,14 @@ struct MarkdownSourceStyler {
     }
 
     /// Delimiters of spans the caret is outside of: still present in the
-    /// text (mapping stays 1:1) but visually collapsed.
+    /// text (mapping stays 1:1) but visually collapsed. 0.1pt, not 1pt: a
+    /// collapsed run still occupies width proportional to its length, and a
+    /// long URL's 1pt run was enough to WRAP link-heavy lines — revealing a
+    /// list of links then grew by a line per item and shoved the viewport
+    /// around (the reported "jumps like before").
     private var hiddenDelimiterAttributes: [NSAttributedString.Key: Any] {
         [
-            .font: PlatformFont.systemFont(ofSize: 1),
+            .font: PlatformFont.systemFont(ofSize: 0.1),
             .foregroundColor: PlatformColor.clear,
         ]
     }
@@ -179,6 +183,29 @@ struct MarkdownSourceStyler {
         claimed: inout [NSRange]
     ) {
         let source = text as String
+        // Reference-link definitions `[label]: url "title"` — the label
+        // stays readable, the URL collapses unless the caret is on the line
+        // (same philosophy as inline URLs). A definitions paragraph is
+        // otherwise invisible in the reading projection, so revealing one
+        // without this poured a wall of URLs into the layout (+264pt
+        // measured — the reported "click near the reference list and
+        // everything shoves around").
+        if let definitions = try? NSRegularExpression(
+            pattern: #"^[ \t]*\[[^\]\n]+\]:[ \t]*(\S.*)$"#, options: [.anchorsMatchLines]) {
+            for match in definitions.matches(in: source, range: NSRange(location: 0, length: text.length)) {
+                let urlRange = match.range(at: 1)
+                guard !claimed.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) else { continue }
+                let caretOnLine = caretOffset.map {
+                    $0 >= match.range.location && $0 <= NSMaxRange(match.range)
+                } ?? true
+                output.addAttributes(
+                    caretOnLine ? delimiterAttributes : hiddenDelimiterAttributes,
+                    range: urlRange
+                )
+                claimed.append(match.range)
+            }
+        }
+
         // Footnote refs first so `[^1]` isn't half-matched as a link label.
         if let footnotes = try? NSRegularExpression(pattern: #"\[\^([^\]\n]+)\]"#) {
             for match in footnotes.matches(in: source, range: NSRange(location: 0, length: text.length)) {

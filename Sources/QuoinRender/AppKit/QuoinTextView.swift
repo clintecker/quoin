@@ -21,6 +21,7 @@ final class QuoinTextView: NSTextView {
     var onDoubleClick: ((Int) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
+        let clipBefore = enclosingScrollView?.contentView.bounds.origin.y ?? -1
         if event.clickCount == 2 {
             let point = convert(event.locationInWindow, from: nil)
             let index = characterIndexForInsertion(at: point)
@@ -28,6 +29,10 @@ final class QuoinTextView: NSTextView {
             // Fall through to super so text blocks still get word-select.
         }
         super.mouseDown(with: event)
+        let clipAfter = enclosingScrollView?.contentView.bounds.origin.y ?? -1
+        QuoinPerformanceTrace.log(
+            "click.mouseDown", startedAt: DispatchTime.now().uptimeNanoseconds,
+            metadata: "clipBefore=\(Int(clipBefore)) clipAfter=\(Int(clipAfter)) moved=\(Int(clipAfter - clipBefore)) clicks=\(event.clickCount)")
     }
 
     func invalidateDecorations() {

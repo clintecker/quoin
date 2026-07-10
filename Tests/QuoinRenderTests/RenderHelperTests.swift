@@ -142,8 +142,10 @@ final class RenderHelperTests: XCTestCase {
 
         let outside = styler.style(source, caretOffset: 0)
         let outsideFont = outside.attribute(.font, at: delimiterLocation, effectiveRange: nil) as? PlatformFont
-        XCTAssertEqual(outsideFont?.pointSize, 1,
-            "caret outside the span collapses the delimiter to a 1pt glyph")
+        // 0.1pt, not 1pt: collapsed runs must occupy ~zero width, or a long
+        // hidden URL still wraps its line (see hiddenDelimiterAttributes).
+        XCTAssertEqual(outsideFont?.pointSize ?? 0, 0.1, accuracy: 0.01,
+            "caret outside the span collapses the delimiter to a hairline glyph")
     }
 
     #if canImport(AppKit)

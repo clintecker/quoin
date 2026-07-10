@@ -192,6 +192,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
                    screenY > -viewport, screenY < viewport * 2 {
                     caretLineAnchorY = screenY
                 }
+                QuoinPerformanceTrace.log(
+                    "anchor.capture", startedAt: DispatchTime.now().uptimeNanoseconds,
+                    metadata: "sel=\(selection) anchorY=\(caretLineAnchorY.map { Int($0) } ?? -999) clipY=\(Int(scrollView.contentView.bounds.origin.y))")
+            } else if flipPending {
+                QuoinPerformanceTrace.log(
+                    "anchor.capture.skipped", startedAt: DispatchTime.now().uptimeNanoseconds,
+                    metadata: "caretRestorePending=\(caretRestorePending) caretInActive=\(caretInActiveBlock ?? -1) gen=\(caretGeneration)")
             }
             // Fallback anchor for caret-less flips (Esc closing a block).
             var flipAnchor: (id: BlockID, screenY: CGFloat)?

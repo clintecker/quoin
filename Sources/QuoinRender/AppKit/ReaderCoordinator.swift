@@ -592,10 +592,20 @@ extension MarkdownReaderView {
             if let blockRange, let blockTextRange = nsTextRange(blockRange, in: contentStorage) {
                 layoutManager.ensureLayout(for: blockTextRange)
             }
+            // Settle the viewport's real geometry BEFORE measuring: the
+            // immediate pin otherwise scrolls against estimates and the
+            // async correction lands a frame later — a visible double-hop
+            // (traced live at 125pt on a fold-straddling list).
+            if settle, let viewport = layoutManager.textViewportLayoutController.viewportRange {
+                layoutManager.ensureLayout(for: viewport)
+            }
             layoutManager.ensureLayout(for: textRange)
             guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { return }
             let documentY = fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y
             let y = max(0, documentY - screenY)
+            QuoinPerformanceTrace.log(
+                "anchor.pinCaretLine", startedAt: DispatchTime.now().uptimeNanoseconds,
+                metadata: "loc=\(location) targetScreenY=\(Int(screenY)) docY=\(Int(documentY)) clipY=\(Int(clip.bounds.origin.y)) newY=\(Int(y)) settlePass=\(!settle)")
             if abs(y - clip.bounds.origin.y) > 0.5 {
                 clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
                 textView.enclosingScrollView?.reflectScrolledClipView(clip)
