@@ -44,10 +44,14 @@ final class RevealDeltaRatchetTests: XCTestCase {
         "blockQuote": 205,
         "thematicBreak": 90,
         "html": 85,
-        // Attachment-backed reveals (equations, images, diagrams): the
-        // attachment's height is unbounded relative to its source lines —
-        // inherent; the caret-line pin is the user's guard there.
-        "attachment": 800,
+        // Attachment-backed reveals (equations, images, diagrams): with the
+        // preview-anchored reveal the artifact STAYS rendered and the
+        // source unfolds beneath it, so the delta is now the source
+        // panel's own height (plus, for images, the attachment height —
+        // images have no preview mode). Bounded by source length; the
+        // kitchen-sink sequence diagram measures 1227. The caret-line pin
+        // and the anchored preview are the user's guards here.
+        "attachment": 1300,
         // Reference-link definitions are INVISIBLE in the reading
         // projection; revealing them must show their lines (URLs collapse,
         // labels can't).

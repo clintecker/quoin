@@ -45,7 +45,7 @@ final class EditingRenderLatencyTests: XCTestCase {
         let renderer = AttributedRenderer()
         var length = 0
         let best = bestOf(5) {
-            length = renderer.renderEditableSourceFragment(self.mermaidSource, caretOffset: 40).length
+            length = renderer.renderEditableSourceFragment(self.mermaidSource, caretOffset: 40).attributed.length
         }
         XCTAssertGreaterThan(length, 0)
         XCTAssertLessThan(best, fragmentBudget,

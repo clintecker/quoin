@@ -166,13 +166,16 @@ public struct AttributedRenderer {
             if block.id == activeBlockID,
                let slice = document.source.substring(in: block.range) {
                 // Syntax reveal: the active block shows its literal source,
-                // editable in place. Only the caret's span reveals its
-                // delimiters (handoff span-level rule). Never cached — its
-                // fragment changes as the caret moves.
-                let editable = renderEditableSource(slice, caretOffset: activeCaret, block: block, document: document)
-                activeEditableRange = NSRange(location: start, length: editable.length)
+                // editable in place (led by a live preview for diagram/math
+                // kinds). Only the caret's span reveals its delimiters
+                // (handoff span-level rule). Never cached — its fragment
+                // changes as the caret moves.
+                let revealed = renderEditableSource(slice, caretOffset: activeCaret, block: block, document: document)
+                activeEditableRange = NSRange(
+                    location: start + revealed.editableRange.location,
+                    length: revealed.editableRange.length)
                 activeSourceText = slice
-                output.append(editable)
+                output.append(revealed.attributed)
             } else if isCacheable(block.kind), let cached = cache[block.id] {
                 newCache[block.id] = cached
                 output.append(cached)
@@ -225,11 +228,42 @@ public struct AttributedRenderer {
         )
     }
 
+    /// A revealed block's projection: the full fragment plus the range of
+    /// the 1:1 editable source WITHIN it. They differ for the
+    /// preview-anchored reveal (mermaid/math), where the fragment leads
+    /// with a live preview of the artifact; everywhere else the editable
+    /// range spans the whole fragment.
+    public struct RevealedFragment {
+        public let attributed: NSAttributedString
+        public let editableRange: NSRange
+    }
+
     public func renderEditableSourceFragment(
         _ slice: String, caretOffset: Int? = nil,
         block: Block? = nil, document: QuoinDocument? = nil
-    ) -> NSAttributedString {
+    ) -> RevealedFragment {
         renderEditableSource(slice, caretOffset: caretOffset, block: block, document: document)
+    }
+
+    /// The held last-good preview for the CURRENT editing session
+    /// (preview-anchored reveal): while the open diagram/equation's source
+    /// is mid-edit and unparseable, the previous successful render stays
+    /// up — never blank, never flashing. One entry suffices (one active
+    /// block at a time); the model resets it when a different block
+    /// activates so a stale artifact can never appear over foreign source.
+    /// (Reference-boxed: the renderer is a struct whose render paths are
+    /// non-mutating.)
+    private final class ActivePreviewBox {
+        var value: (key: String, sourceText: String, attachment: NSAttributedString)?
+    }
+    private let activePreviewBox = ActivePreviewBox()
+    private var activePreview: (key: String, sourceText: String, attachment: NSAttributedString)? {
+        get { activePreviewBox.value }
+        nonmutating set { activePreviewBox.value = newValue }
+    }
+
+    public func resetActivePreview() {
+        activePreview = nil
     }
 
     /// One block's READ fragment, exactly as the full render loop would
@@ -295,8 +329,10 @@ public struct AttributedRenderer {
                   current.activeBlockID == oldID,
                   let blockIndex = document.blocks.firstIndex(where: { $0.id == oldID }),
                   let oldBlockRange = current.blockRanges[oldID],
-                  oldBlockRange.location == editableRange.location,
-                  oldBlockRange.length >= editableRange.length
+                  // The editable source sits INSIDE the block's fragment
+                  // (offset from its start when a preview leads it).
+                  editableRange.location >= oldBlockRange.location,
+                  NSMaxRange(editableRange) <= NSMaxRange(oldBlockRange)
             else { return nil }
             let block = document.blocks[blockIndex]
             let (fragment, pending) = renderReadFragment(block, document: document)
@@ -314,7 +350,7 @@ public struct AttributedRenderer {
         }
 
         // Activation: the new block's read fragment flips to editable source.
-        var newEditableLength = 0
+        var newEditableRangeInFragment = NSRange(location: 0, length: 0)
         if let newID {
             guard let blockIndex = document.blocks.firstIndex(where: { $0.id == newID }),
                   let blockRange = current.blockRanges[newID],
@@ -326,8 +362,8 @@ public struct AttributedRenderer {
             // but a revealed slice that ends with its own newline needs the
             // separator clamped to near-zero height or it lays out as a
             // phantom empty paragraph the reading projection never shows.
-            let editable = renderEditableSourceFragment(slice, caretOffset: caret, block: block, document: document)
-            let replacement = NSMutableAttributedString(attributedString: editable)
+            let revealed = renderEditableSourceFragment(slice, caretOffset: caret, block: block, document: document)
+            let replacement = NSMutableAttributedString(attributedString: revealed.attributed)
             if blockIndex < document.blocks.count - 1 {
                 let nextKind = document.blocks[blockIndex + 1].kind
                 replacement.append(Self.revealNeedsClampedSeparator(slice)
@@ -340,7 +376,7 @@ public struct AttributedRenderer {
                 blockID: newID, newLength: replacement.length, oldLength: blockRange.length
             ))
             activeSourceText = slice
-            newEditableLength = editable.length
+            newEditableRangeInFragment = revealed.editableRange
         }
 
         guard !patches.isEmpty else { return nil }
@@ -367,7 +403,9 @@ public struct AttributedRenderer {
         }
         var activeEditableRange: NSRange?
         if let newID, let newRange = ranges[newID] {
-            activeEditableRange = NSRange(location: newRange.location, length: newEditableLength)
+            activeEditableRange = NSRange(
+                location: newRange.location + newEditableRangeInFragment.location,
+                length: newEditableRangeInFragment.length)
         }
 
         return ActivationFlipUpdate(
@@ -451,7 +489,7 @@ public struct AttributedRenderer {
     private func renderEditableSource(
         _ slice: String, caretOffset: Int? = nil,
         block: Block? = nil, document: QuoinDocument? = nil
-    ) -> NSAttributedString {
+    ) -> RevealedFragment {
         var styler = MarkdownSourceStyler(theme: theme)
         switch block?.kind {
         case .htmlBlock, .codeBlock, .mermaid, .mathBlock, .frontMatter:
@@ -462,20 +500,8 @@ public struct AttributedRenderer {
         }
         let styled = NSMutableAttributedString(
             attributedString: styler.style(slice, caretOffset: caretOffset))
-        guard styled.length > 0 else { return styled }
-        // Editing-mode chrome for EMBED kinds: accent frame + drawn ✓ done
-        // chip. Attached here — the single choke point all three projection
-        // paths share (full render, flip patch, edit round-trip) — as a
-        // decoration, never a text run: the revealed source stays 1:1 with
-        // the file. Prose reveal stays chrome-free (brief principle 3: the
-        // caret IS the mode there).
-        func tagEditingFrame() {
-            guard let block, isEmbedEditingKind(block.kind) else { return }
-            styled.addAttribute(
-                QuoinAttribute.blockDecoration,
-                value: BlockDecoration(kind: .editingFrame(accent: theme.accent)),
-                range: NSRange(location: 0, length: styled.length)
-            )
+        guard styled.length > 0 else {
+            return RevealedFragment(attributed: styled, editableRange: NSRange(location: 0, length: 0))
         }
 
         if let block, let document {
@@ -485,8 +511,7 @@ public struct AttributedRenderer {
                 transplantParagraphStyles(from: read, onto: styled, source: slice)
                 compressInteriorBlankLines(in: styled, caretOffset: caretOffset)
                 clampTrailingNewlinePhantom(in: styled, caretOffset: caretOffset)
-                tagEditingFrame()
-                return styled
+                return assembleRevealedFragment(source: styled, block: block)
             default:
                 break
             }
@@ -495,8 +520,114 @@ public struct AttributedRenderer {
         // Fallback (embed kinds, or no block context): mirror the code
         // canvas's line metrics and the body's trailing gap.
         applyFallbackMetrics(to: styled, kind: block?.kind)
-        tagEditingFrame()
-        return styled
+        return assembleRevealedFragment(source: styled, block: block)
+    }
+
+    /// Combines the styled source with its editing-mode chrome:
+    ///
+    /// - PREVIEW-ANCHORED REVEAL (mermaid/math): the fragment leads with a
+    ///   live render of the artifact — the thing the user cares about
+    ///   never disappears while its source is open, and every keystroke
+    ///   re-renders it. Unparseable mid-edit source keeps the last GOOD
+    ///   render (never blank, never flashing) plus one calm note line.
+    /// - EMBED editing chrome: accent frame + drawn ✓ done chip as a
+    ///   decoration over the whole fragment — never a text run; the
+    ///   source region stays 1:1 with the file, reported precisely by
+    ///   `editableRange`. Prose reveal stays chrome-free (the caret IS
+    ///   the mode there).
+    private func assembleRevealedFragment(
+        source styled: NSMutableAttributedString, block: Block?
+    ) -> RevealedFragment {
+        let output = NSMutableAttributedString()
+        if let block, let preview = revealPreviewLine(for: block.kind) {
+            output.append(preview)
+        }
+        let editableRange = NSRange(location: output.length, length: styled.length)
+        output.append(styled)
+        if let block, isEmbedEditingKind(block.kind) {
+            output.addAttribute(
+                QuoinAttribute.blockDecoration,
+                value: BlockDecoration(kind: .editingFrame(accent: theme.accent)),
+                range: NSRange(location: 0, length: output.length)
+            )
+        }
+        return RevealedFragment(attributed: output, editableRange: editableRange)
+    }
+
+    /// The live preview paragraph (plus, when the source is mid-edit
+    /// broken, a one-line note) that anchors a revealed diagram/equation.
+    /// Returns nil for every other kind, and for a block whose source has
+    /// never rendered in this editing session (opening a broken diagram
+    /// shows plain source — same as before this feature).
+    private func revealPreviewLine(for kind: BlockKind) -> NSAttributedString? {
+        let key: String
+        let noun: String
+        let sourceText: String
+        switch kind {
+        case .mermaid(let source):
+            key = "mermaid"
+            noun = "diagram"
+            sourceText = source
+        case .mathBlock(let latex):
+            key = "math"
+            noun = "equation"
+            sourceText = latex
+        default:
+            return nil
+        }
+
+        // Unchanged source reuses the held attachment INSTANCE: caret
+        // moves don't re-render the artifact, and the flip-patch and
+        // full-render projections stay attribute-identical (attachment
+        // equality is identity).
+        let attachment: NSAttributedString
+        var paused = false
+        if let held = activePreview, held.key == key, held.sourceText == sourceText {
+            attachment = held.attachment
+        } else {
+            let fresh: NSAttributedString? = switch kind {
+            case .mermaid(let source):
+                MermaidRenderer.attachmentString(source: source, theme: theme.diagramTheme)
+            case .mathBlock(let latex):
+                MathImageRenderer.attachmentString(
+                    latex: latex, display: true, theme: theme, baseSize: theme.bodySize)
+            default:
+                nil
+            }
+            if let fresh {
+                activePreview = (key, sourceText, fresh)
+                attachment = fresh
+            } else if let held = activePreview, held.key == key {
+                attachment = held.attachment
+                paused = true
+            } else {
+                return nil
+            }
+        }
+
+        let output = NSMutableAttributedString(attributedString: attachment)
+        let style = paragraphStyle()
+        if key == "math" { style.alignment = .center }
+        style.paragraphSpacingBefore = 6
+        style.paragraphSpacing = paused ? 2 : 8
+        output.addAttribute(.paragraphStyle, value: style,
+                            range: NSRange(location: 0, length: output.length))
+        output.append(NSAttributedString(string: "\n", attributes: [
+            .font: theme.captionFont(),
+            .paragraphStyle: style,
+        ]))
+        if paused {
+            var note = bodyAttributes()
+            note[.font] = theme.captionFont()
+            note[.foregroundColor] = PlatformColor.systemOrange
+            let noteStyle = paragraphStyle()
+            noteStyle.paragraphSpacing = 6
+            note[.paragraphStyle] = noteStyle
+            output.append(NSAttributedString(
+                string: "⚠︎ \(noun) paused — showing the last good render\n",
+                attributes: note))
+        }
+        return output
     }
 
     /// Kinds whose OPEN state shows the editing frame + ✓ done chip. The

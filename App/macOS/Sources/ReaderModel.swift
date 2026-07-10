@@ -272,6 +272,10 @@ final class ReaderModel {
         guard id != activeBlockID else { return }
         let previousActiveID = activeBlockID
         activeBlockID = id
+        // Each editing session holds its own last-good preview; a stale
+        // artifact from the previous session must never appear over a
+        // different block's source.
+        renderer.resetActivePreview()
         if let id, let block = document.blocks.first(where: { $0.id == id }),
            let slice = document.source.substring(in: block.range) {
             let sourceLength = slice.utf16.count
@@ -535,7 +539,7 @@ final class ReaderModel {
         else { return nil }
 
         var ranges: [BlockID: NSRange] = [:]
-        let replacement = QuoinPerformanceTrace.measure(
+        let revealed = QuoinPerformanceTrace.measure(
             "render.activeBlockPatch.fragment",
             metadata: "block_utf8=\(newDocument.blocks[newIndex].range.length)"
         ) {
@@ -543,7 +547,20 @@ final class ReaderModel {
                 newSlice, caretOffset: caretInActiveBlock,
                 block: newDocument.blocks[newIndex], document: newDocument)
         }
-        let delta = replacement.length - oldEditableRange.length
+        // The patch replaces the whole OLD fragment (block range minus its
+        // trailing separator) — not just the editable region: the
+        // preview-anchored reveal (mermaid/math) leads the fragment with a
+        // live preview that every keystroke must refresh.
+        let separatorLength = oldIndex < oldDocument.blocks.count - 1
+            ? renderer.separatorLength(
+                after: oldDocument.blocks[oldIndex].kind,
+                before: oldDocument.blocks[oldIndex + 1].kind)
+            : 0
+        let oldFragmentLength = oldBlockRange.length - separatorLength
+        guard oldFragmentLength >= 0 else { return nil }
+        let oldFragmentRange = NSRange(location: oldBlockRange.location, length: oldFragmentLength)
+        let replacement = revealed.attributed
+        let delta = replacement.length - oldFragmentLength
 
         for index in newDocument.blocks.indices {
             let newBlock = newDocument.blocks[index]
@@ -566,9 +583,11 @@ final class ReaderModel {
         }
 
         return ActiveBlockRenderPatch(
-            storagePatch: RenderStoragePatch(oldRange: oldEditableRange, replacement: replacement),
+            storagePatch: RenderStoragePatch(oldRange: oldFragmentRange, replacement: replacement),
             blockRanges: ranges,
-            activeEditableRange: NSRange(location: oldEditableRange.location, length: replacement.length),
+            activeEditableRange: NSRange(
+                location: oldBlockRange.location + revealed.editableRange.location,
+                length: revealed.editableRange.length),
             activeSourceText: newSlice,
             oldActiveBlockID: oldActiveBlockID
         )
