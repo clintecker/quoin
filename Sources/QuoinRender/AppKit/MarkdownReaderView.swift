@@ -431,6 +431,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 )
             }
         }
+        // Activation changes invalidate queued keystroke positions.
+        if rendered.activeBlockID != coordinator.lastActiveBlockID {
+            coordinator.clearPendingKeystrokes()
+        }
         coordinator.lastActiveBlockID = rendered.activeBlockID
 
         // Restore the caret into the active block after an edit round-trip.
@@ -467,6 +471,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
             if textView.window?.firstResponder !== textView {
                 textView.window?.makeFirstResponder(textView)
             }
+            // The edit's echo has fully landed (projection + caret):
+            // release the next queued keystroke (ledger #11).
+            coordinator.noteEditEchoApplied(in: textView)
         }
 
         // Motion, second half: with the splice applied and the pin's settle

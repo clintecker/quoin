@@ -351,6 +351,61 @@ extension MarkdownReaderView {
 
         // MARK: Editing
 
+        // MARK: Edit-echo serialization (ledger #11)
+
+        /// A keystroke that arrived while an edit round-trip was still
+        /// un-acked. Its POSITION cannot be trusted (the projection under
+        /// the caret is about to move), but its CONTENT and ORDER can —
+        /// sequential typing happens at one conceptual caret. Queued
+        /// keystrokes flush one per echo, each computed against the
+        /// freshly restored caret.
+        struct PendingKeystroke {
+            let deleteBackward: Bool
+            let insert: String
+        }
+        private var pendingKeystrokes: [PendingKeystroke] = []
+        /// True from sending an edit until its projection echo restores
+        /// the caret. Fast typing used to compute the NEXT keystroke's
+        /// range against the stale projection — characters landed at old
+        /// offsets, scrambling into neighboring text (field report:
+        /// "edits swallowed in the source, persisted forever in the
+        /// chart" — the chart rendered the true, scrambled document).
+        private var awaitingEditEcho = false
+        private var awaitingEditEchoSince: TimeInterval = 0
+
+        private func beginAwaitingEditEcho() {
+            awaitingEditEcho = true
+            awaitingEditEchoSince = ProcessInfo.processInfo.systemUptime
+        }
+
+        /// The projection echo landed (caret restored). Flush ONE queued
+        /// keystroke — it re-enters the ordinary pipeline at the fresh
+        /// caret, and its own echo flushes the next.
+        func noteEditEchoApplied(in textView: NSTextView) {
+            awaitingEditEcho = false
+            guard !pendingKeystrokes.isEmpty else { return }
+            let next = pendingKeystrokes.removeFirst()
+            let caret = textView.selectedRange().location
+            if next.deleteBackward {
+                guard caret > 0 else { return }
+                _ = self.textView(
+                    textView,
+                    shouldChangeTextIn: NSRange(location: caret - 1, length: 1),
+                    replacementString: "")
+            } else {
+                _ = self.textView(
+                    textView,
+                    shouldChangeTextIn: NSRange(location: caret, length: 0),
+                    replacementString: next.insert)
+            }
+        }
+
+        /// Activation changes invalidate queued positions entirely.
+        func clearPendingKeystrokes() {
+            pendingKeystrokes.removeAll()
+            awaitingEditEcho = false
+        }
+
         /// Every keystroke lands here. Inside the active block's revealed
         /// source it becomes a relative byte-range edit for the session;
         /// anywhere else it activates the block under the caret instead.
@@ -358,6 +413,27 @@ extension MarkdownReaderView {
         /// only ever replaced wholesale by a re-render.
         public func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
             guard let onEdit = parent.onEditIntent else { return false }
+
+            // An edit is still in flight: the projection (and every range
+            // derived from it) is about to move. Queue simple typing
+            // shapes instead of applying them against stale coordinates.
+            if awaitingEditEcho, parent.rendered.activeEditableRange != nil {
+                // Watchdog: a lost echo must never wedge typing.
+                if ProcessInfo.processInfo.systemUptime - awaitingEditEchoSince > 2 {
+                    clearPendingKeystrokes()
+                } else if affectedCharRange.length == 0,
+                          let replacementString, !replacementString.isEmpty {
+                    pendingKeystrokes.append(.init(deleteBackward: false, insert: replacementString))
+                    return false
+                } else if affectedCharRange.length == 1, (replacementString ?? "").isEmpty {
+                    pendingKeystrokes.append(.init(deleteBackward: true, insert: ""))
+                    return false
+                } else {
+                    // A complex edit mid-flight (drag, cut of a range):
+                    // rare — drop the queue rather than misorder it.
+                    pendingKeystrokes.removeAll()
+                }
+            }
 
             if let active = parent.rendered.activeEditableRange,
                let sourceText = parent.rendered.activeSourceText,
@@ -379,6 +455,7 @@ extension MarkdownReaderView {
                 }
                 let caretDelta = caret.flatMap { EditMapping.utf8Offset(inText: text, utf16Offset: $0) }
                 onEdit(byteRange, text, caretDelta)
+                beginAwaitingEditEcho()
                 return false
             }
 

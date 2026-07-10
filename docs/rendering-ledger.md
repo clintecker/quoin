@@ -4,6 +4,22 @@ Field reports from live use, one entry per issue. Status: OPEN → FIXED
 (commit) / WONTFIX (reason). Newest first. Screenshots land in
 docs/design/ when they carry information the prose doesn't.
 
+## #11 — Fast typing scrambles edits into neighboring text — FIXED
+
+*Reported 2026-07-10 (live use, ER diagram: a relationship label reading
+"containsininnao"; "edits swallowed in the source, persisted forever in
+the chart").* Root cause: a keystroke arriving BEFORE the previous
+edit's projection echo computed its range against stale coordinates —
+the model resolved it into the already-changed document, landing
+characters at old offsets (inside neighboring labels). The chart
+rendered the true, scrambled document; the source view looked like it
+swallowed keys. Chart editing surfaced it because per-keystroke preview
+renders occasionally push the round-trip past the inter-key interval.
+Fix: mid-flight keystrokes (insertions and backspace) QUEUE in order
+and flush one per echo, each computed at the freshly restored caret; a
+2s watchdog prevents a lost echo from wedging typing; activation
+changes drop the queue. Pinned by EditEchoSerializationTests.
+
 ## #9 — Venn diagram renders disjoint circles (no overlaps) — OPEN (MermaidKit)
 
 *Reported 2026-07-10 (extreme stress test §18.35 venn-beta).* The four
