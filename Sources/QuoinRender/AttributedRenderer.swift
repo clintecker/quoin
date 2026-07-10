@@ -1069,6 +1069,16 @@ public struct AttributedRenderer {
             output.append(render(block: child, depth: depth + 1, document: document))
         }
         let full = NSRange(location: 0, length: output.length)
+        // Nested cards (code, diagrams) keep their own decoration — the
+        // callout box is applied around them, not over them (a blanket
+        // add replaced the child's canvas with the box; ledger #1 family).
+        var cardRanges: [NSRange] = []
+        output.enumerateAttribute(QuoinAttribute.blockDecoration, in: full) { value, range, _ in
+            if value != nil { cardRanges.append(range) }
+        }
+        func intersectsCard(_ range: NSRange) -> Bool {
+            cardRanges.contains { NSIntersectionRange($0, range).length > 0 }
+        }
         output.enumerateAttribute(.paragraphStyle, in: full) { value, range, _ in
             let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? paragraphStyle()
             style.firstLineHeadIndent += 12
@@ -1076,15 +1086,38 @@ public struct AttributedRenderer {
             style.tailIndent = -12
             output.addAttribute(.paragraphStyle, value: style, range: range)
         }
+        for card in cardRanges {
+            output.enumerateAttribute(QuoinAttribute.blockDecoration, in: card) { value, range, _ in
+                guard let decoration = value as? BlockDecoration else { return }
+                output.addAttribute(
+                    QuoinAttribute.blockDecoration,
+                    value: decoration.inset(by: 12),
+                    range: range
+                )
+            }
+        }
         // Bottom padding inside the box: the last paragraph carries it.
         padLastLine(in: output, spacing: 8)
         // Rounded 4% tint + 15% border in the semantic color, drawn as a
-        // block decoration by the reader view.
-        output.addAttribute(
-            QuoinAttribute.blockDecoration,
-            value: BlockDecoration(kind: .callout(color: semantic)),
-            range: full
-        )
+        // block decoration by the reader view — on the NON-card runs only.
+        var cursor = 0
+        for card in cardRanges.sorted(by: { $0.location < $1.location }) {
+            if card.location > cursor {
+                output.addAttribute(
+                    QuoinAttribute.blockDecoration,
+                    value: BlockDecoration(kind: .callout(color: semantic)),
+                    range: NSRange(location: cursor, length: card.location - cursor)
+                )
+            }
+            cursor = max(cursor, NSMaxRange(card))
+        }
+        if cursor < output.length {
+            output.addAttribute(
+                QuoinAttribute.blockDecoration,
+                value: BlockDecoration(kind: .callout(color: semantic)),
+                range: NSRange(location: cursor, length: output.length - cursor)
+            )
+        }
         return output
     }
 
@@ -1341,7 +1374,16 @@ public struct AttributedRenderer {
         }
 
         // Item content: first paragraph flows inline after the marker, any
-        // further blocks (nested lists, paragraphs) follow on their own lines.
+        // further blocks (nested lists, paragraphs, cards) follow on their
+        // own lines, aligned under the item's TEXT column — a continuation
+        // paragraph that reused the marker line's hanging indent started
+        // at x = 0 and read as a stray paragraph between bullets
+        // (ledger #2).
+        let continuationStyle = paragraphStyle()
+        continuationStyle.firstLineHeadIndent = indent
+        continuationStyle.headIndent = indent
+        continuationStyle.paragraphSpacing = theme.paragraphSpacing * 0.35
+
         for (blockIndex, block) in item.blocks.enumerated() {
             if blockIndex > 0 {
                 output.append(NSAttributedString(string: "\n", attributes: markerAttributes))
@@ -1349,7 +1391,7 @@ public struct AttributedRenderer {
             switch block.kind {
             case .paragraph(let inlines):
                 var attributes = bodyAttributes()
-                attributes[.paragraphStyle] = style
+                attributes[.paragraphStyle] = blockIndex == 0 ? style : continuationStyle
                 if item.task == .checked {
                     // Done rows strike and fade to 40% per the element spec.
                     attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
@@ -1360,10 +1402,38 @@ public struct AttributedRenderer {
             case .list(let nested, let nestedOrdered, let nestedStart):
                 output.append(renderList(items: nested, ordered: nestedOrdered, start: nestedStart, depth: depth + 1, document: document))
             default:
+                // A card child (code, diagram, quote) nests under the item:
+                // indent its text and its chrome together (ledger #2).
+                let childStart = output.length
                 output.append(render(block: block, depth: depth + 1, document: document))
+                indentCard(in: output,
+                           range: NSRange(location: childStart, length: output.length - childStart),
+                           by: indent)
             }
         }
         return output
+    }
+
+    /// Nests a card child one level deeper: bumps its paragraph indents
+    /// AND its decoration's leading inset by `delta`, so the canvas/box/
+    /// frame moves with its text instead of breaking out to x = 0
+    /// (ledger #1/#2). Composes across levels — each container adds its
+    /// own delta.
+    private func indentCard(in output: NSMutableAttributedString, range: NSRange, by delta: CGFloat) {
+        output.enumerateAttribute(.paragraphStyle, in: range) { value, styleRange, _ in
+            let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? paragraphStyle()
+            style.firstLineHeadIndent += delta
+            style.headIndent += delta
+            output.addAttribute(.paragraphStyle, value: style, range: styleRange)
+        }
+        output.enumerateAttribute(QuoinAttribute.blockDecoration, in: range) { value, decorationRange, _ in
+            guard let decoration = value as? BlockDecoration else { return }
+            output.addAttribute(
+                QuoinAttribute.blockDecoration,
+                value: decoration.inset(by: delta),
+                range: decorationRange
+            )
+        }
     }
 
     private func renderBlockQuote(children: [Block], depth: Int, document: QuoinDocument) -> NSAttributedString {
@@ -1407,6 +1477,13 @@ public struct AttributedRenderer {
             style.firstLineHeadIndent += 16
             style.headIndent += 16
             output.addAttribute(.paragraphStyle, value: style, range: range)
+        }
+        // Cards nest INSIDE the quote: same 16pt push, applied to their
+        // indents and their chrome's leading inset together — the italic/
+        // recolor passes still skip them (a card keeps its own styling),
+        // but geometry must follow the container (ledger #1).
+        for card in cardRanges {
+            indentCard(in: output, range: card, by: 16)
         }
         // Element spec: pad-left 16, italic, 55% ink, 3pt rule at the left
         // edge (drawn as a block decoration by the reader view).

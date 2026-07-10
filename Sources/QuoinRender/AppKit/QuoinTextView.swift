@@ -253,8 +253,12 @@ final class QuoinTextView: NSTextView {
             if let container = textContainer {
                 switch run.decoration.kind {
                 case .codeCanvas, .callout, .diagramFrame, .editingFrame:
-                    union.origin.x = 0
-                    union.size.width = container.size.width
+                    // Full-width chrome starts at the card's own text
+                    // column: nested cards (code in a quote, a diagram in
+                    // a list item) carry the accumulated nesting inset —
+                    // x = 0 made them break out of their container.
+                    union.origin.x = run.decoration.leadingInset
+                    union.size.width = container.size.width - run.decoration.leadingInset
                 default:
                     break
                 }

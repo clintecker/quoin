@@ -42,9 +42,21 @@ public final class BlockDecoration: NSObject {
     }
 
     public let kind: Kind
+    /// Leading inset for full-width chrome (code canvas, callout box,
+    /// diagram frame): nested cards — code inside a blockquote, a diagram
+    /// inside a list item — must start at their container's text column,
+    /// not at x = 0. Nesting passes accumulate it level by level.
+    public let leadingInset: CGFloat
 
-    public init(kind: Kind) {
+    public init(kind: Kind, leadingInset: CGFloat = 0) {
         self.kind = kind
+        self.leadingInset = leadingInset
+    }
+
+    /// The same decoration pushed `delta` further in (nested one level
+    /// deeper).
+    public func inset(by delta: CGFloat) -> BlockDecoration {
+        BlockDecoration(kind: kind, leadingInset: leadingInset + delta)
     }
 
     /// Value equality: decorations are values carried as attributes, and
@@ -54,6 +66,7 @@ public final class BlockDecoration: NSObject {
     /// like an attribute change.
     public override func isEqual(_ object: Any?) -> Bool {
         guard let other = object as? BlockDecoration else { return false }
+        guard leadingInset == other.leadingInset else { return false }
         switch (kind, other.kind) {
         case (.codeCanvas(let a), .codeCanvas(let b)):
             return a.isEqual(b)

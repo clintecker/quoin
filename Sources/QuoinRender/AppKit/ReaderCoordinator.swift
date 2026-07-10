@@ -365,6 +365,11 @@ extension MarkdownReaderView {
             // prose uses the rendered offset. Deletes and range replacements
             // just activate — their extent has no defined image in the
             // still-hidden source.
+            // Presentation objects (diagrams, equations) never open from a
+            // stray keystroke — chip/⌘↩/menu only (ledger #7).
+            if isChipOnlyEmbed(atCharIndex: affectedCharRange.location) {
+                return false
+            }
             if let id = blockID(atCharIndex: affectedCharRange.location) {
                 var hint: CaretHint?
                 if isEmbedBlock(atCharIndex: affectedCharRange.location) {
@@ -687,6 +692,18 @@ extension MarkdownReaderView {
             return storage.attribute(QuoinAttribute.embedBlock, at: index, effectiveRange: nil) != nil
         }
 
+        /// Attachment embeds (diagrams, equations) are presentation
+        /// objects: they open ONLY through explicit intent — the ‹/› edit
+        /// chip, ⌘↩, or the context menu — never a double-click or a stray
+        /// keystroke (ledger #7).
+        func isChipOnlyEmbed(atCharIndex index: Int) -> Bool {
+            guard let storage = textView?.textContentStorage?.textStorage,
+                  index >= 0, index < storage.length,
+                  isEmbedBlock(atCharIndex: index) else { return false }
+            return storage.attribute(QuoinAttribute.diagramSource, at: index, effectiveRange: nil) != nil
+                || storage.attribute(QuoinAttribute.mathSource, at: index, effectiveRange: nil) != nil
+        }
+
         /// Double-click on an embed block flips it to editable source
         /// (QuoinTextView routes the gesture here). The caret lands at the
         /// source position matching the click: code bodies map exactly
@@ -699,6 +716,7 @@ extension MarkdownReaderView {
         @discardableResult
         func activateEmbedBlock(atCharIndex index: Int) -> Bool {
             guard isEmbedBlock(atCharIndex: index),
+                  !isChipOnlyEmbed(atCharIndex: index),
                   let id = blockID(atCharIndex: index),
                   id != parent.rendered.activeBlockID else { return false }
             let hint: CaretHint? = embedCaretHint(atCharIndex: index).map { .source($0) }

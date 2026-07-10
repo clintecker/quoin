@@ -3769,7 +3769,16 @@
         "q" : [
 
         ],
-        "t" : "•  Loose item one.\nThis paragraph belongs to loose item one."
+        "t" : "•  Loose item one.\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi22.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "This paragraph belongs to loose item one."
       },
       {
         "f" : "14.00/0.00",
@@ -3790,10 +3799,10 @@
         "t" : "•  Loose item two.\n"
       },
       {
-        "deco" : "quoteRule(#00000026)",
+        "deco" : "quoteRule(#00000026)+inset22",
         "f" : "14.00/0.00",
         "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh16.00 hi16.00 ti0.00 al4 tabs12",
+        "p" : "lh1.70 ps12.00 psb0.00 fh38.00 hi38.00 ti0.00 al4 tabs12",
         "q" : [
 
         ],
@@ -3818,32 +3827,32 @@
         "t" : "•  Loose item three.\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset22",
         "f" : "10.50/0.00m",
         "fg" : "#FFFFFF73",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb8.00 fh34.00 hi34.00 ti-12.00 al2 tabs12",
         "q" : [
           "embed"
         ],
         "t" : "python    "
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset22",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-edit://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb8.00 fh34.00 hi34.00 ti-12.00 al2 tabs12",
         "q" : [
           "embed"
         ],
         "t" : "‹/› edit    "
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset22",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-copy://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb8.00 fh34.00 hi34.00 ti-12.00 al2 tabs12",
         "q" : [
           "copy",
           "embed"
@@ -3851,10 +3860,10 @@
         "t" : "⧉ copy\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset22",
         "f" : "12.00/0.00m",
         "fg" : "#82AAFF",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh34.00 hi34.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=12"
@@ -3862,10 +3871,10 @@
         "t" : "print"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset22",
         "f" : "12.00/0.00m",
         "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh34.00 hi34.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=12"
@@ -3873,10 +3882,10 @@
         "t" : "("
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset22",
         "f" : "12.00/0.00m",
         "fg" : "#C3E88D",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh34.00 hi34.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=12"
@@ -3884,10 +3893,10 @@
         "t" : "\"code inside loose list item\""
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset22",
         "f" : "12.00/0.00m",
         "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh34.00 hi34.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=12"
@@ -4082,7 +4091,16 @@
         "q" : [
 
         ],
-        "t" : "1.  Nested item one\nParagraph under nested item."
+        "t" : "1.  Nested item one\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps4.20 psb0.00 fh44.00 hi44.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Paragraph under nested item."
       },
       {
         "f" : "14.00/0.00",
@@ -4757,32 +4775,32 @@
         "t" : "\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "10.50/0.00m",
         "fg" : "#FFFFFF73",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb8.00 fh28.00 hi28.00 ti-12.00 al2 tabs12",
         "q" : [
           "embed"
         ],
         "t" : "js    "
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-edit://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb8.00 fh28.00 hi28.00 ti-12.00 al2 tabs12",
         "q" : [
           "embed"
         ],
         "t" : "‹/› edit    "
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-copy://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb8.00 fh28.00 hi28.00 ti-12.00 al2 tabs12",
         "q" : [
           "copy",
           "embed"
@@ -4790,10 +4808,10 @@
         "t" : "⧉ copy\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "12.00/0.00m",
         "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh28.00 hi28.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=8"
@@ -4801,10 +4819,10 @@
         "t" : "console."
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "12.00/0.00m",
         "fg" : "#82AAFF",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh28.00 hi28.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=8"
@@ -4812,10 +4830,10 @@
         "t" : "log"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "12.00/0.00m",
         "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh28.00 hi28.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=8"
@@ -4823,10 +4841,10 @@
         "t" : "("
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "12.00/0.00m",
         "fg" : "#C3E88D",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh28.00 hi28.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=8"
@@ -4834,10 +4852,10 @@
         "t" : "\"fenced code inside blockquote\""
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
+        "deco" : "codeCanvas(#1E2430)+inset16",
         "f" : "12.00/0.00m",
         "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "p" : "lh1.60 ps8.00 psb0.00 fh28.00 hi28.00 ti-12.00 al4 tabs12",
         "q" : [
           "embed",
           "embedStart=8"
@@ -4852,7 +4870,27 @@
         "q" : [
 
         ],
-        "t" : "\nNested quote level two.\nNested quote level three."
+        "t" : "\n"
+      },
+      {
+        "deco" : "quoteRule(#00000026)+inset16",
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.70 ps12.00 psb0.00 fh32.00 hi32.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Nested quote level two.\n"
+      },
+      {
+        "deco" : "quoteRule(#00000026)+inset32",
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.70 ps12.00 psb0.00 fh48.00 hi48.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Nested quote level three."
       },
       {
         "f" : "14.00/0.00",
@@ -12097,7 +12135,16 @@
         "q" : [
 
         ],
-        "t" : "•  Item with paragraph one.\nParagraph two belongs to the same item."
+        "t" : "•  Item with paragraph one.\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps4.20 psb0.00 fh22.00 hi22.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Paragraph two belongs to the same item."
       },
       {
         "f" : "14.00/0.00",
@@ -25724,11 +25771,11 @@
         "t" : "2.  Second item containing a Mermaid diagram:\n"
       },
       {
-        "deco" : "diagramFrame(#0000001F)",
+        "deco" : "diagramFrame(#0000001F)+inset22",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-edit://block",
-        "p" : "lh1.70 ps2.00 psb12.00 fh8.00 hi8.00 ti-8.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb12.00 fh30.00 hi30.00 ti-8.00 al2 tabs12",
         "q" : [
           "diagram",
           "embed"
@@ -25736,8 +25783,8 @@
         "t" : "‹/› edit\n"
       },
       {
-        "deco" : "diagramFrame(#0000001F)",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "deco" : "diagramFrame(#0000001F)+inset22",
+        "p" : "lh1.70 ps12.00 psb0.00 fh22.00 hi22.00 ti0.00 al4 tabs12",
         "q" : [
           "attachment",
           "diagram",
@@ -25785,37 +25832,37 @@
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-edit://block",
-        "p" : "lh1.70 ps2.00 psb3.00 fh0.00 hi0.00 ti0.00 al4 tabs1",
+        "p" : "lh1.70 ps2.00 psb3.00 fh22.00 hi22.00 ti0.00 al4 tabs1",
         "q" : [
           "embed"
         ],
         "t" : "\t‹/› edit\n"
       },
       {
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "14.00/0.30b",
         "fg" : "#333333",
-        "p" : "lh1.20 ps5.00 psb3.00 fh0.00 hi0.00 ti0.00 al4 tabs1",
+        "p" : "lh1.20 ps5.00 psb3.00 fh22.00 hi22.00 ti0.00 al4 tabs1",
         "q" : [
           "embed"
         ],
         "t" : "Inline\tDisplay-ish"
       },
       {
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "14.00/0.00",
         "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "p" : "lh1.70 ps12.00 psb0.00 fh22.00 hi22.00 ti0.00 al4 tabs12",
         "q" : [
           "embed"
         ],
         "t" : "\n"
       },
       {
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "14.00/0.00",
         "fg" : "#333333",
-        "p" : "lh1.20 ps5.00 psb3.00 fh0.00 hi0.00 ti0.00 al4 tabs1",
+        "p" : "lh1.20 ps5.00 psb3.00 fh22.00 hi22.00 ti0.00 al4 tabs1",
         "q" : [
           "embed"
         ],
@@ -25823,20 +25870,20 @@
       },
       {
         "bg" : "#F2F2F4",
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "12.50/0.00m",
         "fg" : "#333333",
-        "p" : "lh1.20 ps5.00 psb3.00 fh0.00 hi0.00 ti0.00 al4 tabs1",
+        "p" : "lh1.20 ps5.00 psb3.00 fh22.00 hi22.00 ti0.00 al4 tabs1",
         "q" : [
           "embed"
         ],
         "t" : "\\[x^2\\]"
       },
       {
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "14.00/0.00",
         "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "p" : "lh1.70 ps12.00 psb0.00 fh22.00 hi22.00 ti0.00 al4 tabs12",
         "q" : [
           "embed"
         ],
@@ -25844,20 +25891,20 @@
       },
       {
         "bg" : "#F2F2F4",
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "12.50/0.00m",
         "fg" : "#333333",
-        "p" : "lh1.20 ps5.00 psb3.00 fh0.00 hi0.00 ti0.00 al4 tabs1",
+        "p" : "lh1.20 ps5.00 psb3.00 fh22.00 hi22.00 ti0.00 al4 tabs1",
         "q" : [
           "embed"
         ],
         "t" : "$maybe$"
       },
       {
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "14.00/0.00",
         "fg" : "#333333",
-        "p" : "lh1.20 ps5.00 psb3.00 fh0.00 hi0.00 ti0.00 al4 tabs1",
+        "p" : "lh1.20 ps5.00 psb3.00 fh22.00 hi22.00 ti0.00 al4 tabs1",
         "q" : [
           "embed"
         ],
@@ -25865,10 +25912,10 @@
       },
       {
         "bg" : "#F2F2F4",
-        "deco" : "tableRules(h:#00000026,b:#00000012)",
+        "deco" : "tableRules(h:#00000026,b:#00000012)+inset22",
         "f" : "12.50/0.00m",
         "fg" : "#333333",
-        "p" : "lh1.20 ps5.00 psb3.00 fh0.00 hi0.00 ti0.00 al4 tabs1",
+        "p" : "lh1.20 ps5.00 psb3.00 fh22.00 hi22.00 ti0.00 al4 tabs1",
         "q" : [
           "embed"
         ],
@@ -25933,11 +25980,11 @@
         "t" : ".\n"
       },
       {
-        "deco" : "diagramFrame(#0000001F)",
+        "deco" : "diagramFrame(#0000001F)+inset16",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-edit://block",
-        "p" : "lh1.70 ps2.00 psb12.00 fh8.00 hi8.00 ti-8.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb12.00 fh24.00 hi24.00 ti-8.00 al2 tabs12",
         "q" : [
           "diagram",
           "embed"
@@ -25945,8 +25992,8 @@
         "t" : "‹/› edit\n"
       },
       {
-        "deco" : "diagramFrame(#0000001F)",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "deco" : "diagramFrame(#0000001F)+inset16",
+        "p" : "lh1.70 ps12.00 psb0.00 fh16.00 hi16.00 ti0.00 al4 tabs12",
         "q" : [
           "attachment",
           "diagram",

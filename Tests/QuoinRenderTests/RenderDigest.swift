@@ -267,6 +267,17 @@ enum RenderDigester {
 
     private static func decorationDigest(_ deco: BlockDecoration, tokenizer: ColorTokenizer) -> String {
         func t(_ c: PlatformColor) -> String { tokenizer.token(for: c) }
+        // Nested cards carry a leading inset; geometry changes must show
+        // in the digest (ledger #1/#2).
+        if deco.leadingInset != 0 {
+            return baseDigest(deco, tokenizer: tokenizer)
+                + String(format: "+inset%.0f", deco.leadingInset)
+        }
+        return baseDigest(deco, tokenizer: tokenizer)
+    }
+
+    private static func baseDigest(_ deco: BlockDecoration, tokenizer: ColorTokenizer) -> String {
+        func t(_ c: PlatformColor) -> String { tokenizer.token(for: c) }
         switch deco.kind {
         case .codeCanvas(let fill): return "codeCanvas(\(t(fill)))"
         case .callout(let color): return "callout(\(t(color)))"
