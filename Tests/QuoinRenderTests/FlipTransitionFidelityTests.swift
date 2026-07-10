@@ -44,9 +44,11 @@ final class FlipTransitionFidelityTests: XCTestCase {
         // STRONGLY vertically asymmetric content: a staircase of bullets
         // plus the line number, so every line's ink pattern differs and a
         // mirrored or shifted snapshot cannot score a near-match (uniform
-        // "Line N — same words" lines once matched 92% mirrored).
+        // "Line N — same words" lines once matched 92% mirrored). Tall
+        // enough (300 lines) that the capture overscan region exists on
+        // any runner's font metrics.
         var text = ""
-        for i in 0..<120 {
+        for i in 0..<300 {
             text += String(repeating: "▌", count: i % 13) + " Line \(i) marker \(String(i, radix: 2))\n"
         }
         textView.drawsBackground = true
@@ -72,6 +74,11 @@ final class FlipTransitionFidelityTests: XCTestCase {
         let overlayContainer = try XCTUnwrap(
             scroll.subviews.first { String(describing: type(of: $0)).contains("OverlayContainer") },
             "slices must mount in the same transaction as the splice")
+        // Environment forensics for headless runners (frames tell which
+        // slice failed to mount and why).
+        print("FLIPFIDELITY slices=\(overlayContainer.subviews.map(\.frame)) "
+            + "visible=\(scroll.contentView.documentVisibleRect) "
+            + "bounds=\(textView.bounds) scale=\(window.backingScaleFactor)")
         XCTAssertEqual(overlayContainer.subviews.count, 2, "block slice + below slice")
 
         // Orientation ANCHOR: an NSImageView showing a known image (RED
