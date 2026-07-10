@@ -57,7 +57,8 @@ final class CaretMappingTests: XCTestCase {
     func testEntitiesAlign() {
         let source = "HTML entities: &amp; and &lt; here"
         let rendered = "HTML entities: & and < here"
-        // Click right before "here": rendered 22 → source past both entities.
+        // Entities consume structurally (N source chars ↔ 1 rendered), so
+        // the mapping is exact even across several of them.
         let renderedHere = (rendered as NSString).range(of: "here").location
         let sourceHere = (source as NSString).range(of: "here").location
         XCTAssertEqual(map(rendered, source, at: renderedHere), sourceHere)
@@ -77,6 +78,38 @@ final class CaretMappingTests: XCTestCase {
         let renderedCaption = (rendered as NSString).range(of: "caption").location
         let sourceCaption = (source as NSString).range(of: "caption").location
         XCTAssertEqual(map(rendered, source, at: renderedCaption), sourceCaption)
+    }
+
+    /// The field report, verbatim: "I click right after the 🧪 [in the
+    /// first item of the hand-written TOC list] and my cursor is always
+    /// placed between the n and g of formatting on item #3." The rendered
+    /// bullet's second space met the source's `[` and the unconstrained
+    /// lookahead ate a word of label text, deterministically derailing the
+    /// caret ~174 characters — and the viewport pin then scrolled the wrong
+    /// line into place (+100pt on every click).
+    func testBulletedAnchorListClickLandsInTheClickedItem() {
+        let source = """
+        - [Markdown Renderer Stress Test 🧪](#markdown-renderer-stress-test-)
+          - [1. Headings](#1-headings)
+          - [2. Paragraphs, Line Breaks, and Entities](#2-paragraphs-line-breaks-and-entities)
+          - [3. Inline Formatting](#3-inline-formatting)
+        """
+        let rendered = """
+        •  Markdown Renderer Stress Test 🧪
+        •  1. Headings
+        •  2. Paragraphs, Line Breaks, and Entities
+        •  3. Inline Formatting
+        """
+        // Click right after the 🧪.
+        let renderedAfterFlask = (rendered as NSString).range(of: "🧪").location + 2
+        let sourceAfterFlask = (source as NSString).range(of: "🧪").location + 2
+        let mapped = map(rendered, source, at: renderedAfterFlask)
+        XCTAssertEqual(mapped, sourceAfterFlask,
+                       "caret must land right after the 🧪 in item 1, not in item 3")
+        // And a click on item 3's text stays in item 3.
+        let renderedInline = (rendered as NSString).range(of: "Inline Formatting").location
+        let sourceInline = (source as NSString).range(of: "Inline Formatting").location
+        XCTAssertEqual(map(rendered, source, at: renderedInline), sourceInline)
     }
 
     func testClampsOutOfRange() {

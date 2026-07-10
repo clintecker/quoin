@@ -21,8 +21,10 @@ final class RevealDeltaRatchetTests: XCTestCase {
     /// - heading 60: a setext heading's `====` underline exists only in
     ///   source.
     /// - code 55: the two fence lines exist only in source.
-    /// - list 95: loose lists show their blank separator lines (compressed
-    ///   to gap height, but items also carry structural markers).
+    /// - list 115: loose lists show their blank separator lines (compressed
+    ///   to gap height, but items also carry structural markers); the caret
+    ///   mapper's syntax-only constraint trades a ±1-line transplant anchor
+    ///   in loose structures for EXACT caret placement.
     /// - blockQuote 185: `>` scaffolding lines, quote-interior fences and
     ///   blank lines — REDUCTION TRACKED (the largest remaining reveal).
     /// - thematicBreak 90: the document-final HR's trailing-newline phantom
@@ -35,8 +37,8 @@ final class RevealDeltaRatchetTests: XCTestCase {
         "table": 45,
         "heading": 60,
         "code": 55,
-        "list": 95,
-        "blockQuote": 185,
+        "list": 115,
+        "blockQuote": 205,
         "thematicBreak": 90,
         "html": 85,
         // Attachment-backed reveals (equations, images, diagrams): the

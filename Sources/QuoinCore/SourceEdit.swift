@@ -133,11 +133,78 @@ public enum EditMapping {
         func aligned(_ sc: UInt16, _ rc: UInt16) -> Bool {
             sc == rc || (sc == newline && rc == space) || (sc == space && rc == newline)
         }
+        let ampersand = UInt16(UnicodeScalar("&").value)
+        let semicolon = UInt16(UnicodeScalar(";").value)
+        let closeBracket = UInt16(UnicodeScalar("]").value)
+        let openParen = UInt16(UnicodeScalar("(").value)
+        let closeParen = UInt16(UnicodeScalar(")").value)
+        /// If `start` begins a link's tail — `](url)` — the index just past
+        /// the closing paren. A link's URL is rendered-invisible (only the
+        /// label shows), and it is CONTENT-shaped, so the syntax-only
+        /// lookahead rightly refuses to cross it; consuming the tail
+        /// structurally keeps clicks on anchor-link lists exact instead of
+        /// drifting one full URL per item.
+        func linkTailEnd(from start: Int) -> Int? {
+            guard start + 1 < source.count,
+                  source[start] == closeBracket, source[start + 1] == openParen else { return nil }
+            let limit = min(start + 512, source.count)
+            var i = start + 2
+            while i < limit {
+                if source[i] == closeParen { return i + 1 }
+                if source[i] == newline { return nil }
+                i += 1
+            }
+            return nil
+        }
+        /// If `start` begins an HTML entity (`&name;` / `&#123;`), the index
+        /// just past its semicolon — an entity is N source characters that
+        /// render as exactly ONE character, so the walk consumes it
+        /// structurally instead of drifting through its letters.
+        func entityEnd(from start: Int) -> Int? {
+            guard start < source.count, source[start] == ampersand else { return nil }
+            let limit = min(start + 10, source.count)
+            var i = start + 1
+            while i < limit {
+                let c = source[i]
+                if c == semicolon { return i > start + 1 ? i + 1 : nil }
+                let isBody = (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A)
+                    || (c >= 0x61 && c <= 0x7A) || c == UInt16(UnicodeScalar("#").value)
+                    || c == UInt16(UnicodeScalar("x").value)
+                if !isBody { return nil }
+                i += 1
+            }
+            return nil
+        }
+
         /// First index in `source` within a bounded window that aligns with
         /// `rc`, or nil — nil means `rc` is a TRANSFORMED character (an
         /// entity like `&lt;` rendering as `<`) with no literal counterpart.
         func lookahead(from start: Int, for rc: UInt16) -> Int? {
+            // The skipped run must be MARKDOWN SYNTAX (punctuation and
+            // whitespace): a skip that crosses a letter or digit is eating
+            // CONTENT, not delimiters. The unconstrained version latched
+            // onto a space inside a link label when a rendered bullet's
+            // second space met the source's `[` — deterministically mapping
+            // a click on list item 1 into item 3 ("my cursor is always
+            // placed between the n and g of formatting on item #3").
             let limit = min(start + 24, source.count)
+            var i = start
+            while i < limit {
+                if aligned(source[i], rc) { return i }
+                let sc = source[i]
+                let isContent = (sc >= 0x30 && sc <= 0x39)
+                    || (sc >= 0x41 && sc <= 0x5A) || (sc >= 0x61 && sc <= 0x7A)
+                    || sc > 0x7F
+                if isContent { return nil }
+                i += 1
+            }
+            return nil
+        }
+
+        func resync(from start: Int, for rc: UInt16) -> Int? {
+            // Unconstrained: only used immediately after an attachment,
+            // whose source span (image alt text, URLs) is content-shaped.
+            let limit = min(start + 64, source.count)
             var i = start
             while i < limit {
                 if aligned(source[i], rc) { return i }
@@ -148,14 +215,27 @@ public enum EditMapping {
 
         var s = 0
         var r = 0
+        var afterAttachment = false
         while r < target, s < source.count {
             let rc = rendered[r]
             if rc == attachment {
                 r += 1                                   // rendered-only (image, chip)
+                afterAttachment = true
+            } else if let end = entityEnd(from: s) {
+                s = end; r += 1                          // entity: N source chars ↔ 1 rendered
+                afterAttachment = false
+            } else if rc != closeBracket, let end = linkTailEnd(from: s) {
+                s = end                                  // `](url)`: rendered-invisible tail
             } else if aligned(source[s], rc) {
                 s += 1; r += 1
+                afterAttachment = false
+            } else if afterAttachment, let match = resync(from: s, for: rc) {
+                s = match                                // cross the attachment's source span
+                afterAttachment = false
             } else if let match = lookahead(from: s, for: rc) {
-                s = match                                // skip the hidden source run
+                s = match                                // skip the hidden syntax run
+            } else if rc == space {
+                r += 1                                   // renderer-inserted marker padding
             } else {
                 s += 1; r += 1                           // transformed char: 1:1 fallback
             }
@@ -193,11 +273,66 @@ public enum EditMapping {
         func aligned(_ sc: UInt16, _ rc: UInt16) -> Bool {
             sc == rc || (sc == newline && rc == space) || (sc == space && rc == newline)
         }
+        let ampersand = UInt16(UnicodeScalar("&").value)
+        let semicolon = UInt16(UnicodeScalar(";").value)
+        let closeBracket = UInt16(UnicodeScalar("]").value)
+        let openParen = UInt16(UnicodeScalar("(").value)
+        let closeParen = UInt16(UnicodeScalar(")").value)
+        /// If `start` begins a link's tail — `](url)` — the index just past
+        /// the closing paren. A link's URL is rendered-invisible (only the
+        /// label shows), and it is CONTENT-shaped, so the syntax-only
+        /// lookahead rightly refuses to cross it; consuming the tail
+        /// structurally keeps clicks on anchor-link lists exact instead of
+        /// drifting one full URL per item.
+        func linkTailEnd(from start: Int) -> Int? {
+            guard start + 1 < source.count,
+                  source[start] == closeBracket, source[start + 1] == openParen else { return nil }
+            let limit = min(start + 512, source.count)
+            var i = start + 2
+            while i < limit {
+                if source[i] == closeParen { return i + 1 }
+                if source[i] == newline { return nil }
+                i += 1
+            }
+            return nil
+        }
+        /// If `start` begins an HTML entity (`&name;` / `&#123;`), the index
+        /// just past its semicolon — an entity is N source characters that
+        /// render as exactly ONE character, so the walk consumes it
+        /// structurally instead of drifting through its letters.
+        func entityEnd(from start: Int) -> Int? {
+            guard start < source.count, source[start] == ampersand else { return nil }
+            let limit = min(start + 10, source.count)
+            var i = start + 1
+            while i < limit {
+                let c = source[i]
+                if c == semicolon { return i > start + 1 ? i + 1 : nil }
+                let isBody = (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A)
+                    || (c >= 0x61 && c <= 0x7A) || c == UInt16(UnicodeScalar("#").value)
+                    || c == UInt16(UnicodeScalar("x").value)
+                if !isBody { return nil }
+                i += 1
+            }
+            return nil
+        }
+
         func lookahead(from start: Int, for rc: UInt16) -> Int? {
+            // The skipped run must be MARKDOWN SYNTAX (punctuation and
+            // whitespace): a skip that crosses a letter or digit is eating
+            // CONTENT, not delimiters. The unconstrained version latched
+            // onto a space inside a link label when a rendered bullet's
+            // second space met the source's `[` — deterministically mapping
+            // a click on list item 1 into item 3 ("my cursor is always
+            // placed between the n and g of formatting on item #3").
             let limit = min(start + 24, source.count)
             var i = start
             while i < limit {
                 if aligned(source[i], rc) { return i }
+                let sc = source[i]
+                let isContent = (sc >= 0x30 && sc <= 0x39)
+                    || (sc >= 0x41 && sc <= 0x5A) || (sc >= 0x61 && sc <= 0x7A)
+                    || sc > 0x7F
+                if isContent { return nil }
                 i += 1
             }
             return nil
@@ -214,15 +349,37 @@ public enum EditMapping {
                 next += 1
             }
         }
+        func resync(from start: Int, for rc: UInt16) -> Int? {
+            let limit = min(start + 64, source.count)
+            var i = start
+            while i < limit {
+                if aligned(source[i], rc) { return i }
+                i += 1
+            }
+            return nil
+        }
+        var afterAttachment = false
         while s < source.count, r < rendered.count {
             emit(upTo: s)
             let rc = rendered[r]
             if rc == attachment {
                 r += 1
+                afterAttachment = true
+            } else if let end = entityEnd(from: s) {
+                s = end; r += 1
+                afterAttachment = false
+            } else if rc != closeBracket, let end = linkTailEnd(from: s) {
+                s = end
             } else if aligned(source[s], rc) {
                 s += 1; r += 1
+                afterAttachment = false
+            } else if afterAttachment, let match = resync(from: s, for: rc) {
+                s = match
+                afterAttachment = false
             } else if let match = lookahead(from: s, for: rc) {
                 s = match
+            } else if rc == space {
+                r += 1
             } else {
                 s += 1; r += 1
             }
