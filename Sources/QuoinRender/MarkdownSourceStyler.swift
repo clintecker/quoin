@@ -18,6 +18,11 @@ import UIKit
 struct MarkdownSourceStyler {
 
     let theme: Theme
+    /// False for verbatim blocks (raw HTML, code, diagram, math source):
+    /// their "markup" IS the content, so the caret-scoped collapse of
+    /// non-literal inline spans (entities, tags, image/link URLs) must not
+    /// run — collapsing an HTML block's tags would hide the block.
+    var collapsesNonLiteralSpans = true
 
     /// `caretOffset` is the caret position in UTF-16 units relative to
     /// `source`. nil reveals every delimiter (whole-block flip mode for
@@ -190,11 +195,12 @@ struct MarkdownSourceStyler {
         // without this poured a wall of URLs into the layout (+264pt
         // measured — the reported "click near the reference list and
         // everything shoves around").
-        if let definitions = try? NSRegularExpression(
+        if collapsesNonLiteralSpans, let definitions = try? NSRegularExpression(
             pattern: #"^[ \t]*\[[^\]\n]+\]:[ \t]*(\S.*)$"#, options: [.anchorsMatchLines]) {
             for match in definitions.matches(in: source, range: NSRange(location: 0, length: text.length)) {
                 let urlRange = match.range(at: 1)
-                guard !claimed.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) else { continue }
+                guard !claimed.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
+                      !SmartPairs.isInsideCodeContext(text: source, caretUTF16: match.range.location) else { continue }
                 let caretOnLine = caretOffset.map {
                     $0 >= match.range.location && $0 <= NSMaxRange(match.range)
                 } ?? true
@@ -212,10 +218,11 @@ struct MarkdownSourceStyler {
         // per click). Caret-scoped like every span: outside, the `&` shows
         // faded at one character's width and the tail collapses; inside,
         // the whole entity expands for editing.
-        if let entities = try? NSRegularExpression(pattern: #"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#[0-9]{1,7}|#x[0-9a-fA-F]{1,6});"#) {
+        if collapsesNonLiteralSpans, let entities = try? NSRegularExpression(pattern: #"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#[0-9]{1,7}|#x[0-9a-fA-F]{1,6});"#) {
             for match in entities.matches(in: source, range: NSRange(location: 0, length: text.length)) {
                 let whole = match.range
-                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }),
+                      !SmartPairs.isInsideCodeContext(text: source, caretUTF16: whole.location) else { continue }
                 let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= NSMaxRange(whole) } ?? true
                 if caretInSpan {
                     output.addAttributes(delimiterAttributes, range: whole)
@@ -230,12 +237,15 @@ struct MarkdownSourceStyler {
         }
 
         // Inline images `![alt](url)`: the rendered form is an attachment;
+        // (all collapse passes below are skipped for verbatim blocks and
+        // guarded per-match against code spans/fences)
         // the source is alt + URL. Collapse everything but a faded `!` and
         // the alt text unless the caret is inside.
-        if let images = try? NSRegularExpression(pattern: #"!\[([^\]\n]*)\]\(([^)\n]*)\)"#) {
+        if collapsesNonLiteralSpans, let images = try? NSRegularExpression(pattern: #"!\[([^\]\n]*)\]\(([^)\n]*)\)"#) {
             for match in images.matches(in: source, range: NSRange(location: 0, length: text.length)) {
                 let whole = match.range
-                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }),
+                      !SmartPairs.isInsideCodeContext(text: source, caretUTF16: whole.location) else { continue }
                 let alt = match.range(at: 1)
                 let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= NSMaxRange(whole) } ?? true
                 let marks = caretInSpan ? delimiterAttributes : hiddenDelimiterAttributes
@@ -251,10 +261,11 @@ struct MarkdownSourceStyler {
         // the angle-bracketed run is source-only chrome (autolink URLs
         // render as their own text, so only the brackets hide; tags render
         // as nothing). Caret-scoped like every span.
-        if let angles = try? NSRegularExpression(pattern: #"</?[a-zA-Z][^<>\n]*>"#) {
+        if collapsesNonLiteralSpans, let angles = try? NSRegularExpression(pattern: #"</?[a-zA-Z][^<>\n]*>"#) {
             for match in angles.matches(in: source, range: NSRange(location: 0, length: text.length)) {
                 let whole = match.range
-                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }),
+                      !SmartPairs.isInsideCodeContext(text: source, caretUTF16: whole.location) else { continue }
                 let content = text.substring(with: whole)
                 let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= NSMaxRange(whole) } ?? true
                 let isAutolink = content.contains("://") || content.hasPrefix("<mailto:")

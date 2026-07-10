@@ -76,7 +76,9 @@ public enum SmartPairs {
 
     /// True when the caret sits inside an inline code span or a code fence,
     /// where smart pairs are suspended.
-    static func isInsideCodeContext(text: String, caretUTF16 offset: Int) -> Bool {
+    /// Public: the render layer's source styler shares this rule (span
+    /// collapse is suspended inside code, same as pairing).
+    public static func isInsideCodeContext(text: String, caretUTF16 offset: Int) -> Bool {
         var insideFence = false
         var backtickRun = 0
         var insideSpan = false

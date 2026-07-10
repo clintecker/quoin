@@ -452,8 +452,16 @@ public struct AttributedRenderer {
         _ slice: String, caretOffset: Int? = nil,
         block: Block? = nil, document: QuoinDocument? = nil
     ) -> NSAttributedString {
+        var styler = MarkdownSourceStyler(theme: theme)
+        switch block?.kind {
+        case .htmlBlock, .codeBlock, .mermaid, .mathBlock, .frontMatter:
+            // Verbatim blocks: their markup IS the content — never collapse.
+            styler.collapsesNonLiteralSpans = false
+        default:
+            break
+        }
         let styled = NSMutableAttributedString(
-            attributedString: MarkdownSourceStyler(theme: theme).style(slice, caretOffset: caretOffset))
+            attributedString: styler.style(slice, caretOffset: caretOffset))
         guard styled.length > 0 else { return styled }
 
         if let block, let document {
