@@ -206,6 +206,78 @@ struct MarkdownSourceStyler {
             }
         }
 
+        // HTML entities: `&amp;` renders as one character but reveals as
+        // five — an entity-dense line wraps into new lines on reveal,
+        // reflowing the layout around the caret (traced live at +100–200pt
+        // per click). Caret-scoped like every span: outside, the `&` shows
+        // faded at one character's width and the tail collapses; inside,
+        // the whole entity expands for editing.
+        if let entities = try? NSRegularExpression(pattern: #"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#[0-9]{1,7}|#x[0-9a-fA-F]{1,6});"#) {
+            for match in entities.matches(in: source, range: NSRange(location: 0, length: text.length)) {
+                let whole = match.range
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= NSMaxRange(whole) } ?? true
+                if caretInSpan {
+                    output.addAttributes(delimiterAttributes, range: whole)
+                } else {
+                    output.addAttributes(delimiterAttributes, range: NSRange(location: whole.location, length: 1))
+                    output.addAttributes(
+                        hiddenDelimiterAttributes,
+                        range: NSRange(location: whole.location + 1, length: whole.length - 1))
+                }
+                claimed.append(whole)
+            }
+        }
+
+        // Inline images `![alt](url)`: the rendered form is an attachment;
+        // the source is alt + URL. Collapse everything but a faded `!` and
+        // the alt text unless the caret is inside.
+        if let images = try? NSRegularExpression(pattern: #"!\[([^\]\n]*)\]\(([^)\n]*)\)"#) {
+            for match in images.matches(in: source, range: NSRange(location: 0, length: text.length)) {
+                let whole = match.range
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                let alt = match.range(at: 1)
+                let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= NSMaxRange(whole) } ?? true
+                let marks = caretInSpan ? delimiterAttributes : hiddenDelimiterAttributes
+                output.addAttributes(marks, range: NSRange(location: whole.location, length: alt.location - whole.location))
+                output.addAttributes(marks, range: NSRange(
+                    location: NSMaxRange(alt), length: NSMaxRange(whole) - NSMaxRange(alt)))
+                output.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: alt)
+                claimed.append(whole)
+            }
+        }
+
+        // Autolinks `<https://…>` and inline HTML tags `<kbd>`/`</kbd>`:
+        // the angle-bracketed run is source-only chrome (autolink URLs
+        // render as their own text, so only the brackets hide; tags render
+        // as nothing). Caret-scoped like every span.
+        if let angles = try? NSRegularExpression(pattern: #"</?[a-zA-Z][^<>\n]*>"#) {
+            for match in angles.matches(in: source, range: NSRange(location: 0, length: text.length)) {
+                let whole = match.range
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }) else { continue }
+                let content = text.substring(with: whole)
+                let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= NSMaxRange(whole) } ?? true
+                let isAutolink = content.contains("://") || content.hasPrefix("<mailto:")
+                if caretInSpan {
+                    output.addAttributes(delimiterAttributes, range: whole)
+                } else if isAutolink {
+                    // Hide only the angle brackets; the URL is the text.
+                    output.addAttributes(hiddenDelimiterAttributes,
+                                         range: NSRange(location: whole.location, length: 1))
+                    output.addAttributes(hiddenDelimiterAttributes,
+                                         range: NSRange(location: NSMaxRange(whole) - 1, length: 1))
+                } else {
+                    // A tag renders as nothing: faded `<` at one character's
+                    // width, the rest collapses.
+                    output.addAttributes(delimiterAttributes,
+                                         range: NSRange(location: whole.location, length: 1))
+                    output.addAttributes(hiddenDelimiterAttributes,
+                                         range: NSRange(location: whole.location + 1, length: whole.length - 1))
+                }
+                claimed.append(whole)
+            }
+        }
+
         // Footnote refs first so `[^1]` isn't half-matched as a link label.
         if let footnotes = try? NSRegularExpression(pattern: #"\[\^([^\]\n]+)\]"#) {
             for match in footnotes.matches(in: source, range: NSRange(location: 0, length: text.length)) {

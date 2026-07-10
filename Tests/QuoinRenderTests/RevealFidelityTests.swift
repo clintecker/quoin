@@ -153,13 +153,35 @@ final class RevealFidelityTests: XCTestCase {
         XCTAssertLessThan(delta, 6, "list reveal shifted content by \(delta)pt")
     }
 
-    private func measureHeight(_ attributed: NSAttributedString) -> CGFloat {
+    /// The traced +100..364pt reveals: entity- and markup-dense paragraphs
+    /// exploded on reveal because their source is several times longer than
+    /// their rendered text. With caret-scoped collapse of entities (and
+    /// URLs before them), the reveal must stay near height-neutral even at
+    /// a narrow column.
+    func testEntityDenseParagraphRevealIsNearHeightNeutral() throws {
+        var source = "# Entities\n\n"
+        source += "HTML entities: &amp; &lt; &gt; &quot; &apos; &copy; &trade; &mdash; &ndash; &#169; &#x1F680; and once more &amp; &lt; &gt; &quot; &apos; &copy; &trade; &mdash; &ndash; for width.\n\n"
+        source += "Tail paragraph.\n"
+        let document = MarkdownConverter.parse(source)
+        let renderer = AttributedRenderer()
+        var cache: [BlockID: NSAttributedString] = [:]
+        let para = try XCTUnwrap(document.blocks.dropFirst().first {
+            if case .paragraph = $0.kind { return true }
+            return false
+        }?.id)
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+        let revealed = renderer.render(document, activeBlockID: para, activeCaret: 0, cache: &cache)
+        let delta = abs(measureHeight(reading.attributed, width: 500) - measureHeight(revealed.attributed, width: 500))
+        XCTAssertLessThan(delta, 40, "entity-dense reveal reflowed by \(delta)pt")
+    }
+
+    private func measureHeight(_ attributed: NSAttributedString, width: CGFloat = 600) -> CGFloat {
         let storage = NSTextStorage(attributedString: attributed)
         let contentStorage = NSTextContentStorage()
         contentStorage.textStorage = storage
         let layoutManager = NSTextLayoutManager()
         contentStorage.addTextLayoutManager(layoutManager)
-        let container = NSTextContainer(size: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
+        let container = NSTextContainer(size: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude))
         layoutManager.textContainer = container
         layoutManager.ensureLayout(for: contentStorage.documentRange)
         var maxY: CGFloat = 0

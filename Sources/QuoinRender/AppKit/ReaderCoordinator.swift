@@ -657,6 +657,9 @@ extension MarkdownReaderView {
                 target = lineBottom + padding - clip.bounds.height
             }
             guard let target, abs(target - visibleTop) > 0.5 else { return }
+            QuoinPerformanceTrace.log(
+                "anchor.caretIntoView", startedAt: DispatchTime.now().uptimeNanoseconds,
+                metadata: "loc=\(location) from=\(Int(visibleTop)) to=\(Int(target))")
             clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: max(0, target)))
             textView.enclosingScrollView?.reflectScrolledClipView(clip)
         }
