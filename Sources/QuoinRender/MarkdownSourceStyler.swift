@@ -24,6 +24,15 @@ struct MarkdownSourceStyler {
     /// run — collapsing an HTML block's tags would hide the block.
     var collapsesNonLiteralSpans = true
 
+    /// True for code WITHOUT fences (indented code blocks): the span
+    /// passes' per-match code-context guard keys on fences/backticks,
+    /// which indented code lacks, so `**not bold**` styled bold and
+    /// `[not link](…)` became a LIVE link inside verbatim content —
+    /// hijacking clicks (ledger #5). The renderer knows the kind; when
+    /// set, no markdown styling runs at all and the content shows in the
+    /// code font.
+    var treatsSourceAsVerbatimCode = false
+
     /// `caretOffset` is the caret position in UTF-16 units relative to
     /// `source`. nil reveals every delimiter (whole-block flip mode for
     /// code/math/mermaid blocks, and before the caret has landed).
@@ -31,6 +40,12 @@ struct MarkdownSourceStyler {
         let output = NSMutableAttributedString(string: source, attributes: baseAttributes())
         let text = source as NSString
 
+        if treatsSourceAsVerbatimCode {
+            output.addAttribute(
+                .font, value: theme.codeBlockFont(),
+                range: NSRange(location: 0, length: output.length))
+            return output
+        }
         styleLinePrefixes(in: output, text: text, caretOffset: caretOffset)
         styleSpans(in: output, text: text, caretOffset: caretOffset)
         return output

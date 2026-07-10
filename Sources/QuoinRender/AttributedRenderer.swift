@@ -519,6 +519,16 @@ public struct AttributedRenderer {
         default:
             break
         }
+        if case .codeBlock = block?.kind {
+            // INDENTED code has no fences for the styler's per-match code
+            // guard to key on — its content styled as markdown (bold text,
+            // LIVE links hijacking clicks; ledger #5). The kind is the
+            // truth: no fence in the slice → fully verbatim.
+            let head = slice.drop(while: { $0 == " " || $0 == "\t" || $0 == "\n" })
+            if !head.hasPrefix("```"), !head.hasPrefix("~~~") {
+                styler.treatsSourceAsVerbatimCode = true
+            }
+        }
         let styled = NSMutableAttributedString(
             attributedString: styler.style(slice, caretOffset: caretOffset))
         guard styled.length > 0 else {
