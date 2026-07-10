@@ -178,6 +178,63 @@ already was, with the source unfolding below it.
   Phase 3's motion budget partially folds into this phase's open/close
   height tween.
 
+## §6b refinement — live-editing choreography (2026-07-10, implemented)
+
+Second three-expert panel (HIG perfectionist, motion engineer, HCI
+researcher on live-programming feedback), convened on the side-by-side
+panel specifically. The synthesis, all shipped:
+
+**The governing asymmetry.** Good news is instant: renders are NEVER
+debounced — the engine is ms-fast, latency is the product, and the
+morphing artifact is the feedback (Keynote-inspector class, not
+Xcode-Previews class). Bad news is patient: the paused badge appears
+only after **500ms of typing idle while invalid** (the grace timer
+resets on every keystroke, so mid-word transits never flash anything);
+recovery clears synchronously with the fixing keystroke. Motion only
+where it informs: swaps inside typing cadence (<500ms since the last
+swap) are hard cuts (crossfades at typing speed smear); an ISOLATED
+swap whose size changed, and the first swap after an admitted pause
+(change blindness eats hard cuts), dissolve via a 120ms ghost of the
+outgoing artifact. All of it is a pure decision table
+(`PreviewPanelChoreographer`, clock-injected, 12 pinned cases).
+
+**Presentation.** The panel wears the diagram's own chrome (hairline,
+radius 8) — it IS the artifact, not new UI. Image scale locks per
+session, anchored top-leading (steady frame: the node you're watching
+must not drift as the bounding box changes per keystroke). Paused is a
+material capsule badge (SF Symbol + "Preview paused") overlaid on the
+PANEL's corner — never stealing image height (the first cut rescaled
+the diagram at the exact moment of the warning); the held artifact
+stays full-opacity, always. The editing frame's stroke turns amber
+while paused is admitted — ambient liveness at the locus's edge, no
+saccade needed; state changes cut, never fade. Panel entrance: the
+flip cover owns it when the flip animates (`isCovering`); otherwise a
+140ms fade. Exit: always instant (the cover carries it). Narrow
+windows: the panel yields below a 340pt source column. The panel's
+whole vocabulary is dissolve; slide stays the text's verb.
+
+**Next tranche (specced, not yet built), in priority order:**
+1. **Commit-while-broken safety (HCI failure mode #1, HIGH severity):**
+   closing a session whose slice has an unbalanced fence can swallow
+   following blocks into a code block, and a committed-broken diagram
+   dissolves into prose with no path back but unlabeled undo. Fix:
+   heal the fence the session itself opened on close, and render a
+   committed-broken block in READ mode as a held-image card with an
+   error line + edit chip, persisting the last-good image beyond the
+   session.
+2. Open/close match-move (HIG): the artifact travels from its inline
+   position to the panel and back — full object permanence. Requires
+   choreographing with the flip cover; the cover-crossfade approximates
+   it today.
+3. Reserve-at-open frame height (tall diagrams currently scale small
+   against short source) + structural lane-gating of swaps via
+   MermaidKit scene-IR diff (label edits swap per keystroke; node/edge
+   churn commits on token boundary or idle) + provisional dashed
+   styling for unclosed constructs (Hazel-style) — MermaidKit v-next.
+4. Off-main preview render with generation token + a perf budget test
+   pinning keystroke echo independent of diagram complexity.
+5. Longest-valid-prefix gutter dot on the offending source line.
+
 ## Declined, with reasons
 
 - **Line-scoped reveal** (only the caret's line shows source): this is

@@ -41,7 +41,10 @@ final class PreviewPanelView: NSView {
         layer?.cornerRadius = 8
         layer?.borderWidth = 1
 
-        imageView.imageScaling = .scaleNone
+        // Scale INTO the frame we compute (locked scale × native size,
+        // same aspect): .scaleNone drew wide charts at native size and
+        // the panel mask cropped them to confetti (field report).
+        imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.wantsLayer = true
         addSubview(imageView)
 
