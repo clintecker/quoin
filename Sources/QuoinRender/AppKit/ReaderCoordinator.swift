@@ -292,6 +292,21 @@ extension MarkdownReaderView {
                 }
                 return true
             }
+            if QuoinLink.isEditURL(url) {
+                // ‹/› edit opens the enclosing block's source (caret at the
+                // body start); ✓ done on the open block commits and closes,
+                // caret restored at its rendered image.
+                if let id = blockID(atCharIndex: charIndex) {
+                    if id == parent.rendered.activeBlockID {
+                        captureDeactivationCaret(in: textView)
+                        parent.onActivateBlock?(nil, nil, nil)
+                    } else {
+                        let hint: CaretHint? = embedCaretHint(atCharIndex: charIndex).map { .source($0) }
+                        parent.onActivateBlock?(id, hint, nil)
+                    }
+                }
+                return true
+            }
             if let slug = QuoinLink.anchorSlug(from: url) {
                 if let blockID = parent.anchorResolver(slug), let range = blockRanges[blockID] {
                     scrollBlockToTop(range, in: textView)

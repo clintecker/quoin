@@ -32,9 +32,12 @@ final class RevealDeltaRatchetTests: XCTestCase {
     /// - html 75: the raw-source card's padding versus prose spacing.
     /// - image paragraphs 120: the attachment collapses to a one-line
     ///   source reference; the delta is the image height itself.
-    /// - table 45: the delimiter row (`|---|`) exists only in source.
+    /// - table 55: the delimiter row (`|---|`) exists only in source, and
+    ///   the rendered form carries the `‹/› edit` chip band the revealed
+    ///   source doesn't (embed-editing brief, Phase 2.1; measured 52 on the
+    ///   widest fixture table).
     private let exceptions: [String: CGFloat] = [
-        "table": 45,
+        "table": 55,
         "heading": 60,
         "code": 55,
         "list": 115,

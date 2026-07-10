@@ -47,11 +47,19 @@ public enum QuoinLink {
     public static let taskScheme = "quoin-task"
     public static let anchorScheme = "quoin-anchor"
     public static let copyScheme = "quoin-copy"
+    public static let editScheme = "quoin-edit"
 
     /// quoin-copy://block — clicking copies the run's `copySource` text.
     public static var copyURL: URL? { URL(string: "\(copyScheme)://block") }
 
     public static func isCopyURL(_ url: URL) -> Bool { url.scheme == copyScheme }
+
+    /// quoin-edit://block — the `‹/› edit` chip: clicking opens the
+    /// enclosing block's source for editing (`✓ done` on the open block
+    /// closes it; same URL, the handler toggles on the active state).
+    public static var editURL: URL? { URL(string: "\(editScheme)://block") }
+
+    public static func isEditURL(_ url: URL) -> Bool { url.scheme == editScheme }
 
     /// quoin-task://toggle?offset=N — a clickable checkbox.
     public static func taskURL(markerOffset: Int) -> URL? {

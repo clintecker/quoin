@@ -711,8 +711,11 @@ public struct AttributedRenderer {
         }
         // Resolve the code body's caret-mapping marker to the real source
         // offset: the rendered body is 1:1 with the source content, which sits
-        // after the opening fence line in the block's source slice.
-        if case .codeBlock = block.kind,
+        // after the opening fence line in the block's source slice. HTML
+        // blocks render through the same code canvas and resolve too (their
+        // body IS the slice, offset 0) — the unresolved -1 sentinel used to
+        // leak into their caret hints, one character early.
+        if isBodyTaggedKind(block.kind),
            let slice = document.source.substring(in: block.range) {
             let sliceNS = slice as NSString
             tagged.enumerateAttribute(QuoinAttribute.embedSourceStart, in: whole) { value, range, _ in
@@ -728,6 +731,15 @@ public struct AttributedRenderer {
             }
         }
         return tagged
+    }
+
+    /// Kinds whose rendered body carries the 1:1 `embedSourceStart` marker
+    /// (they render through the code canvas).
+    private func isBodyTaggedKind(_ kind: BlockKind) -> Bool {
+        switch kind {
+        case .codeBlock, .htmlBlock: return true
+        default: return false
+        }
     }
 
     private func renderHeading(level: Int, inlines: [Inline]) -> NSAttributedString {
@@ -765,6 +777,13 @@ public struct AttributedRenderer {
         if let language, !language.isEmpty {
             output.append(NSAttributedString(string: "\(language)    ", attributes: chip))
         }
+        // `‹/›` promises source (which is the truth), never a pencil
+        // (which promises direct manipulation) — embed-editing brief.
+        var edit = chip
+        if let url = QuoinLink.editURL {
+            edit[.link] = url
+        }
+        output.append(NSAttributedString(string: "‹/› edit    ", attributes: edit))
         var copy = chip
         copy[QuoinAttribute.copySource] = code
         if let url = QuoinLink.copyURL {
@@ -841,7 +860,15 @@ public struct AttributedRenderer {
         style.tailIndent = -8
         attributes[.paragraphStyle] = style
         attributes[QuoinAttribute.blockDecoration] = BlockDecoration(kind: .chip(fill: theme.inlineCodeFill))
-        return NSAttributedString(string: condensed, attributes: attributes)
+        let output = NSMutableAttributedString(string: condensed, attributes: attributes)
+        // Trailing `· ‹/› edit` inside the chip: front matter's condensed
+        // line gives no hint it's editable YAML.
+        var edit = attributes
+        if let url = QuoinLink.editURL {
+            edit[.link] = url
+        }
+        output.append(NSAttributedString(string: "   ·   ‹/› edit", attributes: edit))
+        return output
     }
 
     private func renderCallout(kind: CalloutKind, children: [Block], depth: Int, document: QuoinDocument) -> NSAttributedString {
@@ -910,16 +937,51 @@ public struct AttributedRenderer {
         return output
     }
 
+    /// The `‹/› edit` affordance for attachment embeds: a right-aligned
+    /// caption line above the artifact (inside its frame), quiet at
+    /// secondary ink — the visible invitation the brief calls for on
+    /// blocks whose rendered form hides that they ARE markdown.
+    private func editChipLine(spacingBefore: CGFloat, rightTabAt width: CGFloat? = nil) -> NSAttributedString {
+        var attributes = bodyAttributes()
+        attributes[.font] = theme.captionFont()
+        attributes[.foregroundColor] = theme.secondaryTextColor
+        if let url = QuoinLink.editURL {
+            attributes[.link] = url
+        }
+        let style = paragraphStyle()
+        style.paragraphSpacingBefore = spacingBefore
+        style.paragraphSpacing = 2
+        let text: String
+        if let width {
+            // Right-aligned at the CONTENT's right edge (a table narrower
+            // than the column), not the column margin.
+            style.tabStops = [NSTextTab(textAlignment: .right, location: width, options: [:])]
+            text = "\t‹/› edit\n"
+        } else {
+            style.alignment = .right
+            style.firstLineHeadIndent = 8
+            style.headIndent = 8
+            style.tailIndent = -8
+            text = "‹/› edit\n"
+        }
+        attributes[.paragraphStyle] = style
+        return NSAttributedString(string: text, attributes: attributes)
+    }
+
     private func renderMermaidFallback(source: String) -> NSAttributedString {
         // Native rendering via MermaidKit; unparseable sources keep the
         // styled-source fallback.
         if let native = MermaidRenderer.attachmentString(source: source, theme: theme.diagramTheme) {
-            let output = NSMutableAttributedString(attributedString: native)
+            let output = NSMutableAttributedString()
+            output.append(editChipLine(spacingBefore: theme.paragraphSpacing))
+            let attachment = NSMutableAttributedString(attributedString: native)
             let style = paragraphStyle()
-            style.paragraphSpacingBefore = theme.paragraphSpacing
+            style.paragraphSpacingBefore = 0
             style.paragraphSpacing = theme.paragraphSpacing
+            attachment.addAttribute(.paragraphStyle, value: style,
+                                    range: NSRange(location: 0, length: attachment.length))
+            output.append(attachment)
             output.addAttributes([
-                .paragraphStyle: style,
                 QuoinAttribute.diagramSource: source,
                 QuoinAttribute.blockDecoration: BlockDecoration(kind: .diagramFrame(color: theme.hairline)),
             ], range: NSRange(location: 0, length: output.length))
@@ -939,15 +1001,18 @@ public struct AttributedRenderer {
         if let native = MathImageRenderer.attachmentString(
             latex: latex, display: true, theme: theme, baseSize: theme.bodySize
         ) {
-            let output = NSMutableAttributedString(attributedString: native)
+            let output = NSMutableAttributedString()
+            output.append(editChipLine(spacingBefore: 16))
+            let attachment = NSMutableAttributedString(attributedString: native)
             let style = paragraphStyle()
             style.alignment = .center
-            style.paragraphSpacingBefore = 16
+            style.paragraphSpacingBefore = 0
             style.paragraphSpacing = 16
-            output.addAttributes([
-                .paragraphStyle: style,
-                QuoinAttribute.mathSource: latex,
-            ], range: NSRange(location: 0, length: output.length))
+            attachment.addAttribute(.paragraphStyle, value: style,
+                                    range: NSRange(location: 0, length: attachment.length))
+            output.append(attachment)
+            output.addAttribute(QuoinAttribute.mathSource, value: latex,
+                                range: NSRange(location: 0, length: output.length))
             return output
         }
 
@@ -1027,6 +1092,12 @@ public struct AttributedRenderer {
         }
 
         let output = NSMutableAttributedString()
+        // Edit chip in the band above the table, aligned to the table's own
+        // right edge. Kept OUT of the tableRules decoration range: the rule
+        // drawer treats the range's first line fragment as the header row
+        // (1.5pt rule), which must stay the actual header.
+        output.append(editChipLine(spacingBefore: 3, rightTabAt: layout.totalWidth))
+        let rulesStart = output.length
         output.append(renderRow(header, font: headerFont, color: theme.textColor))
         for row in rows {
             output.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
@@ -1040,7 +1111,7 @@ public struct AttributedRenderer {
                 header: theme.quoteRule,
                 body: theme.tableRule
             )),
-            range: NSRange(location: 0, length: output.length)
+            range: NSRange(location: rulesStart, length: output.length - rulesStart)
         )
         return output
     }
