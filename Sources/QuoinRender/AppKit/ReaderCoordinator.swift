@@ -152,22 +152,46 @@ extension MarkdownReaderView {
         /// union range of the synced runs, or a zero range when nothing
         /// differed — non-nil either way, so callers don't re-anchor scroll
         /// for what is at most an attribute repaint.
+        ///
+        /// The walk deliberately covers the WHOLE document (ledger perf
+        /// #8). LEDGER: bounding it to (changed range ∪ active-block range)
+        /// was evaluated and rejected as unsound — attribute diffs occur
+        /// outside both: a re-rendered diagram is the same single U+FFFC
+        /// character carrying a NEW attachment, string-invisible to the
+        /// splice diff and outside any active block
+        /// (ActivationNeighborIntegrityTests.testSpliceCarriesReplaced-
+        /// AttachmentsAcross pins exactly that shipped bug). Instead the
+        /// walk goes through the toll-free-bridged CF API: per-run Swift
+        /// dictionary bridging was ~90% of the cost (measured ~110ms →
+        /// ~11ms for a 66k-char document, identical diff detection);
+        /// dictionaries bridge only for the rare runs that actually differ.
         private static func syncAttributesWhereDifferent(
             in storage: NSTextStorage, to newAttr: NSAttributedString
         ) -> NSRange {
             var synced: NSRange?
             var location = 0
+            let length = newAttr.length
+            let oldCF = storage as CFAttributedString
+            let newCF = newAttr as CFAttributedString
             storage.beginEditing()
-            while location < newAttr.length {
-                var newRunRange = NSRange()
-                let newAttrs = newAttr.attributes(at: location, effectiveRange: &newRunRange)
-                var oldRunRange = NSRange()
-                let oldAttrs = storage.attributes(at: location, effectiveRange: &oldRunRange)
+            while location < length {
+                var newRunRange = CFRange()
+                var oldRunRange = CFRange()
+                let newDict = CFAttributedStringGetAttributes(newCF, location, &newRunRange)
+                let oldDict = CFAttributedStringGetAttributes(oldCF, location, &oldRunRange)
                 // Compare over the shared extent of the two runs.
-                let step = min(NSMaxRange(newRunRange), NSMaxRange(oldRunRange)) - location
-                if !(newAttrs as NSDictionary).isEqual(to: oldAttrs) {
+                let step = min(newRunRange.location + newRunRange.length,
+                               oldRunRange.location + oldRunRange.length) - location
+                let differs: Bool
+                if let newDict, let oldDict {
+                    differs = !CFEqual(newDict, oldDict)
+                } else {
+                    differs = (newDict == nil) != (oldDict == nil)
+                }
+                if differs {
                     let range = NSRange(location: location, length: step)
-                    storage.setAttributes(newAttrs, range: range)
+                    let newAttrs = (newDict as NSDictionary?) as? [NSAttributedString.Key: Any]
+                    storage.setAttributes(newAttrs ?? [:], range: range)
                     synced = synced.map { NSUnionRange($0, range) } ?? range
                 }
                 location += max(step, 1)

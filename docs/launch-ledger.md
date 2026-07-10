@@ -125,8 +125,14 @@ top-down; nothing ships while a BLOCKER is open.*
   `ReaderCoordinator.applySearch`/`performSearchScan`. #5.
 - [OPEN] Whole-document SHA-256 per keystroke in both fast paths. #6.
 - [OPEN] Eager whole-doc layout per projection below 200k chars. #7.
-- [OPEN] syncAttributesWhereDifferent walks all runs on every fallback
-  splice — bound to changed∪active ranges. #8.
+- [FIXED-ALT] syncAttributesWhereDifferent walks all runs on every
+  fallback splice. Bounding to changed∪active was REJECTED as unsound —
+  attribute diffs land outside both (a re-rendered diagram is the same
+  U+FFFC with a new attachment; pinned by ActivationNeighborIntegrity-
+  Tests). Fixed instead by de-bridging the walk (toll-free CF attributes
+  + CFEqual; dictionaries bridge only for runs that differ): ~110ms →
+  ~11ms walk on a 66k-char doc, same diff detection. Budgeted in
+  RenderPathLatencyTests. #8.
 - [OPEN] Flip capture rasterizes viewport+overscan before knowing the plan
   is `.none` (most prose clicks) — pre-estimate delta; 1x capture. #9.
 - [OPEN] Panel geometry callback dispatches per draw pass — dedupe. #10.
