@@ -1450,6 +1450,15 @@ extension MarkdownReaderView {
                 : "The source doesn't parse yet. The last valid render stays until it does."
         }
 
+        /// Re-plans the preview panel against the last known editing-frame
+        /// geometry. Needed because the draw-pass geometry callback is
+        /// deduped by rect (ledger perf #10): a new preview image behind
+        /// an UNCHANGED frame no longer re-fires it, so the projection
+        /// path must re-plan explicitly.
+        func refreshPreviewPanelForProjectionChange() {
+            updatePreviewPanel(editingFrame: lastPanelFrameBox)
+        }
+
         /// Shows/hides/positions the preview panel for the current
         /// projection. `frameBox` is the drawn editing frame in text-view
         /// coordinates (nil = no open block).

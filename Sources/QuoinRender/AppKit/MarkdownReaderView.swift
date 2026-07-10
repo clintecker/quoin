@@ -426,6 +426,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
             }
             coordinator.suppressSelectionCallback = false
             coordinator.appliedQuery = nil // force re-highlight on new content
+            // The draw-pass geometry callback is deduped by rect (perf
+            // #10); a projection can change the preview panel's CONTENT
+            // behind an unchanged frame, so re-plan it here.
+            coordinator.refreshPreviewPanelForProjectionChange()
             // VoiceOver hears the mode change (never announced by tint
             // alone): entering/leaving source editing.
             if flipPending {

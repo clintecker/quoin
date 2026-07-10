@@ -141,7 +141,11 @@ top-down; nothing ships while a BLOCKER is open.*
   ambiguous captures as before — a wrong skip is cosmetic-only by
   construction). Overscan clamped 600pt → viewport/2 (the max slide
   delta). Capture stays at backing scale: 1x would blur retina overlays. #9.
-- [OPEN] Panel geometry callback dispatches per draw pass — dedupe. #10.
+- [FIXED] Panel geometry callback dispatches per draw pass — now deduped:
+  `onEditingFrameGeometry` fires only when the rect actually changed since
+  the last report (nil included); panel-content changes behind an
+  unchanged frame are re-planned explicitly on projection apply
+  (`refreshPreviewPanelForProjectionChange`). `QuoinTextView`. #10.
 - [FIXED] blockID()/topVisibleBlockID are O(blocks) linear scans on
   caret/scroll paths (string alloc per key in the scroll path!) — now a
   sorted-ranges `BlockRangeIndex` (built lazily once per projection,
