@@ -112,8 +112,12 @@ top-down; nothing ships while a BLOCKER is open.*
 - [OPEN] Non-patchable active blocks (LIST/quote/callout/TOC) take 3–4
   stacked O(document) passes per keystroke — the "gets slow on big files"
   configuration. Extend the patch path or budget it in CI. #3.
-- [OPEN] Focus dimming repaints O(blocks) rendering attributes per caret
-  move (sentence mode defeats the dedupe entirely) — viewport-cull. #4.
+- [FIXED] Focus dimming repaints O(blocks) rendering attributes per caret
+  move (sentence mode defeats the dedupe entirely) — now viewport-culled
+  (binary-searched via BlockRangeIndex, extended lazily on scroll), and
+  sentence mode dedupes on the caret's resolved sentence: an unchanged
+  sentence is a no-op, a sentence move repaints only the current block.
+  `ReaderCoordinator.applyFocusDimming`. Budgeted in RenderPathLatencyTests. #4.
 - [OPEN] Active search rescans the whole document per keystroke. #5.
 - [OPEN] Whole-document SHA-256 per keystroke in both fast paths. #6.
 - [OPEN] Eager whole-doc layout per projection below 200k chars. #7.

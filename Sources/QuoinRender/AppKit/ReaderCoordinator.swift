@@ -299,6 +299,10 @@ extension MarkdownReaderView {
 
         func reportTopBlock() {
             guard let textView else { return }
+            // Focus dimming is viewport-culled; scrolling paints the newly
+            // exposed blocks (no-op while the viewport stays inside the
+            // already-painted extent).
+            extendFocusDimmingIntoViewport(in: textView)
             // Reading progress (idea #12): scroll fraction of the document.
             if let onScrollProgress = parent.onScrollProgress,
                let clip = textView.enclosingScrollView?.contentView {
@@ -736,11 +740,27 @@ extension MarkdownReaderView {
         /// passes from re-painting rendering attributes.
         private var focusDimmedForBlock: BlockID?
         private var focusDimmingActive = false
+        /// Character extents the dim pass has painted so far (merged,
+        /// sorted): dimming is viewport-culled (ledger perf #4), so the
+        /// painted region grows as the user scrolls instead of repainting
+        /// O(blocks) on every caret move.
+        private var focusPaintedRanges: [NSRange] = []
+        /// The caret sentence last soft-dimmed (sentence scope), nil when
+        /// scope is off — the dedupe key that used to be missing: sentence
+        /// mode repainted the whole document on EVERY caret blink even
+        /// when the sentence hadn't changed.
+        private var focusAppliedSentence: NSRange?
+        /// Overscan around the viewport so ordinary scrolling stays ahead
+        /// of the lazily painted dim region (same generosity as the
+        /// decoration cull in QuoinTextView).
+        private static let focusDimSlack = 4096
 
         /// Focus mode: every block except the caret's recedes to 30% ink.
         /// Rendering attributes only (TextKit 2 overlay) — glyphs keep
         /// their layout exactly; nothing reflows, nothing re-renders, and
-        /// the projection's real attributes are untouched.
+        /// the projection's real attributes are untouched. The paint is
+        /// culled to the viewport (plus overscan); scrolling extends it
+        /// through `extendFocusDimmingIntoViewport`.
         func applyFocusDimming(in textView: NSTextView, theme: Theme) {
             guard let layoutManager = textView.textLayoutManager,
                   let contentStorage = textView.textContentStorage,
@@ -750,33 +770,16 @@ extension MarkdownReaderView {
             let caret = textView.selectedRange().location
             let currentBlock = enabled ? blockID(atCharIndex: min(caret, max(0, storage.length - 1))) : nil
 
-            // Sentence scope re-dims on every caret move within the block.
+            // Sentence scope: resolve the caret's sentence first — it is
+            // the dedupe key. Block-local cost, not document-scale.
             let sentenceScope = parent.focusSentenceScope
-            guard enabled != focusDimmingActive
-                    || currentBlock != focusDimmedForBlock
-                    || appliedRevision != focusAppliedRevision
-                    || sentenceScope
-            else { return }
-            focusDimmingActive = enabled
-            focusDimmedForBlock = currentBlock
-            focusAppliedRevision = appliedRevision
-
-            layoutManager.removeRenderingAttribute(
-                .foregroundColor, for: contentStorage.documentRange)
-            guard enabled else { return }
-            let dimmed = theme.ink.withAlphaComponent(0.3)
-            for (id, range) in blockRanges where id != currentBlock {
-                guard let textRange = nsTextRange(range, in: contentStorage) else { continue }
-                layoutManager.addRenderingAttribute(
-                    .foregroundColor, value: dimmed, for: textRange)
-            }
-            // Sentence granularity (idea #2, iA-Writer-style): inside the
-            // current block, everything but the caret's SENTENCE recedes
-            // too — same rendering-attribute engine, softer dim.
-            if sentenceScope, let currentBlock, let blockRange = blockRanges[currentBlock],
+            var sentence: NSRange?
+            var sentenceBlockRange: NSRange?
+            if enabled, sentenceScope, let currentBlock,
+               let blockRange = blockRanges[currentBlock],
                NSMaxRange(blockRange) <= storage.length {
+                sentenceBlockRange = blockRange
                 let text = storage.string as NSString
-                var sentence: NSRange?
                 text.enumerateSubstrings(
                     in: blockRange, options: [.bySentences, .substringNotRequired]
                 ) { _, range, _, stop in
@@ -785,22 +788,155 @@ extension MarkdownReaderView {
                         stop.pointee = true
                     }
                 }
-                if let sentence {
-                    let softDim = theme.ink.withAlphaComponent(0.4)
-                    let before = NSRange(location: blockRange.location,
-                                         length: sentence.location - blockRange.location)
-                    let after = NSRange(location: NSMaxRange(sentence),
-                                        length: NSMaxRange(blockRange) - NSMaxRange(sentence))
-                    for part in [before, after] where part.length > 0 {
-                        if let textRange = nsTextRange(part, in: contentStorage) {
-                            layoutManager.addRenderingAttribute(
-                                .foregroundColor, value: softDim, for: textRange)
-                        }
-                    }
-                }
+            }
+
+            let stateUnchanged = enabled == focusDimmingActive
+                && currentBlock == focusDimmedForBlock
+                && appliedRevision == focusAppliedRevision
+            guard !stateUnchanged || sentence != focusAppliedSentence else { return }
+
+            // Sentence-only caret move: the block dims are already right —
+            // repaint just the current block's soft dims, nothing else.
+            if stateUnchanged, enabled, let blockRange = sentenceBlockRange ?? currentBlock.flatMap({ blockRanges[$0] }),
+               NSMaxRange(blockRange) <= storage.length,
+               let blockTextRange = nsTextRange(blockRange, in: contentStorage) {
+                layoutManager.removeRenderingAttribute(.foregroundColor, for: blockTextRange)
+                focusAppliedSentence = sentence
+                applySentenceSoftDim(sentence, blockRange: blockRange, theme: theme,
+                                     layoutManager: layoutManager, contentStorage: contentStorage)
+                return
+            }
+
+            focusDimmingActive = enabled
+            focusDimmedForBlock = currentBlock
+            focusAppliedRevision = appliedRevision
+            focusAppliedSentence = sentence
+            focusPaintedRanges = []
+
+            layoutManager.removeRenderingAttribute(
+                .foregroundColor, for: contentStorage.documentRange)
+            guard enabled else { return }
+            let paintRange = focusViewportPaintRange(
+                in: textView, layoutManager: layoutManager,
+                contentStorage: contentStorage, storageLength: storage.length)
+            paintFocusDim(in: paintRange, sparing: currentBlock, theme: theme,
+                          layoutManager: layoutManager, contentStorage: contentStorage)
+            focusPaintedRanges = [paintRange]
+            // Sentence granularity (idea #2, iA-Writer-style): inside the
+            // current block, everything but the caret's SENTENCE recedes
+            // too — same rendering-attribute engine, softer dim.
+            if let sentence, let blockRange = sentenceBlockRange {
+                applySentenceSoftDim(sentence, blockRange: blockRange, theme: theme,
+                                     layoutManager: layoutManager, contentStorage: contentStorage)
             }
         }
         private var focusAppliedRevision = -2
+
+        /// The viewport's character extent plus overscan — the region the
+        /// dim pass paints eagerly; everything else is painted on scroll.
+        private func focusViewportPaintRange(
+            in textView: NSTextView, layoutManager: NSTextLayoutManager,
+            contentStorage: NSTextContentStorage, storageLength: Int
+        ) -> NSRange {
+            guard let viewport = layoutManager.textViewportLayoutController.viewportRange else {
+                return NSRange(location: 0, length: storageLength)
+            }
+            let start = contentStorage.offset(from: contentStorage.documentRange.location,
+                                              to: viewport.location)
+            let end = contentStorage.offset(from: contentStorage.documentRange.location,
+                                            to: viewport.endLocation)
+            let lower = max(0, start - Self.focusDimSlack)
+            let upper = min(storageLength, end + Self.focusDimSlack)
+            return NSRange(location: lower, length: max(0, upper - lower))
+        }
+
+        /// Adds the 30% dim to every block intersecting `range` except the
+        /// caret's — binary-searched via the block-range index, so the
+        /// cost is O(visible blocks), never O(document blocks).
+        private func paintFocusDim(
+            in range: NSRange, sparing currentBlock: BlockID?, theme: Theme,
+            layoutManager: NSTextLayoutManager, contentStorage: NSTextContentStorage
+        ) {
+            let dimmed = theme.ink.withAlphaComponent(0.3)
+            forEachBlockRange(intersecting: range) { id, blockRange in
+                guard id != currentBlock,
+                      let textRange = nsTextRange(blockRange, in: contentStorage) else { return }
+                layoutManager.addRenderingAttribute(
+                    .foregroundColor, value: dimmed, for: textRange)
+            }
+        }
+
+        private func applySentenceSoftDim(
+            _ sentence: NSRange?, blockRange: NSRange, theme: Theme,
+            layoutManager: NSTextLayoutManager, contentStorage: NSTextContentStorage
+        ) {
+            guard let sentence else { return }
+            let softDim = theme.ink.withAlphaComponent(0.4)
+            let before = NSRange(location: blockRange.location,
+                                 length: sentence.location - blockRange.location)
+            let after = NSRange(location: NSMaxRange(sentence),
+                                length: NSMaxRange(blockRange) - NSMaxRange(sentence))
+            for part in [before, after] where part.length > 0 {
+                if let textRange = nsTextRange(part, in: contentStorage) {
+                    layoutManager.addRenderingAttribute(
+                        .foregroundColor, value: softDim, for: textRange)
+                }
+            }
+        }
+
+        /// Scroll hook for the viewport-culled dim: paints only the blocks
+        /// in the newly exposed extent (nothing already painted is
+        /// touched); a no-op whenever the viewport is inside the painted
+        /// region. Called from the scroll observer.
+        func extendFocusDimmingIntoViewport(in textView: NSTextView) {
+            guard focusDimmingActive,
+                  let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let storage = contentStorage.textStorage, storage.length > 0
+            else { return }
+            let target = focusViewportPaintRange(
+                in: textView, layoutManager: layoutManager,
+                contentStorage: contentStorage, storageLength: storage.length)
+            // Subtract the already-painted extents from the target.
+            var gaps: [NSRange] = [target]
+            for painted in focusPaintedRanges {
+                gaps = gaps.flatMap { gap -> [NSRange] in
+                    let overlap = NSIntersectionRange(gap, painted)
+                    guard overlap.length > 0 else { return [gap] }
+                    var pieces: [NSRange] = []
+                    if overlap.location > gap.location {
+                        pieces.append(NSRange(location: gap.location,
+                                              length: overlap.location - gap.location))
+                    }
+                    if NSMaxRange(overlap) < NSMaxRange(gap) {
+                        pieces.append(NSRange(location: NSMaxRange(overlap),
+                                              length: NSMaxRange(gap) - NSMaxRange(overlap)))
+                    }
+                    return pieces
+                }
+            }
+            guard !gaps.isEmpty else { return }
+            let theme = parent.theme
+            for gap in gaps where gap.length > 0 {
+                paintFocusDim(in: gap, sparing: focusDimmedForBlock, theme: theme,
+                              layoutManager: layoutManager, contentStorage: contentStorage)
+            }
+            // Merge the target into the painted set (sorted, coalesced).
+            var merged = focusPaintedRanges
+            merged.append(target)
+            merged.sort { $0.location < $1.location }
+            var coalesced: [NSRange] = []
+            for range in merged {
+                if let last = coalesced.last, range.location <= NSMaxRange(last) {
+                    let end = max(NSMaxRange(last), NSMaxRange(range))
+                    coalesced[coalesced.count - 1] = NSRange(
+                        location: last.location, length: end - last.location)
+                } else {
+                    coalesced.append(range)
+                }
+            }
+            focusPaintedRanges = coalesced
+        }
 
         /// Caret moved into a different block while focus mode is on —
         /// called from the selection-change path.
