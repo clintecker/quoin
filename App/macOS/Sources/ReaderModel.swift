@@ -107,15 +107,36 @@ final class ReaderModel {
         let session: DocumentSession
         if let fileURL, let opened = try? DocumentSession.open(fileURL: fileURL) {
             session = opened
+        } else if let fileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+            // The file EXISTS but couldn't be read (encoding, permissions,
+            // un-downloaded cloud placeholder). Binding a blank session to
+            // the real URL meant the first keystroke autosaved ~1 byte
+            // over the user's document — silent total data loss (launch
+            // audit, senior review BLOCKER #1). Detach from the file:
+            // nothing this window does can touch it.
+            session = DocumentSession(source: "", fileURL: nil)
+            reportFailure(
+                "Couldn't read “\(fileURL.lastPathComponent)” (encoding or permissions). "
+                + "Editing is detached from the file to protect it.",
+                sticky: true)
         } else {
             session = DocumentSession(source: initialText, fileURL: fileURL)
         }
         self.session = session
 
+        // Termination flush registry: ⌘Q must drain every live session's
+        // autosave before the process dies (launch audit BLOCKER #4).
+        Self.registerLiveSession(session)
+
         snapshotTask = Task { [weak self] in
             await session.setConflictHandler { diskSource in
                 Task { @MainActor [weak self] in
                     self?.conflictDiskSource = diskSource
+                }
+            }
+            await session.setSaveFailureHandler { message in
+                Task { @MainActor [weak self] in
+                    self?.reportFailure(message, sticky: true)
                 }
             }
             await session.startWatching()
@@ -428,6 +449,18 @@ final class ReaderModel {
         // nil caret: keep the current reveal state — a block command must
         // not fling the caret or open the block it touched.
         applyAbsolute(edit, caretUTF8: nil)
+    }
+
+    /// Typing into a document with no blocks (freshly created, empty):
+    /// append the text; the first block materializes around the caret.
+    /// Without this, ⌘N produced an untypeable blank pane (launch audit
+    /// BLOCKER #1).
+    func insertIntoEmptyDocument(_ text: String) {
+        guard document.blocks.isEmpty else { return }
+        let end = document.source.utf8.count
+        applyAbsolute(
+            SourceEdit(range: ByteRange(offset: end, length: 0), replacement: text),
+            caretUTF8: end + text.utf8.count)
     }
 
     /// The shared edit pipeline: serialize through the session, then adopt
@@ -756,9 +789,10 @@ final class ReaderModel {
         actionFailure = nil
     }
 
-    private func reportFailure(_ message: String) {
+    private func reportFailure(_ message: String, sticky: Bool = false) {
         actionFailure = ActionFailure(message: message)
         actionFailureTask?.cancel()
+        guard !sticky else { return } // data-integrity failures never auto-dismiss
         actionFailureTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
@@ -768,5 +802,27 @@ final class ReaderModel {
 
     func blockID(forSlug slug: String) -> BlockID? {
         slugToBlock[slug]
+    }
+
+    // MARK: - Termination flush (launch audit BLOCKER #4)
+
+    /// Weak registry of live sessions so app termination can drain every
+    /// pending autosave before the process exits — SwiftUI's onDisappear
+    /// is not reliably delivered at ⌘Q, and a detached flush task races
+    /// process death.
+    private static var liveSessions: [() -> DocumentSession?] = []
+
+    static func registerLiveSession(_ session: DocumentSession) {
+        liveSessions.removeAll { $0() == nil }
+        liveSessions.append { [weak session] in session }
+    }
+
+    /// Synchronously-awaitable flush of every live session.
+    static func flushAllSessions() async {
+        for accessor in liveSessions {
+            guard let session = accessor() else { continue }
+            try? await session.saveNow()
+        }
+        liveSessions.removeAll { $0() == nil }
     }
 }

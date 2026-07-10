@@ -205,6 +205,49 @@ final class LibraryModel {
         return candidate
     }
 
+    // MARK: - Starter library + bundled documents (launch ledger L1/L2/L5)
+
+    /// Copies a bundled document into the library (if absent) and returns
+    /// its URL — the guide and welcome docs are LIVE documents, editable
+    /// like everything else, never read-only bundle views.
+    func materializeBundledDocument(resource: String, as filename: String) -> URL? {
+        guard let rootURL,
+              let source = Bundle.main.url(forResource: resource, withExtension: "md")
+        else { return nil }
+        let destination = rootURL.appendingPathComponent(filename)
+        if !FileManager.default.fileExists(atPath: destination.path) {
+            guard (try? FileManager.default.copyItem(at: source, to: destination)) != nil else {
+                return nil
+            }
+            rescan()
+        }
+        return destination
+    }
+
+    /// First-run path A: create a fresh library folder and seed it with
+    /// the welcome document and the markdown guide.
+    func createStarterLibrary() -> URL? {
+        let panel = NSSavePanel()
+        panel.title = "Create a Starter Library"
+        panel.prompt = "Create"
+        panel.nameFieldStringValue = "Quoin"
+        panel.directoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        guard (try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)) != nil else {
+            return nil
+        }
+        adopt(rootURL: url)
+        if let bookmark = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
+        }
+        _ = materializeBundledDocument(resource: "MarkdownGuide", as: "Markdown Guide.md")
+        return materializeBundledDocument(resource: "WelcomeToQuoin", as: "Welcome to Quoin.md")
+    }
+
     // MARK: - Recents (idea #13) + daily note (idea #14)
 
     private static let recentsKey = "QuoinRecentDocuments"

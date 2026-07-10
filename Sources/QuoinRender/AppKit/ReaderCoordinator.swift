@@ -484,6 +484,12 @@ extension MarkdownReaderView {
                 let insertion = (affectedCharRange.length == 0 && replacementString?.isEmpty == false)
                     ? replacementString : nil
                 parent.onActivateBlock?(id, hint, insertion)
+            } else if blockRanges.isEmpty,
+                      let replacementString, !replacementString.isEmpty {
+                // A brand-new EMPTY document has no blocks to activate —
+                // this was the ⌘N black hole: a blank pane where every
+                // keystroke silently vanished (launch audit BLOCKER #1).
+                parent.onEmptyDocumentInsert?(replacementString)
             }
             return false
         }

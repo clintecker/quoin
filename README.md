@@ -94,7 +94,7 @@ that way.
 
 ### Diagrams (Mermaid)
 
-**All 23 diagram types render natively** — zero JavaScript, zero network. See
+**All 30 diagram types render natively** — zero JavaScript, zero network. See
 the **[diagram gallery](docs/diagram-gallery.md)** for a simple and a complex
 example of every type, each drawn by Quoin's own engine.
 
@@ -129,7 +129,9 @@ example of every type, each drawn by Quoin's own engine.
 | Feature | Status |
 | :--- | :---: |
 | Syntax-reveal editing (click to edit, Esc to close) | ✅ |
-| Double-click to edit embeds (code / tables / diagrams / math) | ✅ |
+| Double-click to edit code, tables, and TOC | ✅ |
+| Diagrams & math open via the explicit ‹/› edit chip, ⌘↩, or the context menu (presentation objects never flip by accident) | ✅ |
+| Side-by-side live preview while editing diagrams & math | ✅ |
 | Smart pairs, wrap-selection, word-under-caret formatting | ✅ |
 | ⌘B / ⌘I / ⇧⌘H / ⌘K + floating format pill | ✅ |
 | Library sidebar (folders = directories), document tabs, quick open | ✅ |

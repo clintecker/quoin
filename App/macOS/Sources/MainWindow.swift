@@ -72,6 +72,16 @@ struct MainWindow: View {
                 columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
             }
         }
+        // Help ▸ Markdown Guide / Welcome to Quoin: LIVE documents in the
+        // library (editable examples — the guide teaches by being edited).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openGuideNotification)) { _ in
+            if let url = library.materializeBundledDocument(
+                resource: "MarkdownGuide", as: "Markdown Guide.md") { open(url) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openWelcomeNotification)) { _ in
+            if let url = library.materializeBundledDocument(
+                resource: "WelcomeToQuoin", as: "Welcome to Quoin.md") { open(url) }
+        }
         .onAppear(perform: applyShotState)
     }
 
@@ -187,6 +197,19 @@ struct MainWindow: View {
             .buttonStyle(.bordered)
             .tint(.accentColor)
             .padding(.top, 6)
+            HStack(spacing: 16) {
+                Button("Welcome to Quoin") {
+                    if let url = library.materializeBundledDocument(
+                        resource: "WelcomeToQuoin", as: "Welcome to Quoin.md") { open(url) }
+                }
+                Button("Markdown Guide") {
+                    if let url = library.materializeBundledDocument(
+                        resource: "MarkdownGuide", as: "Markdown Guide.md") { open(url) }
+                }
+            }
+            .buttonStyle(.link)
+            .font(.system(size: 11))
+            .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -196,16 +219,29 @@ struct MainWindow: View {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 36))
                 .foregroundStyle(.primary.opacity(0.35))
-            Text("Choose a library folder")
+            Text("Where should your documents live?")
                 .font(.system(size: 13, weight: .semibold))
-            Text("Your documents stay plain .md files on disk.")
+            Text("Your documents stay plain .md files on disk.\nQuoin never converts or moves your files.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            Button("Choose Folder…") {
-                library.chooseLibraryFolder()
+                .multilineTextAlignment(.center)
+            // First frame of the real app should be a beautiful rendered
+            // document, not an empty tree (launch ledger L1).
+            Button("Create a Starter Library") {
+                if let welcome = library.createStarterLibrary() { open(welcome) }
             }
             .buttonStyle(.borderedProminent)
             .padding(.top, 6)
+            Button("Choose an Existing Folder…") {
+                library.chooseLibraryFolder()
+            }
+            .buttonStyle(.bordered)
+            Text("A library is just a folder — every document stays a plain file you can open anywhere.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

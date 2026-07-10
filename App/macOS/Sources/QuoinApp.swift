@@ -61,6 +61,25 @@ struct QuoinApp: App {
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
             }
+            // Help menu: real content, not just search (launch ledger L5/L14).
+            CommandGroup(replacing: .help) {
+                Button("Markdown Guide") {
+                    NotificationCenter.default.post(name: AppDelegate.openGuideNotification, object: nil)
+                }
+                Button("Welcome to Quoin") {
+                    NotificationCenter.default.post(name: AppDelegate.openWelcomeNotification, object: nil)
+                }
+                Divider()
+                Button("Report an Issue…") {
+                    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+                    let os = ProcessInfo.processInfo.operatingSystemVersionString
+                    let body = "\n\n—\nQuoin \(version) · macOS \(os)"
+                        .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                    if let url = URL(string: "https://github.com/clintecker/quoin/issues/new?body=\(body)") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
         }
 
         // Quoin ▸ Settings… (⌘,): appearance + editor preferences.
@@ -157,10 +176,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let toggleTypewriterNotification = Notification.Name("quoin.toggleTypewriter")
     static let toggleSentenceFocusNotification = Notification.Name("quoin.toggleSentenceFocus")
     static let moveBlockNotification = Notification.Name("quoin.moveBlock")
+    static let openGuideNotification = Notification.Name("quoin.openGuide")
+    static let openWelcomeNotification = Notification.Name("quoin.openWelcome")
     static let formatNotification = Notification.Name("quoin.format")
     static let undoNotification = Notification.Name("quoin.undo")
     static let redoNotification = Notification.Name("quoin.redo")
     static let exportNotification = Notification.Name("quoin.export")
+
+    /// ⌘Q inside the autosave debounce window used to drop the last
+    /// keystrokes — drain every live session before the process dies.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task { @MainActor in
+            await ReaderModel.flushAllSessions()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Quoin has its own document tabs; the system window-tab items

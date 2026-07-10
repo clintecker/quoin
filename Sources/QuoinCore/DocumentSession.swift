@@ -72,6 +72,14 @@ public actor DocumentSession {
         onConflict = handler
     }
 
+    /// Called whenever a save (including debounced autosave) fails — a
+    /// silent save failure in an app with no Save button is data loss on
+    /// a timer (launch audit BLOCKER #2).
+    public func setSaveFailureHandler(_ handler: @escaping @Sendable (String) -> Void) {
+        onSaveFailure = handler
+    }
+    private var onSaveFailure: (@Sendable (String) -> Void)?
+
     /// Follows a file rename (first-H1-renames-file): future saves and
     /// watching target the new URL.
     public func relocate(to url: URL) {
@@ -206,8 +214,26 @@ public actor DocumentSession {
         autosaveTask = Task { [autosaveDelay] in
             try? await Task.sleep(for: autosaveDelay)
             guard !Task.isCancelled else { return }
-            try? await self.saveNow()
+            do {
+                try await self.saveNow()
+            } catch {
+                // Retry once shortly (transient I/O), then tell the user —
+                // never fail silently on the write path.
+                try? await Task.sleep(for: .milliseconds(800))
+                do {
+                    try await self.saveNow()
+                } catch {
+                    await self.reportSaveFailure()
+                }
+            }
         }
+    }
+
+    private func reportSaveFailure() {
+        guard let fileURL else { return }
+        onSaveFailure?(
+            "Couldn't save “\(fileURL.lastPathComponent)”. Your edits are held in memory — "
+            + "check the disk or the file's permissions.")
     }
 
     public func saveNow() throws {

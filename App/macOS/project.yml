@@ -36,6 +36,9 @@ targets:
     platform: macOS
     sources:
       - Sources
+      - path: Resources
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: QuoinPackages
         product: QuoinCore

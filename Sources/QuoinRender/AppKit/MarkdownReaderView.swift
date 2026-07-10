@@ -98,6 +98,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
     public let onAnchorJump: ((BlockID?) -> Void)?
     /// Block actions from the context menu (move/duplicate/delete/table).
     public let onBlockCommand: ((BlockID, BlockCommand) -> Void)?
+    /// Typing into a document with NO blocks (freshly created, empty):
+    /// the host appends the text and the first block materializes around
+    /// the caret. Without this, ⌘N produced an untypeable blank pane.
+    public let onEmptyDocumentInsert: ((String) -> Void)?
     /// Sentence-granularity focus (iA-Writer-style): dim to the caret's
     /// SENTENCE inside the current block. Only meaningful with focus mode.
     public let focusSentenceScope: Bool
@@ -129,7 +133,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onAnchorJump: ((BlockID?) -> Void)? = nil,
         onScrollProgress: ((Double) -> Void)? = nil,
         onBlockCommand: ((BlockID, BlockCommand) -> Void)? = nil,
-        focusSentenceScope: Bool = false
+        focusSentenceScope: Bool = false,
+        onEmptyDocumentInsert: ((String) -> Void)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -155,6 +160,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.onScrollProgress = onScrollProgress
         self.onBlockCommand = onBlockCommand
         self.focusSentenceScope = focusSentenceScope
+        self.onEmptyDocumentInsert = onEmptyDocumentInsert
     }
 
     public func makeCoordinator() -> Coordinator {
