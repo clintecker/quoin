@@ -20,13 +20,7 @@ struct QuoinApp: App {
             // Format menu: the embed-editing keyboard grammar. ⌘↩ toggles
             // the block under the caret between rendered and source
             // (commit-and-close on the way out, same contract as Escape).
-            CommandMenu("Format") {
-                Button("Edit Source") {
-                    NotificationCenter.default.post(
-                        name: AppDelegate.toggleEditSourceNotification, object: nil)
-                }
-                .keyboardShortcut(.return, modifiers: .command)
-            }
+            FormatCommands()
             // View menu: the handoff's panel toggles (⌘0 sidebar, ⌥⌘0
             // outline), delivered to the key window via notifications.
             CommandGroup(before: .sidebar) {
@@ -53,6 +47,36 @@ struct QuoinApp: App {
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
+    }
+}
+
+/// The key window's editing state, published by ReaderScreen so menu
+/// titles can follow it (Edit Source ↔ Done Editing).
+struct QuoinIsEditingBlockKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+extension FocusedValues {
+    var quoinIsEditingBlock: Bool? {
+        get { self[QuoinIsEditingBlockKey.self] }
+        set { self[QuoinIsEditingBlockKey.self] = newValue }
+    }
+}
+
+/// Format ▸ Edit Source / Done Editing (⌘↩): one toggle, its title
+/// following the focused window's editing state — a menu item that
+/// mislabels its action reads as broken.
+private struct FormatCommands: Commands {
+    @FocusedValue(\.quoinIsEditingBlock) private var isEditingBlock
+
+    var body: some Commands {
+        CommandMenu("Format") {
+            Button(isEditingBlock == true ? "Done Editing" : "Edit Source") {
+                NotificationCenter.default.post(
+                    name: AppDelegate.toggleEditSourceNotification, object: nil)
+            }
+            .keyboardShortcut(.return, modifiers: .command)
+        }
     }
 }
 

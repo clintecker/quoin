@@ -28,8 +28,24 @@ final class QuoinTextView: NSTextView {
     /// editingFrame decoration pass each draw; nil when no block is open.
     /// The chip is decoration ink, not a text run (the revealed source is
     /// 1:1 with the file), so clicks are hit-tested here, before AppKit's
-    /// caret placement can see them.
-    private(set) var doneChipRect: CGRect?
+    /// caret placement can see them — and its tooltip is a view tooltip
+    /// rect, re-registered whenever the drawn frame moves.
+    private(set) var doneChipRect: CGRect? {
+        didSet {
+            guard doneChipRect != oldValue else { return }
+            if let tag = doneChipToolTipTag {
+                removeToolTip(tag)
+                doneChipToolTipTag = nil
+            }
+            if let rect = doneChipRect {
+                doneChipToolTipTag = addToolTip(
+                    rect.insetBy(dx: -8, dy: -7), owner: Self.doneChipToolTipText, userData: nil)
+            }
+        }
+    }
+    private var doneChipToolTipTag: NSView.ToolTipTag?
+    // addToolTip does not retain its owner; keep the string alive.
+    private static let doneChipToolTipText = "Done Editing (⌘↩ or esc)" as NSString
     /// Single click on the ✓ done chip: commit and close the open block.
     var onDoneChipClick: (() -> Void)?
 

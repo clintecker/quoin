@@ -813,12 +813,18 @@ public struct AttributedRenderer {
         if let url = QuoinLink.editURL {
             edit[.link] = url
         }
+        #if canImport(AppKit)
+        edit[.toolTip] = "Edit Source (⌘↩)" as NSString
+        #endif
         output.append(NSAttributedString(string: "‹/› edit    ", attributes: edit))
         var copy = chip
         copy[QuoinAttribute.copySource] = code
         if let url = QuoinLink.copyURL {
             copy[.link] = url
         }
+        #if canImport(AppKit)
+        copy[.toolTip] = "Copy Code" as NSString
+        #endif
         output.append(NSAttributedString(string: "⧉ copy\n", attributes: copy))
 
         var attributes = bodyAttributes()
@@ -897,6 +903,9 @@ public struct AttributedRenderer {
         if let url = QuoinLink.editURL {
             edit[.link] = url
         }
+        #if canImport(AppKit)
+        edit[.toolTip] = "Edit Source (⌘↩)" as NSString
+        #endif
         output.append(NSAttributedString(string: "   ·   ‹/› edit", attributes: edit))
         return output
     }
@@ -988,6 +997,9 @@ public struct AttributedRenderer {
         if let url = QuoinLink.editURL {
             attributes[.link] = url
         }
+        #if canImport(AppKit)
+        attributes[.toolTip] = "Edit Source (⌘↩)" as NSString
+        #endif
         let style = paragraphStyle()
         style.paragraphSpacingBefore = spacingBefore
         style.paragraphSpacing = 2

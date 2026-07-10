@@ -170,6 +170,8 @@ struct ReaderScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleEditSourceNotification)) { _ in
             editSourceToggleGeneration += 1
         }
+        // Lets the Format menu title follow the editing state.
+        .focusedSceneValue(\.quoinIsEditingBlock, model.activeBlockID != nil)
         .background(hiddenShortcuts)
     }
 
