@@ -53,6 +53,11 @@ final class QuoinTextView: NSTextView {
     /// (Edit Source / Copy Markdown Source) to the standard text menu.
     var onContextMenu: ((Int, NSMenu) -> Void)?
 
+    /// The drawn editing frame's box (text-view coordinates), reported
+    /// each draw pass — nil when no block is open. The side-by-side
+    /// preview panel positions itself against it.
+    var onEditingFrameGeometry: ((CGRect?) -> Void)?
+
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let menu = super.menu(for: event) else { return nil }
         let point = convert(event.locationInWindow, from: nil)
@@ -191,14 +196,19 @@ final class QuoinTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         refreshRunsIfNeeded()
-        // No open block → no ✓ done target. Cleared from the RUN list, not
-        // the dirty rect: a partial redraw that misses the chip must not
-        // disable a chip that is still on screen.
+        // No open block → no ✓ done target, no preview panel. Cleared from
+        // the RUN list, not the dirty rect: a partial redraw that misses
+        // the chip must not disable a chip that is still on screen.
         if !decorationRuns.contains(where: {
             if case .editingFrame = $0.decoration.kind { return true }
             return false
         }) {
             doneChipRect = nil
+            if onEditingFrameGeometry != nil {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onEditingFrameGeometry?(nil)
+                }
+            }
         }
         guard !decorationRuns.isEmpty,
               let layoutManager = textLayoutManager,
@@ -358,6 +368,13 @@ final class QuoinTextView: NSTextView {
             )
             label.draw(at: chip.origin)
             doneChipRect = chip
+            // Side-by-side preview panel tracks this frame (mutating the
+            // view hierarchy mid-draw is illegal — next turn).
+            if onEditingFrameGeometry != nil {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onEditingFrameGeometry?(rect)
+                }
+            }
 
         case .tableRules(let width, let header, let body):
             let lineWidth = min(width + 24, box.width)

@@ -37,7 +37,7 @@ objects; accidental flips are jarring. Activation paths for
 mermaid/math: the ‹/› edit chip, ⌘↩ (explicit keyboard intent), and the
 context menu. Code blocks/tables/TOC keep double-click.
 
-## #6 — Preview-anchored reveal: jumps while typing invalid math; wants side-by-side — (a) FIXED / (b) DESIGN QUEUED
+## #6 — Preview-anchored reveal: jumps while typing invalid math; wants side-by-side — FIXED (a+b)
 
 *Reported 2026-07-10 (live use, math blocks).* Two parts:
 
@@ -53,13 +53,16 @@ render + note, not a disappearance), and the status line's height is
 RESERVED while a preview is showing (empty when healthy) so validity
 flaps never reflow.
 
-(b) LAYOUT (design next): user wants side-by-side source ⇄ preview
-rather than stacked. Candidate mechanisms within the single-NSTextView
-architecture: preview as a positioned overlay view at the block's right
-edge (decoration-layer geometry tracking, like the drawn chips) with
-the revealed source's paragraphs taking a tailIndent to make room; or
-NSTextContainer exclusion paths. Needs a taste pass — sketch both,
-pick with Clint.
+(b) LAYOUT — SHIPPED as the floating-panel design: the preview no
+longer enters the text flow at all. The renderer exposes it as
+`RenderedDocument.previewPanel` (image + optional status message,
+last-good hold and flap-stick preserved); the revealed source takes a
+320pt tail indent; `PreviewPanelView` (click-transparent, hosted inside
+the text view) rides the editing frame's drawn geometry via
+`onEditingFrameGeometry`. Status lives IN the panel, so text-flow
+height never changes with validity — the stacked reveal's whole
+height-instability class is gone. Panel width fixed at 320pt for v1;
+narrow-window clamping is polish.
 
 ## #5 — Revealed indented code block: styled as markdown, caret lands oddly — FIXED (styling; caret uses the generic walk)
 

@@ -231,7 +231,8 @@ final class ReaderModel {
                     activeSourceText: patch.activeSourceText,
                     storagePatch: patch.storagePatch,
                     revision: nextRevision(),
-                    patchBaseLength: baseLength
+                    patchBaseLength: baseLength,
+                    previewPanel: renderer.activePreviewPanel()
                 )
             } else {
                 let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
@@ -243,7 +244,8 @@ final class ReaderModel {
                     activeEditableRange: next.activeEditableRange,
                     activeSourceText: next.activeSourceText,
                     spliceHint: spliceHint,
-                    revision: nextRevision()
+                    revision: nextRevision(),
+                    previewPanel: next.previewPanel
                 )
             }
             outline = document.outline
@@ -363,7 +365,8 @@ final class ReaderModel {
             activeSourceText: update.activeSourceText,
             storagePatches: update.storagePatches,
             revision: nextRevision(),
-            patchBaseLength: baseLength
+            patchBaseLength: baseLength,
+            previewPanel: newID != nil ? renderer.activePreviewPanel() : nil
         )
         return true
     }

@@ -72,6 +72,22 @@ public struct RenderedDocument {
     /// `attributed`, which the model keeps authoritative.
     public let patchBaseLength: Int?
 
+    /// Side-by-side preview for the ACTIVE diagram/equation (ledger #6b):
+    /// the artifact rendered as a floating panel beside the revealed
+    /// source, refreshed every keystroke; `statusMessage` is non-nil while
+    /// the mid-edit source doesn't parse (the last good render is shown).
+    /// nil when no preview-anchored block is open.
+    public let previewPanel: PreviewPanel?
+
+    public struct PreviewPanel {
+        public let image: PlatformImage
+        public let statusMessage: String?
+        public init(image: PlatformImage, statusMessage: String?) {
+            self.image = image
+            self.statusMessage = statusMessage
+        }
+    }
+
     public init(
         attributed: NSAttributedString,
         blockRanges: [BlockID: NSRange],
@@ -82,7 +98,8 @@ public struct RenderedDocument {
         storagePatch: RenderStoragePatch? = nil,
         storagePatches: [RenderStoragePatch] = [],
         revision: Int = 0,
-        patchBaseLength: Int? = nil
+        patchBaseLength: Int? = nil,
+        previewPanel: PreviewPanel? = nil
     ) {
         self.attributed = attributed
         self.blockRanges = blockRanges
@@ -93,6 +110,7 @@ public struct RenderedDocument {
         self.storagePatches = storagePatch.map { [$0] } ?? storagePatches
         self.revision = revision
         self.patchBaseLength = patchBaseLength
+        self.previewPanel = previewPanel
     }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])
@@ -224,7 +242,8 @@ public struct AttributedRenderer {
             blockRanges: blockRanges,
             activeBlockID: activeBlockID,
             activeEditableRange: activeEditableRange,
-            activeSourceText: activeSourceText
+            activeSourceText: activeSourceText,
+            previewPanel: activeBlockID != nil ? activePreviewPanel() : nil
         )
     }
 
@@ -253,13 +272,32 @@ public struct AttributedRenderer {
     /// activates so a stale artifact can never appear over foreign source.
     /// (Reference-boxed: the renderer is a struct whose render paths are
     /// non-mutating.)
+    /// Width reserved for the side-by-side preview panel (plus its gap):
+    /// the revealed source's paragraphs take a matching tail indent.
+    public static let previewPanelWidth: CGFloat = 320
+    public static let previewPanelGap: CGFloat = 16
+
     private final class ActivePreviewBox {
-        var value: (key: String, sourceText: String, sliceText: String, attachment: NSAttributedString)?
+        var value: (key: String, sourceText: String, sliceText: String,
+                    image: PlatformImage, paused: Bool)?
     }
     private let activePreviewBox = ActivePreviewBox()
-    private var activePreview: (key: String, sourceText: String, sliceText: String, attachment: NSAttributedString)? {
+    private var activePreview: (key: String, sourceText: String, sliceText: String,
+                                image: PlatformImage, paused: Bool)? {
         get { activePreviewBox.value }
         nonmutating set { activePreviewBox.value = newValue }
+    }
+
+    /// The side-by-side panel for the block revealed by the most recent
+    /// `renderEditableSource` pass, or nil when none is showing.
+    public func activePreviewPanel() -> RenderedDocument.PreviewPanel? {
+        guard let held = activePreview else { return nil }
+        let noun = held.key == "math" ? "equation" : "diagram"
+        return RenderedDocument.PreviewPanel(
+            image: held.image,
+            statusMessage: held.paused
+                ? "⚠︎ \(noun) paused — showing the last good render" : nil
+        )
     }
 
     /// True when `slice` is plausibly the SAME editing session as the held
@@ -556,11 +594,15 @@ public struct AttributedRenderer {
 
     /// Combines the styled source with its editing-mode chrome:
     ///
-    /// - PREVIEW-ANCHORED REVEAL (mermaid/math): the fragment leads with a
-    ///   live render of the artifact — the thing the user cares about
-    ///   never disappears while its source is open, and every keystroke
-    ///   re-renders it. Unparseable mid-edit source keeps the last GOOD
-    ///   render (never blank, never flashing) plus one calm note line.
+    /// - SIDE-BY-SIDE PREVIEW (mermaid/math, ledger #6b): the artifact
+    ///   never enters the text flow — it renders as a floating panel the
+    ///   view layer hosts beside the source (`activePreviewPanel()`),
+    ///   refreshed here every keystroke; the source paragraphs take a
+    ///   matching tail indent. Unparseable mid-edit source keeps the last
+    ///   GOOD render with a status message IN the panel — no text-flow
+    ///   height ever changes with validity, and the preview sticks even
+    ///   when the half-edited source stops parsing as its own kind
+    ///   (slice-lineage guarded).
     /// - EMBED editing chrome: accent frame + drawn ✓ done chip as a
     ///   decoration over the whole fragment — never a text run; the
     ///   source region stays 1:1 with the file, reported precisely by
@@ -569,134 +611,89 @@ public struct AttributedRenderer {
     private func assembleRevealedFragment(
         source styled: NSMutableAttributedString, block: Block?
     ) -> RevealedFragment {
-        let output = NSMutableAttributedString()
-        var previewShowing = false
-        if let block {
-            if let preview = revealPreviewLine(for: block.kind, slice: styled.string) {
-                output.append(preview)
-                previewShowing = true
-            } else if heldPreviewApplies(toSlice: styled.string), let held = heldPreviewLine() {
-                // Mid-edit source like `$$x^` stops PARSING as a math block
-                // — the kind flaps to paragraph for a keystroke. The held
-                // preview (and the editing frame below) stick through the
-                // flap; a vanish-and-return per keystroke was the reported
-                // jumping (ledger #6a). Guarded by slice lineage so a held
-                // artifact can never leak onto an unrelated block.
-                output.append(held)
-                previewShowing = true
+        let panelShowing = updatePreviewPanel(for: block?.kind, slice: styled.string)
+        if panelShowing {
+            // Make room for the panel: source wraps left of it.
+            mutateParagraphStyles(in: styled, range: NSRange(location: 0, length: styled.length)) { style, _ in
+                style.tailIndent = -(Self.previewPanelWidth + Self.previewPanelGap)
             }
         }
-        let editableRange = NSRange(location: output.length, length: styled.length)
-        output.append(styled)
-        if let block, isEmbedEditingKind(block.kind) || previewShowing {
-            output.addAttribute(
+        let editableRange = NSRange(location: 0, length: styled.length)
+        if let block, isEmbedEditingKind(block.kind) || panelShowing {
+            styled.addAttribute(
                 QuoinAttribute.blockDecoration,
                 value: BlockDecoration(kind: .editingFrame(accent: theme.accent)),
-                range: NSRange(location: 0, length: output.length)
+                range: NSRange(location: 0, length: styled.length)
             )
         }
-        return RevealedFragment(attributed: output, editableRange: editableRange)
+        return RevealedFragment(attributed: styled, editableRange: editableRange)
     }
 
-    /// The live preview paragraph (plus, when the source is mid-edit
-    /// broken, a one-line note) that anchors a revealed diagram/equation.
-    /// Returns nil for every other kind, and for a block whose source has
-    /// never rendered in this editing session (opening a broken diagram
-    /// shows plain source — same as before this feature).
-    private func revealPreviewLine(for kind: BlockKind, slice: String) -> NSAttributedString? {
+    /// Refreshes the held preview for the active reveal; returns whether a
+    /// panel is showing for this fragment. Unchanged source reuses the
+    /// held image (no re-render on caret moves); fresh source re-renders;
+    /// unparseable source holds the last good image, paused; a kind flap
+    /// holds it too when the slice is one edit away (lineage guard — a
+    /// held artifact must never leak onto an unrelated block).
+    private func updatePreviewPanel(for kind: BlockKind?, slice: String) -> Bool {
         let key: String
-        let noun: String
         let sourceText: String
         switch kind {
         case .mermaid(let source):
             key = "mermaid"
-            noun = "diagram"
             sourceText = source
         case .mathBlock(let latex):
             key = "math"
-            noun = "equation"
             sourceText = latex
         default:
-            return nil
+            // Kind flap mid-edit: stick with the held panel (paused) while
+            // the slice is recognizably the same editing session.
+            if var held = activePreview, heldPreviewApplies(toSlice: slice) {
+                held.paused = true
+                held.sliceText = slice
+                activePreview = held
+                return true
+            }
+            return false
         }
 
-        // Unchanged source reuses the held attachment INSTANCE: caret
-        // moves don't re-render the artifact, and the flip-patch and
-        // full-render projections stay attribute-identical (attachment
-        // equality is identity).
-        let attachment: NSAttributedString
-        var paused = false
-        if let held = activePreview, held.key == key, held.sourceText == sourceText {
-            attachment = held.attachment
-        } else {
-            let fresh: NSAttributedString? = switch kind {
-            case .mermaid(let source):
-                MermaidRenderer.attachmentString(source: source, theme: theme.diagramTheme)
-            case .mathBlock(let latex):
-                MathImageRenderer.attachmentString(
-                    latex: latex, display: true, theme: theme, baseSize: theme.bodySize)
-            default:
-                nil
-            }
-            if let fresh {
-                activePreview = (key, sourceText, slice, fresh)
-                attachment = fresh
-            } else if let held = activePreview, held.key == key,
-                      heldPreviewApplies(toSlice: slice) {
-                attachment = held.attachment
-                paused = true
-            } else {
-                return nil
+        if let held = activePreview, held.key == key, held.sourceText == sourceText,
+           !held.paused {
+            return true // unchanged source: reuse, no re-render
+        }
+        let fresh: NSAttributedString? = switch kind {
+        case .mermaid(let source):
+            MermaidRenderer.attachmentString(source: source, theme: theme.diagramTheme)
+        case .mathBlock(let latex):
+            MathImageRenderer.attachmentString(
+                latex: latex, display: true, theme: theme, baseSize: theme.bodySize)
+        default:
+            nil
+        }
+        if let fresh, let image = Self.attachmentImage(in: fresh) {
+            activePreview = (key, sourceText, slice, image, false)
+            return true
+        }
+        if var held = activePreview, held.key == key, heldPreviewApplies(toSlice: slice) {
+            held.paused = true
+            held.sliceText = slice
+            activePreview = held
+            return true
+        }
+        return false
+    }
+
+    private static func attachmentImage(in attributed: NSAttributedString) -> PlatformImage? {
+        var image: PlatformImage?
+        attributed.enumerateAttribute(
+            .attachment, in: NSRange(location: 0, length: attributed.length)
+        ) { value, _, stop in
+            if let attachment = value as? NSTextAttachment, let found = attachment.image {
+                image = found
+                stop.pointee = true
             }
         }
-
-        return Self.previewParagraphs(
-            attachment: attachment, paused: paused, noun: noun,
-            centered: key == "math", theme: theme)
-    }
-
-    /// The held preview shown while the mid-edit source doesn't even parse
-    /// as its own kind anymore (the flap ledger #6a describes) — always
-    /// paused by definition.
-    private func heldPreviewLine() -> NSAttributedString? {
-        guard let held = activePreview else { return nil }
-        return Self.previewParagraphs(
-            attachment: held.attachment, paused: true,
-            noun: held.key == "math" ? "equation" : "diagram",
-            centered: held.key == "math", theme: theme)
-    }
-
-    /// Attachment paragraph + a status line whose HEIGHT is always
-    /// reserved: the paused note toggling a line in and out per keystroke
-    /// was half of ledger #6a's jumping. Healthy state shows an empty
-    /// caption line; paused shows the calm amber note in the same slot.
-    private static func previewParagraphs(
-        attachment: NSAttributedString, paused: Bool, noun: String,
-        centered: Bool, theme: Theme
-    ) -> NSAttributedString {
-        let output = NSMutableAttributedString(attributedString: attachment)
-        let style = NSMutableParagraphStyle()
-        if centered { style.alignment = .center }
-        style.paragraphSpacingBefore = 6
-        style.paragraphSpacing = 2
-        output.addAttribute(.paragraphStyle, value: style,
-                            range: NSRange(location: 0, length: output.length))
-        output.append(NSAttributedString(string: "\n", attributes: [
-            .font: theme.captionFont(),
-            .paragraphStyle: style,
-        ]))
-        let noteStyle = NSMutableParagraphStyle()
-        noteStyle.paragraphSpacing = 6
-        var note: [NSAttributedString.Key: Any] = [
-            .font: theme.captionFont(),
-            .paragraphStyle: noteStyle,
-            .foregroundColor: PlatformColor.systemOrange,
-        ]
-        if !paused { note[.foregroundColor] = PlatformColor.clear }
-        output.append(NSAttributedString(
-            string: (paused ? "⚠︎ \(noun) paused — showing the last good render" : "") + "\n",
-            attributes: note))
-        return output
+        return image
     }
 
     /// Kinds whose OPEN state shows the editing frame + ✓ done chip. The

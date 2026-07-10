@@ -807,6 +807,37 @@ extension MarkdownReaderView {
         /// shares the view lifetime.
         var flipTransition: FlipTransitionController?
 
+        /// The side-by-side preview panel (ledger #6b), created lazily and
+        /// repositioned from the editing frame's drawn geometry.
+        private var previewPanel: PreviewPanelView?
+
+        /// Shows/hides/positions the preview panel for the current
+        /// projection. `frameBox` is the drawn editing frame in text-view
+        /// coordinates (nil = no open block).
+        func updatePreviewPanel(editingFrame frameBox: CGRect?) {
+            guard let textView else { return }
+            guard let frameBox,
+                  let panel = parent.rendered.previewPanel,
+                  parent.rendered.activeBlockID != nil else {
+                previewPanel?.isHidden = true
+                return
+            }
+            let view: PreviewPanelView
+            if let existing = previewPanel {
+                view = existing
+            } else {
+                view = PreviewPanelView(frame: .zero)
+                textView.addSubview(view)
+                previewPanel = view
+            }
+            view.present(
+                image: panel.image,
+                statusMessage: panel.statusMessage,
+                in: frameBox,
+                panelWidth: AttributedRenderer.previewPanelWidth
+            )
+        }
+
         /// The on-screen y (distance from the viewport's top) of a block's
         /// first laid-out fragment, or nil when geometry is unavailable.
         /// Captured BEFORE an activate/deactivate splice so the flipped

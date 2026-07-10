@@ -192,6 +192,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         textView.onContextMenu = { [weak coordinator = context.coordinator] index, menu in
             coordinator?.populateContextMenu(menu, atCharIndex: index)
         }
+        textView.onEditingFrameGeometry = { [weak coordinator = context.coordinator] frameBox in
+            coordinator?.updatePreviewPanel(editingFrame: frameBox)
+        }
         return scrollView
     }
 
