@@ -18,13 +18,20 @@ top-down; nothing ships while a BLOCKER is open.*
   keystroke was silently dropped. Now: `onEmptyDocumentInsert` routes typing
   into the session at offset 0. Follow-up polish: dimmed "Start typing…"
   placeholder. `ReaderCoordinator`/`ReaderModel`.
-- **[FIXED] No termination flush** — ⌘Q inside the 400ms autosave debounce
-  dropped the last keystrokes (`onDisappear` unreliable at quit). Now:
-  `applicationShouldTerminate` → `.terminateLater` → drain all live sessions.
-- **[OPEN] Menu commands broadcast to every window** — all menu items post
-  unfiltered notifications; with two windows, ⌘Z undoes in BOTH documents,
-  Export opens two sheets. Fix: key-window guard or @FocusedValue action
-  routing. `QuoinApp`/`ReaderScreen`/`MainWindow`. **Top remaining item.**
+- **[FIXED×2] No termination flush** — ⌘Q inside the 400ms autosave debounce
+  dropped the last keystrokes. v1 (MainActor Task in terminateLater) STILL
+  lost data — that runloop mode isn't guaranteed to run main-actor tasks;
+  Clint hit it live. v2: snapshot sessions on main, flush on a DETACHED
+  task, reply on main, 3s watchdog.
+- **[FIXED] ⌘N not typeable until click** — no first responder on open;
+  one-shot focus claim in updateNSView once the window exists.
+- **[FIXED] Welcome/Guide buttons dead** — XcodeGen folder-type resources
+  nest under Resources/ in the bundle; lookup now falls back to the
+  subdirectory.
+- **[FIXED] Menu commands broadcast to every window** — every menu-driven
+  observer now guards on `controlActiveState == .key`; with two windows,
+  ⌘Z/Export/⌘N act in the key window only. (Trash-tab-close deliberately
+  stays broadcast — a dead tab must close everywhere.)
 - **[OPEN] App icon does not exist** — generic AppKit icon today; no
   .xcassets anywhere. Commission now (lead time). (PM L6)
 - **[DECIDED 2026-07-10: DIRECT distribution]** — consequences now on the
@@ -65,43 +72,44 @@ top-down; nothing ships while a BLOCKER is open.*
 
 ## HIGH — platform/UI (macOS audit)
 
-- [OPEN] First-run detail pane: New Document button silently no-ops with no
-  library; onboarding lives in the narrow sidebar. (Partially improved by
-  the starter-library prompt; move CTA to the detail pane.) #3.
-- [OPEN] Open tabs don't survive relaunch (@State only — workspace
-  amnesia). Fix: @SceneStorage/defaults keyed by library. #4.
-- [OPEN] ⌘N/⌘W shadow the default File-menu items — menu says New Window/
-  Close, keys do New Document/Close Tab. Replace `.newItem`, add honest
-  items, delete hidden buttons. #5.
-- [OPEN] Undo/Redo menu items: no enablement, no-op with no document;
-  sidebar move-undo stranded; ⌘Z steals from text fields. #6.
-- [OPEN] Format/Export/View items enabled with nothing to act on —
-  `.disabled` via @FocusedValues. #7.
-- [OPEN] Library folder can never be changed after first choice. #8.
-- [OPEN] Sidebar file management read-only: no Move to Trash, New Folder,
-  folder rename, new-doc-in-folder. #9.
-- [OPEN] Quick open: ↑/↓ dead (highlight machinery exists, unwired);
-  no-results renders nothing; empty-recents state is a bare field. #10/#16.
-- [OPEN] Feature set invisible in menus: Quick Open, Library Search, Daily
-  Note, New Document, Find family, Back/Forward, Print — hidden shortcuts
-  only. #12.
-- [OPEN] View toggles lack checkmarks (Toggle bound to @AppStorage);
-  Sentence Focus silently no-ops without Focus Mode. #13.
-- [OPEN] No titlebar document proxy (`.navigationDocument`). #14.
-- [OPEN] No File ▸ Open…/Open Recent; system recents never noted. #15.
-- [OPEN] Empty-library sidebar is blank space + tiny footer. #17.
-- [OPEN] Export sheet: dead DOCX card (cut it), Escape monitor eats the
-  save panel's cancel, app-modal runModal → beginSheetModal. #18.
-- [OPEN] Duplicate sidebar toggles (custom ⌘0 + system ⌃⌘S). #19.
-- [OPEN] Icon-only buttons lack accessibilityLabels; tab bar items aren't
-  accessible controls. #20.
-- [OPEN] Drops from outside the library MOVE the source file (should
-  copy); failures silent; no drop highlighting; .md drop on editor
-  ignored. #21.
+- [FIXED] First-run onboarding moved to the detail pane; sidebar stays
+  quiet until a library exists. #3.
+- [FIXED] Open tabs survive relaunch (@SceneStorage per window; only
+  library-scoped files restore — panel one-offs need bookmarks). #4.
+- [FIXED] Honest File menu: New Document ⌘N / New Window ⇧⌘N / Open… ⌘O /
+  Open Recent / Close Tab ⌘W; system Close retitled Close Window ⇧⌘W via
+  delegate menu surgery; hidden buttons deleted. #5.
+- [PARTIAL] Undo/Redo disabled without a document. Remaining: sidebar
+  move-undo only works with no tab open; ⌘Z still routes to the document
+  while a text field (find bar) is focused. #6.
+- [FIXED] Format/Export/Print/Find/Go/Close Tab enablement via
+  `quoinHasDocument` focused value; format items need an active block. #7.
+- [FIXED] File ▸ Change Library Folder…. #8.
+- [FIXED] Sidebar file management: Move to Trash (files/folders,
+  recoverable, closes tabs everywhere), New Folder, New Document in
+  folder, folder rename, empty-area menu. #9.
+- [FIXED] Quick open ↑/↓ + scroll-into-view + no-matches/empty-recents
+  states. #10/#16.
+- [FIXED] Real menus for everything: Go menu (Back/Forward/Quick Open/
+  Daily Note), Edit ▸ Find family + Search Library, File ▸ Print…. #12.
+- [FIXED] View toggles are checkmarked @AppStorage Toggles (+ Status
+  Bar); Sentence Focus disabled without Focus Mode. #13.
+- [FIXED] Titlebar document proxy (`navigationDocument`). #14.
+- [FIXED] File ▸ Open… + Open Recent (+ Clear); system recents noted on
+  every open; Dock menu shows recents. #15.
+- [FIXED] Empty-library null state in sidebar. #17.
+- [FIXED] Export sheet: DOCX card cut; window-modal save panel; Escape
+  monitor suspends while the panel runs. #18.
+- [FIXED] System sidebar-toggle duplicate removed (replacing: .sidebar). #19.
+- [PARTIAL] a11y labels on new-document button + tab-bar tabs (button
+  trait + selected). Full VoiceOver audit still owed. #20.
+- [PARTIAL] External drops now COPY (intra-library drops move with ⌘Z).
+  Remaining: drop failures silent, no drop-target highlighting, .md drop
+  on editor ignored. #21.
 - [OPEN] Tab switches destroy scroll/caret state (`.id(activeTab)`). #22.
-- [OPEN] Sidebar keyboard selection never opens documents. #23.
-- [OPEN] Conveniences roll-up: Dock menu, Services, CFBundleTypeRole
-  Viewer→Editor, progress hairline overlays find bar. #24.
+- [FIXED] Sidebar keyboard selection opens documents. #23.
+- [PARTIAL] Dock menu ✓, CFBundleTypeRole Editor ✓. Remaining: Services,
+  progress hairline overlaps find bar. #24.
 
 ## HIGH — performance (all currently unbudgeted; entries #1–#16)
 
