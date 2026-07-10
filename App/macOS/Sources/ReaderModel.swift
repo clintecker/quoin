@@ -290,6 +290,14 @@ final class ReaderModel {
             caretInActiveBlock = nil
         }
         caretGeneration += 1
+        if QuoinPerformanceTrace.isEnabled, let id,
+           let block = document.blocks.first(where: { $0.id == id }),
+           let slice = document.source.substring(in: block.range) {
+            let head = slice.prefix(70).replacingOccurrences(of: "\n", with: "⏎")
+            QuoinPerformanceTrace.log(
+                "model.activate", startedAt: DispatchTime.now().uptimeNanoseconds,
+                metadata: "kind=\(String(describing: block.kind).prefix(24)) sliceLen=\(slice.count) head=<<\(head)>>")
+        }
         // A flip changes only the flipped blocks' PROJECTION — the document
         // is untouched. Patch just those fragments into the live storage
         // instead of re-rendering the whole document (which costs ~half a

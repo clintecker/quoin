@@ -245,6 +245,22 @@ public struct MarkdownReaderView: NSViewRepresentable {
                     (textView as? QuoinTextView)?.invalidateDecorations()
                 }
             }
+            // Kill estimated geometry while the document is small enough to
+            // lay out eagerly (a few ms at tens of KB): TextKit 2's lazy
+            // estimates RESOLVE on click (hit-testing forces layout), and
+            // the resolved heights shift the content under the pointer — a
+            // viewport jump no delegate ever sees, on any block type. Large
+            // documents keep lazy layout (the anchor + settle passes handle
+            // them); typical documents simply never lie.
+            if storage.length < 200_000,
+               let layoutManager = textView.textLayoutManager,
+               let contentStorage = textView.textContentStorage {
+                QuoinPerformanceTrace.measure(
+                    "render.textkit.eagerLayout", metadata: "utf16=\(storage.length)"
+                ) {
+                    layoutManager.ensureLayout(for: contentStorage.documentRange)
+                }
+            }
             coordinator.renderedGeneration = rendered.attributed
             coordinator.appliedRevision = rendered.revision
             coordinator.blockRanges = rendered.blockRanges

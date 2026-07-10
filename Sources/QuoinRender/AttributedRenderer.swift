@@ -698,8 +698,13 @@ public struct AttributedRenderer {
         tagged.addAttribute(QuoinAttribute.blockID, value: block.id.description, range: whole)
         // Embed blocks flip to source on double-click, not single click, so a
         // click to admire a rendered diagram/table doesn't turn it into code.
+        // The TOC is one too: its rendered form is the full linked outline
+        // but its source is one `[TOC]` line — a single click that activated
+        // it collapsed hundreds of points of links around the caret (the
+        // reported "click an item in the list and everything shifts wildly");
+        // its links must navigate, not flip.
         switch block.kind {
-        case .codeBlock, .mermaid, .mathBlock, .table, .htmlBlock:
+        case .codeBlock, .mermaid, .mathBlock, .table, .htmlBlock, .tableOfContents:
             tagged.addAttribute(QuoinAttribute.embedBlock, value: NSNumber(value: true), range: whole)
         default:
             break
