@@ -27,9 +27,13 @@ top-down; nothing ships while a BLOCKER is open.*
   routing. `QuoinApp`/`ReaderScreen`/`MainWindow`. **Top remaining item.**
 - **[OPEN] App icon does not exist** — generic AppKit icon today; no
   .xcassets anywhere. Commission now (lead time). (PM L6)
-- **[DECISION] Distribution** — entitlements are already App-Store-shaped
-  (sandbox + bookmarks + hardened runtime). App Store vs direct+Sparkle
-  decides updates, notarization scripts, pricing, and the privacy copy.
+- **[DECIDED 2026-07-10: DIRECT distribution]** — consequences now on the
+  ledger: (a) Sparkle 2.x for updates — a real third-party dependency
+  requiring the written TRD justification per policy, plus an appcast
+  host; (b) Developer ID signing + notarization pipeline (hardened
+  runtime already on; needs an archive/notarize script in scripts/);
+  (c) privacy copy amended to "no network except the update check, which
+  you can disable"; (d) pricing/licensing mechanics are ours to build.
   (PM L9/L10)
 
 ## HIGH — data integrity & correctness (senior review)
