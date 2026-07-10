@@ -510,6 +510,40 @@ final class SessionEditingTests: XCTestCase {
         XCTAssertEqual(source, "clean content", "content stays available in memory")
     }
 
+    func testDetachedDirtySessionRaisesConflictInsteadOfClobberingARestoredFile() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("original".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        let conflictSource = LockedBox<String>()
+        await session.setConflictHandler { conflictSource.value = $0 }
+
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 8, length: 0), replacement: " edited"))
+        try FileManager.default.removeItem(at: file)
+        await session.reloadFromDisk()
+        try await Task.sleep(for: .milliseconds(500))
+        let detached = await session.isDetached
+        XCTAssertTrue(detached)
+
+        // A FOREIGN file appears at the old path. The next keystroke must
+        // re-attach via the conflict machinery, not overwrite it.
+        try Data("foreign newcomer".utf8).write(to: file)
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "more "))
+        try await Task.sleep(for: .milliseconds(1000))
+
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "foreign newcomer",
+                       "a restored/foreign file must not be clobbered")
+        XCTAssertNotNil(conflictSource.value, "the merge banner must be raised")
+        let conflicted = await session.hasUnresolvedConflict
+        XCTAssertTrue(conflicted)
+        let stillDetached = await session.isDetached
+        XCTAssertFalse(stillDetached, "the session re-attached; the banner owns resolution")
+    }
+
     func testWatcherFollowsExternalMoveAndSavesToTheNewPath() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

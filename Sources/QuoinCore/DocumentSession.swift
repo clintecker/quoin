@@ -379,13 +379,24 @@ public actor DocumentSession {
         // land until the user picks a side (ledger #5).
         guard !hasUnresolvedConflict else { return }
         // Detached (file vanished): writing would resurrect the dead path
-        // and fork the document (ledger #6). Tell the user once.
+        // and fork the document (ledger #6). If something reappeared at the
+        // path since, route through reloadFromDisk — it re-attaches on
+        // matching content and raises the conflict banner on foreign
+        // content (we are dirty here by definition). Otherwise tell the
+        // user once and hold the edit in memory.
         if isDetached {
-            if !didReportDetachedEdit {
-                didReportDetachedEdit = true
-                reportSaveFailure()
+            if let fileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+                reloadFromDisk()
             }
-            return
+            if isDetached {
+                if !didReportDetachedEdit {
+                    didReportDetachedEdit = true
+                    reportSaveFailure()
+                }
+                return
+            }
+            // Re-attach raised the merge banner instead; it owns the UI.
+            guard !hasUnresolvedConflict else { return }
         }
         autosaveTask?.cancel()
         autosaveTask = Task { [autosaveDelay] in
@@ -415,6 +426,12 @@ public actor DocumentSession {
 
     public func saveNow() throws {
         guard let fileURL else { return }
+        if isDetached, FileManager.default.fileExists(atPath: fileURL.path) {
+            // Something is back at the path: re-attach through the normal
+            // reload (adopts matching/clean content, raises the conflict
+            // banner on foreign content while dirty).
+            reloadFromDisk()
+        }
         guard !hasUnresolvedConflict else {
             // Even an explicit flush (⌘Q drain) must not clobber the disk
             // side while the merge banner is unanswered.
