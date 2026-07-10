@@ -220,31 +220,41 @@ final class FlipTransitionController {
 
     /// A frozen-pixel slice, positioned over the same region it was
     /// captured from. `sliceRect` is in viewport coordinates.
+    ///
+    /// Displayed with NSImageView on a CGImage crop — deliberately NOT
+    /// manual `layer.contents` + `contentsRect`: raw-contents orientation
+    /// on macOS depends on the layer tree's flip state in ways that
+    /// differed between a standalone probe and the real AppKit backing-
+    /// layer tree (a mirrored overlay shipped twice during development —
+    /// FlipTransitionFidelityTests holds the compositor-level regression
+    /// net). CGImage cropping is raster-space (row 0 = capture top) and
+    /// NSImageView displays upright in any hierarchy, flipped or not.
     private func makeSlice(capture: Capture, sliceRect: CGRect) -> NSView? {
         let clipped = sliceRect.intersection(capture.extent)
         guard !clipped.isEmpty, clipped.height >= 1 else { return nil }
+        let scale = capture.scale
+        guard let cropped = capture.image.cropping(to: CGRect(
+            x: clipped.minX * scale,
+            y: clipped.minY * scale,
+            width: clipped.width * scale,
+            height: clipped.height * scale
+        )) else { return nil }
 
-        let view = NSView(frame: clipped)
+        let view = NSImageView(frame: clipped)
+        view.image = NSImage(cgImage: cropped, size: clipped.size)
+        view.imageScaling = .scaleAxesIndependently
         view.wantsLayer = true
-        guard let layer = view.layer else { return nil }
-        layer.contents = capture.image
-        layer.contentsScale = capture.scale
-        // contentsRect is normalized to the image, with a FLIPPED-space
-        // capture (bitmapImageRepForCachingDisplay of a flipped view):
-        // image row 0 is the capture rect's top.
-        layer.contentsRect = CGRect(
-            x: clipped.minX / capture.extent.width,
-            y: clipped.minY / capture.extent.height,
-            width: clipped.width / capture.extent.width,
-            height: clipped.height / capture.extent.height
-        )
-        layer.contentsGravity = .resize
         return view
     }
 
     private func mount(_ views: [NSView]) {
         guard let scrollView else { return }
         let container = OverlayContainer(frame: scrollView.contentView.frame)
+        // Explicitly layer-backed: the slices ARE layers (contents +
+        // contentsRect); without a backing layer on the host they simply
+        // don't composite — layer-backing must never depend on what the
+        // surrounding window happens to use.
+        container.wantsLayer = true
         container.autoresizingMask = [.width, .height]
         for view in views { container.addSubview(view) }
         scrollView.addSubview(container)
