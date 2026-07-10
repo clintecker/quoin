@@ -285,6 +285,24 @@ public struct MarkdownReaderView: NSViewRepresentable {
             coordinator.renderedGeneration = rendered.attributed
             coordinator.appliedRevision = rendered.revision
             coordinator.blockRanges = rendered.blockRanges
+            // Flip-back caret: the closing block's caret returns to the
+            // rendered image of its source position (Escape/⌘↩/Done). The
+            // selection is otherwise left wherever the splice pushed it —
+            // an unspecified spot the next keystroke would act on.
+            if let pending = coordinator.pendingDeactivationCaret {
+                coordinator.pendingDeactivationCaret = nil
+                if rendered.activeBlockID == nil,
+                   let range = rendered.blockRanges[pending.id],
+                   NSMaxRange(range) <= storage.length {
+                    let location = coordinator.flipBackCaretLocation(
+                        blockRange: range,
+                        storage: storage,
+                        sourceOffset: pending.sourceOffset,
+                        sourceText: pending.sourceText
+                    )
+                    textView.setSelectedRange(NSRange(location: location, length: 0))
+                }
+            }
             if let flipAnchor, let newRange = rendered.blockRanges[flipAnchor.id] {
                 // Caret-less flip: pin the flipped block's top edge; this
                 // also forces real layout for the spliced region, so the

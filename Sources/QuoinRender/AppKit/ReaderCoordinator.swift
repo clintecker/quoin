@@ -445,10 +445,89 @@ extension MarkdownReaderView {
             onEdit(byteRange, change.replacement, caretDelta)
         }
 
-        /// Esc closes the revealed block.
+        /// Set when a deactivation should land the caret at the rendered
+        /// image of its source position (Escape today; ⌘↩/Done later).
+        /// Captured BEFORE the flip-back is requested — the projection that
+        /// replaces the revealed source arrives asynchronously in
+        /// updateNSView, which consumes this. Without it the flip-back left
+        /// whatever stale selection the storage splice produced.
+        var pendingDeactivationCaret: (id: BlockID, sourceOffset: Int, sourceText: String)?
+
+        /// Records the current caret (relative to the active block's source)
+        /// so the imminent flip-back can restore it in rendered coordinates.
+        func captureDeactivationCaret(in textView: NSTextView) {
+            guard let closingID = parent.rendered.activeBlockID,
+                  let active = parent.rendered.activeEditableRange,
+                  let source = parent.rendered.activeSourceText
+            else { return }
+            let relative = min(max(0, textView.selectedRange().location - active.location), active.length)
+            pendingDeactivationCaret = (closingID, relative, source)
+        }
+
+        /// Absolute storage location for the caret after a flip-back.
+        /// Embed read fragments tag their body 1:1 with the source content
+        /// (`embedSourceStart`) — the exact inverse of `embedCaretHint` —
+        /// so those map arithmetically; everything else goes through the
+        /// generic source→rendered alignment walk.
+        func flipBackCaretLocation(
+            blockRange: NSRange, storage: NSTextStorage, sourceOffset: Int, sourceText: String
+        ) -> Int {
+            var contentStart: Int?
+            var bodyRange: NSRange?
+            let clamped = NSRange(
+                location: blockRange.location,
+                length: min(blockRange.length, storage.length - blockRange.location)
+            )
+            storage.enumerateAttribute(QuoinAttribute.embedSourceStart, in: clamped) { value, range, stop in
+                if let start = value as? NSNumber, start.intValue >= 0 {
+                    contentStart = start.intValue
+                    bodyRange = range
+                    stop.pointee = true
+                }
+            }
+            if let contentStart, let bodyRange {
+                let delta = sourceOffset - contentStart
+                if delta >= 0, delta <= bodyRange.length {
+                    return bodyRange.location + delta
+                }
+                // Before the body (the opening fence / info line) rounds to
+                // the body start; past it (closing fence) to the body end.
+                return delta < 0 ? bodyRange.location : NSMaxRange(bodyRange)
+            }
+            let renderedText = (storage.string as NSString).substring(with: blockRange)
+            return Self.deactivationCaretLocation(
+                blockRange: blockRange, renderedText: renderedText,
+                sourceOffset: sourceOffset, sourceText: sourceText
+            )
+        }
+
+        /// The generic (non-embed) flip-back mapping: the rendered image of
+        /// `sourceOffset`, rounded BACKWARD to visible content — a caret at
+        /// the source's end must sit after the last rendered character,
+        /// never forward across the trailing block separator into the next
+        /// block.
+        static func deactivationCaretLocation(
+            blockRange: NSRange, renderedText: String, sourceOffset: Int, sourceText: String
+        ) -> Int {
+            let mapped = EditMapping.renderedOffsets(
+                forSourceOffsets: [sourceOffset],
+                renderedText: renderedText,
+                sourceText: sourceText
+            ).first ?? 0
+            let ns = renderedText as NSString
+            var contentEnd = ns.length
+            while contentEnd > 0, ns.character(at: contentEnd - 1) == 0x0A { contentEnd -= 1 }
+            return blockRange.location + min(max(0, mapped), contentEnd)
+        }
+
+        /// Esc closes the revealed block, committing as always (Escape
+        /// never reverts — every keystroke is already in the file; backing
+        /// out is ⌘Z's job) and restoring the caret at the rendered image
+        /// of where it was.
         public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.cancelOperation(_:)),
                parent.rendered.activeBlockID != nil {
+                captureDeactivationCaret(in: textView)
                 parent.onActivateBlock?(nil, nil, nil)
                 return true
             }
