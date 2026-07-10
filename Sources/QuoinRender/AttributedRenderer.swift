@@ -463,6 +463,20 @@ public struct AttributedRenderer {
         let styled = NSMutableAttributedString(
             attributedString: styler.style(slice, caretOffset: caretOffset))
         guard styled.length > 0 else { return styled }
+        // Editing-mode chrome for EMBED kinds: accent frame + drawn ✓ done
+        // chip. Attached here — the single choke point all three projection
+        // paths share (full render, flip patch, edit round-trip) — as a
+        // decoration, never a text run: the revealed source stays 1:1 with
+        // the file. Prose reveal stays chrome-free (brief principle 3: the
+        // caret IS the mode there).
+        func tagEditingFrame() {
+            guard let block, isEmbedEditingKind(block.kind) else { return }
+            styled.addAttribute(
+                QuoinAttribute.blockDecoration,
+                value: BlockDecoration(kind: .editingFrame(accent: theme.accent)),
+                range: NSRange(location: 0, length: styled.length)
+            )
+        }
 
         if let block, let document {
             switch block.kind {
@@ -471,6 +485,7 @@ public struct AttributedRenderer {
                 transplantParagraphStyles(from: read, onto: styled, source: slice)
                 compressInteriorBlankLines(in: styled, caretOffset: caretOffset)
                 clampTrailingNewlinePhantom(in: styled, caretOffset: caretOffset)
+                tagEditingFrame()
                 return styled
             default:
                 break
@@ -480,7 +495,22 @@ public struct AttributedRenderer {
         // Fallback (embed kinds, or no block context): mirror the code
         // canvas's line metrics and the body's trailing gap.
         applyFallbackMetrics(to: styled, kind: block?.kind)
+        tagEditingFrame()
         return styled
+    }
+
+    /// Kinds whose OPEN state shows the editing frame + ✓ done chip. The
+    /// embed set (they flip on double-click / the edit chip) plus front
+    /// matter (single-click, but its rendered chip form equally hides that
+    /// it's editable YAML). Prose is deliberately absent.
+    private func isEmbedEditingKind(_ kind: BlockKind) -> Bool {
+        switch kind {
+        case .codeBlock, .mermaid, .mathBlock, .table, .htmlBlock,
+             .tableOfContents, .frontMatter:
+            return true
+        default:
+            return false
+        }
     }
 
     /// A slice ending in a newline with NO separator after it (the

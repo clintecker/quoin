@@ -24,8 +24,25 @@ final class QuoinTextView: NSTextView {
     /// mermaid source").
     var onDoubleClick: ((Int) -> Bool)?
 
+    /// The drawn `✓ done` chip's frame (view coordinates), recorded by the
+    /// editingFrame decoration pass each draw; nil when no block is open.
+    /// The chip is decoration ink, not a text run (the revealed source is
+    /// 1:1 with the file), so clicks are hit-tested here, before AppKit's
+    /// caret placement can see them.
+    private(set) var doneChipRect: CGRect?
+    /// Single click on the ✓ done chip: commit and close the open block.
+    var onDoneChipClick: (() -> Void)?
+
     override func mouseDown(with event: NSEvent) {
         let clipBefore = enclosingScrollView?.contentView.bounds.origin.y ?? -1
+        if event.clickCount == 1, let chip = doneChipRect {
+            let point = convert(event.locationInWindow, from: nil)
+            // ≥28pt effective hit target around the small caption.
+            if chip.insetBy(dx: -8, dy: -7).contains(point) {
+                onDoneChipClick?()
+                return
+            }
+        }
         if event.clickCount == 2 {
             let point = convert(event.locationInWindow, from: nil)
             let index = characterIndexForInsertion(at: point)
@@ -144,6 +161,15 @@ final class QuoinTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         refreshRunsIfNeeded()
+        // No open block → no ✓ done target. Cleared from the RUN list, not
+        // the dirty rect: a partial redraw that misses the chip must not
+        // disable a chip that is still on screen.
+        if !decorationRuns.contains(where: {
+            if case .editingFrame = $0.decoration.kind { return true }
+            return false
+        }) {
+            doneChipRect = nil
+        }
         guard !decorationRuns.isEmpty,
               let layoutManager = textLayoutManager,
               let contentManager = layoutManager.textContentManager
@@ -196,7 +222,7 @@ final class QuoinTextView: NSTextView {
             // wide the laid-out lines happen to be.
             if let container = textContainer {
                 switch run.decoration.kind {
-                case .codeCanvas, .callout, .diagramFrame:
+                case .codeCanvas, .callout, .diagramFrame, .editingFrame:
                     union.origin.x = 0
                     union.size.width = container.size.width
                 default:
@@ -271,6 +297,33 @@ final class QuoinTextView: NSTextView {
             context.addPath(CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil))
             context.setFillColor(fill.cgColor)
             context.fillPath()
+
+        case .editingFrame(let accent):
+            // The open block's mode chrome: 1.5pt accent frame with the
+            // drawn ✓ done chip at its top-right (mode indicators are never
+            // hover-gated). Drawn ink only — the revealed source under it
+            // stays 1:1 with the file.
+            let rect = box.insetBy(dx: -4, dy: -4)
+            context.addPath(CGPath(
+                roundedRect: rect.insetBy(dx: 0.75, dy: 0.75),
+                cornerWidth: 8, cornerHeight: 8, transform: nil
+            ))
+            context.setStrokeColor(accent.withAlphaComponent(0.8).cgColor)
+            context.setLineWidth(1.5)
+            context.strokePath()
+            let label = NSAttributedString(string: "✓ done", attributes: [
+                .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
+                .foregroundColor: accent,
+            ])
+            let size = label.size()
+            let chip = CGRect(
+                x: rect.maxX - size.width - 10,
+                y: rect.minY + 5,
+                width: size.width,
+                height: size.height
+            )
+            label.draw(at: chip.origin)
+            doneChipRect = chip
 
         case .tableRules(let width, let header, let body):
             let lineWidth = min(width + 24, box.width)

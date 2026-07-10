@@ -275,6 +275,7 @@ enum RenderDigester {
         case .chip(let fill): return "chip(\(t(fill)))"
         // `width` is font-measured (table content width) → excluded.
         case .tableRules(_, let header, let body): return "tableRules(h:\(t(header)),b:\(t(body)))"
+        case .editingFrame(let accent): return "editingFrame(\(t(accent)))"
         }
     }
 

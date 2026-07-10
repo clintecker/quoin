@@ -169,6 +169,14 @@ public struct MarkdownReaderView: NSViewRepresentable {
         textView.onDoubleClick = { [weak coordinator = context.coordinator] index in
             coordinator?.activateEmbedBlock(atCharIndex: index) ?? false
         }
+        textView.onDoneChipClick = { [weak coordinator = context.coordinator] in
+            guard let coordinator, let textView = coordinator.textView,
+                  coordinator.parent.rendered.activeBlockID != nil else { return }
+            // ✓ done: commit and close, caret back at its rendered image —
+            // the same contract as Escape.
+            coordinator.captureDeactivationCaret(in: textView)
+            coordinator.parent.onActivateBlock?(nil, nil, nil)
+        }
         return scrollView
     }
 

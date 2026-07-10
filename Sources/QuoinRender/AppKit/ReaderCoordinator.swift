@@ -456,6 +456,12 @@ extension MarkdownReaderView {
                 if let existingStyle = storage.attribute(.paragraphStyle, at: target.location, effectiveRange: nil) {
                     merged[.paragraphStyle] = existingStyle
                 }
+                // Keep the editing-frame decoration too: the bare styler
+                // pass knows nothing of block chrome, and dropping it on
+                // the first caret move made the ✓ done chip flicker away.
+                if let decoration = storage.attribute(QuoinAttribute.blockDecoration, at: target.location, effectiveRange: nil) {
+                    merged[QuoinAttribute.blockDecoration] = decoration
+                }
                 storage.setAttributes(merged, range: target)
             }
             storage.endEditing()

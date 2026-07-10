@@ -4852,27 +4852,7 @@
         "q" : [
 
         ],
-        "t" : "\n"
-      },
-      {
-        "deco" : "quoteRule(#00000026)",
-        "f" : "14.00/0.00",
-        "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh16.00 hi16.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested quote level two.\n"
-      },
-      {
-        "deco" : "quoteRule(#00000026)",
-        "f" : "14.00/0.00",
-        "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh16.00 hi16.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "Nested quote level three."
+        "t" : "\nNested quote level two.\nNested quote level three."
       },
       {
         "f" : "14.00/0.00",

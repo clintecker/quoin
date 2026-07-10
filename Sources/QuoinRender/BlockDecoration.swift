@@ -32,12 +32,58 @@ public final class BlockDecoration: NSObject {
         /// Table rules: heavier line under the first (header) row, hairline
         /// under body rows. `width` is the table's content width.
         case tableRules(width: CGFloat, header: PlatformColor, body: PlatformColor)
+        /// 1.5pt accent frame around the OPEN (editing) block's revealed
+        /// source, with a drawn `✓ done` chip at its top-right — the
+        /// editing mode announced in shape at the locus of attention
+        /// (embed-editing brief: mode indicators are never hover-gated).
+        /// Drawn, not a text run: the revealed source must stay 1:1 with
+        /// the file, so no affordance characters may enter the range.
+        case editingFrame(accent: PlatformColor)
     }
 
     public let kind: Kind
 
     public init(kind: Kind) {
         self.kind = kind
+    }
+
+    /// Value equality: decorations are values carried as attributes, and
+    /// attribute comparison (splice attribute-sync, storage equality in
+    /// tests) must treat two identically-specified decorations as equal —
+    /// NSObject's default pointer identity made every fresh render look
+    /// like an attribute change.
+    public override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? BlockDecoration else { return false }
+        switch (kind, other.kind) {
+        case (.codeCanvas(let a), .codeCanvas(let b)):
+            return a.isEqual(b)
+        case (.callout(let a), .callout(let b)):
+            return a.isEqual(b)
+        case (.quoteRule(let a), .quoteRule(let b)):
+            return a.isEqual(b)
+        case (.diagramFrame(let a), .diagramFrame(let b)):
+            return a.isEqual(b)
+        case (.chip(let a), .chip(let b)):
+            return a.isEqual(b)
+        case (.tableRules(let w1, let h1, let b1), .tableRules(let w2, let h2, let b2)):
+            return w1 == w2 && h1.isEqual(h2) && b1.isEqual(b2)
+        case (.editingFrame(let a), .editingFrame(let b)):
+            return a.isEqual(b)
+        default:
+            return false
+        }
+    }
+
+    public override var hash: Int {
+        switch kind {
+        case .codeCanvas: return 1
+        case .callout: return 2
+        case .quoteRule: return 3
+        case .diagramFrame: return 4
+        case .chip: return 5
+        case .tableRules: return 6
+        case .editingFrame: return 7
+        }
     }
 }
 #endif
