@@ -17,6 +17,16 @@ struct QuoinApp: App {
             CommandGroup(replacing: .saveItem) {}
             CommandGroup(replacing: .undoRedo) {}
             AboutCommands()
+            // Format menu: the embed-editing keyboard grammar. ⌘↩ toggles
+            // the block under the caret between rendered and source
+            // (commit-and-close on the way out, same contract as Escape).
+            CommandMenu("Format") {
+                Button("Edit Source") {
+                    NotificationCenter.default.post(
+                        name: AppDelegate.toggleEditSourceNotification, object: nil)
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+            }
             // View menu: the handoff's panel toggles (⌘0 sidebar, ⌥⌘0
             // outline), delivered to the key window via notifications.
             CommandGroup(before: .sidebar) {
@@ -64,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let openDocumentNotification = Notification.Name("quoin.openDocument")
     static let toggleSidebarNotification = Notification.Name("quoin.toggleSidebar")
     static let toggleOutlineNotification = Notification.Name("quoin.toggleOutline")
+    static let toggleEditSourceNotification = Notification.Name("quoin.toggleEditSource")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Quoin has its own document tabs; the system window-tab items

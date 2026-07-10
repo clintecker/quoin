@@ -967,6 +967,16 @@ public struct AttributedRenderer {
         return output
     }
 
+    /// VoiceOver labels for attachment-rendered embeds — a diagram or
+    /// equation must never read as an unnamed image.
+    private func labelAttachmentImages(in attributed: NSMutableAttributedString, description: String) {
+        #if canImport(AppKit)
+        attributed.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributed.length)) { value, _, _ in
+            (value as? NSTextAttachment)?.image?.accessibilityDescription = description
+        }
+        #endif
+    }
+
     /// The `‹/› edit` affordance for attachment embeds: a right-aligned
     /// caption line above the artifact (inside its frame), quiet at
     /// secondary ink — the visible invitation the brief calls for on
@@ -1005,6 +1015,7 @@ public struct AttributedRenderer {
             let output = NSMutableAttributedString()
             output.append(editChipLine(spacingBefore: theme.paragraphSpacing))
             let attachment = NSMutableAttributedString(attributedString: native)
+            labelAttachmentImages(in: attachment, description: "Mermaid diagram")
             let style = paragraphStyle()
             style.paragraphSpacingBefore = 0
             style.paragraphSpacing = theme.paragraphSpacing
@@ -1034,6 +1045,7 @@ public struct AttributedRenderer {
             let output = NSMutableAttributedString()
             output.append(editChipLine(spacingBefore: 16))
             let attachment = NSMutableAttributedString(attributedString: native)
+            labelAttachmentImages(in: attachment, description: "Math equation")
             let style = paragraphStyle()
             style.alignment = .center
             style.paragraphSpacingBefore = 0

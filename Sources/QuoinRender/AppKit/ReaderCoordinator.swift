@@ -29,6 +29,7 @@ extension MarkdownReaderView {
         var appliedOrdinal: Int = -1
         var appliedCaretGeneration: Int = -1
         var appliedFormatGeneration: Int = 0
+        var appliedEditSourceToggleGeneration: Int = 0
         var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
@@ -585,6 +586,73 @@ extension MarkdownReaderView {
             var contentEnd = ns.length
             while contentEnd > 0, ns.character(at: contentEnd - 1) == 0x0A { contentEnd -= 1 }
             return blockRange.location + min(max(0, mapped), contentEnd)
+        }
+
+        /// ⌘↩ / Format ▸ Edit Source: toggles the block under the caret
+        /// between rendered and revealed source. Closing uses the same
+        /// commit-and-restore contract as Escape; opening lands the caret
+        /// at the mapped position under it.
+        func toggleEditSource(in textView: NSTextView) {
+            if parent.rendered.activeBlockID != nil {
+                captureDeactivationCaret(in: textView)
+                parent.onActivateBlock?(nil, nil, nil)
+                return
+            }
+            let location = textView.selectedRange().location
+            guard let id = blockID(atCharIndex: location) else { return }
+            let hint: CaretHint? = embedCaretHint(atCharIndex: location).map { .source($0) }
+                ?? blockRanges[id].map { .rendered(location - $0.location) }
+            parent.onActivateBlock?(id, hint, nil)
+        }
+
+        /// Right-click items for the block under the pointer: Edit Source /
+        /// Done Editing (embeds and the open block), and Copy Markdown
+        /// Source (any block whose source the host can provide). Inserted
+        /// above AppKit's standard items.
+        func populateContextMenu(_ menu: NSMenu, atCharIndex index: Int) {
+            guard let id = blockID(atCharIndex: index) else { return }
+            var items: [NSMenuItem] = []
+            let isActive = id == parent.rendered.activeBlockID
+            if isActive || isEmbedBlock(atCharIndex: index) {
+                let item = NSMenuItem(
+                    title: isActive ? "Done Editing" : "Edit Source",
+                    action: #selector(contextEditSource(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = index
+                items.append(item)
+            }
+            if let source = parent.blockSourceProvider?(id), !source.isEmpty {
+                let item = NSMenuItem(
+                    title: "Copy Markdown Source",
+                    action: #selector(contextCopyMarkdownSource(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = source
+                items.append(item)
+            }
+            guard !items.isEmpty else { return }
+            items.append(NSMenuItem.separator())
+            for (offset, item) in items.enumerated() {
+                menu.insertItem(item, at: offset)
+            }
+        }
+
+        @objc private func contextEditSource(_ sender: NSMenuItem) {
+            guard let textView, let index = sender.representedObject as? Int,
+                  let id = blockID(atCharIndex: index) else { return }
+            if id == parent.rendered.activeBlockID {
+                captureDeactivationCaret(in: textView)
+                parent.onActivateBlock?(nil, nil, nil)
+            } else {
+                let hint: CaretHint? = embedCaretHint(atCharIndex: index).map { .source($0) }
+                    ?? blockRanges[id].map { .rendered(index - $0.location) }
+                parent.onActivateBlock?(id, hint, nil)
+            }
+        }
+
+        @objc private func contextCopyMarkdownSource(_ sender: NSMenuItem) {
+            guard let source = sender.representedObject as? String else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(source, forType: .string)
         }
 
         /// Esc closes the revealed block, committing as always (Escape

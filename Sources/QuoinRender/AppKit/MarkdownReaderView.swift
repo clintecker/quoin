@@ -74,6 +74,12 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// `formatGeneration` bumps to fire.
     public let formatCommand: FormatCommand?
     public let formatGeneration: Int
+    /// ⌘↩ / Format ▸ Edit Source: bumps to toggle the block under the
+    /// caret between rendered and revealed source.
+    public let editSourceToggleGeneration: Int
+    /// A block's markdown source slice, for the context menu's Copy
+    /// Markdown Source (the render layer holds only the projection).
+    public let blockSourceProvider: ((BlockID) -> String?)?
 
     public init(
         rendered: RenderedDocument,
@@ -91,7 +97,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         caretInActiveBlock: Int? = nil,
         caretGeneration: Int = 0,
         formatCommand: FormatCommand? = nil,
-        formatGeneration: Int = 0
+        formatGeneration: Int = 0,
+        editSourceToggleGeneration: Int = 0,
+        blockSourceProvider: ((BlockID) -> String?)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -109,6 +117,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.caretGeneration = caretGeneration
         self.formatCommand = formatCommand
         self.formatGeneration = formatGeneration
+        self.editSourceToggleGeneration = editSourceToggleGeneration
+        self.blockSourceProvider = blockSourceProvider
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -176,6 +186,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
             // the same contract as Escape.
             coordinator.captureDeactivationCaret(in: textView)
             coordinator.parent.onActivateBlock?(nil, nil, nil)
+        }
+        textView.onContextMenu = { [weak coordinator = context.coordinator] index, menu in
+            coordinator?.populateContextMenu(menu, atCharIndex: index)
         }
         return scrollView
     }
@@ -341,6 +354,19 @@ public struct MarkdownReaderView: NSViewRepresentable {
             }
             coordinator.suppressSelectionCallback = false
             coordinator.appliedQuery = nil // force re-highlight on new content
+            // VoiceOver hears the mode change (never announced by tint
+            // alone): entering/leaving source editing.
+            if flipPending {
+                NSAccessibility.post(
+                    element: textView,
+                    notification: .announcementRequested,
+                    userInfo: [
+                        .announcement: rendered.activeBlockID != nil
+                            ? "Editing source" : "Done editing",
+                        .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                    ]
+                )
+            }
         }
         coordinator.lastActiveBlockID = rendered.activeBlockID
 
@@ -380,6 +406,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
         if let formatCommand, formatGeneration != coordinator.appliedFormatGeneration {
             coordinator.appliedFormatGeneration = formatGeneration
             coordinator.applyFormat(formatCommand, in: textView)
+        }
+
+        if editSourceToggleGeneration != coordinator.appliedEditSourceToggleGeneration {
+            coordinator.appliedEditSourceToggleGeneration = editSourceToggleGeneration
+            coordinator.toggleEditSource(in: textView)
         }
 
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {

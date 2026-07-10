@@ -23,6 +23,7 @@ struct ReaderScreen: View {
 
     @State private var formatCommand: FormatCommand?
     @State private var formatGeneration = 0
+    @State private var editSourceToggleGeneration = 0
 
     @State private var isOutlineVisible = true
     @State private var isExportVisible = false
@@ -70,7 +71,12 @@ struct ReaderScreen: View {
                 caretInActiveBlock: model.caretInActiveBlock,
                 caretGeneration: model.caretGeneration,
                 formatCommand: formatCommand,
-                formatGeneration: formatGeneration
+                formatGeneration: formatGeneration,
+                editSourceToggleGeneration: editSourceToggleGeneration,
+                blockSourceProvider: { id in
+                    model.document.blocks.first { $0.id == id }
+                        .flatMap { model.document.source.substring(in: $0.range) }
+                }
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -159,6 +165,10 @@ struct ReaderScreen: View {
         // ⌥⌘0 / View ▸ Show/Hide Outline (menu command, handoff keyboard map).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleOutlineNotification)) { _ in
             isOutlineVisible.toggle()
+        }
+        // ⌘↩ / Format ▸ Edit Source (embed-editing keyboard grammar).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleEditSourceNotification)) { _ in
+            editSourceToggleGeneration += 1
         }
         .background(hiddenShortcuts)
     }

@@ -33,6 +33,20 @@ final class QuoinTextView: NSTextView {
     /// Single click on the ✓ done chip: commit and close the open block.
     var onDoneChipClick: (() -> Void)?
 
+    /// Right-click: lets the coordinator prepend block-aware items
+    /// (Edit Source / Copy Markdown Source) to the standard text menu.
+    var onContextMenu: ((Int, NSMenu) -> Void)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let menu = super.menu(for: event) else { return nil }
+        let point = convert(event.locationInWindow, from: nil)
+        let index = characterIndexForInsertion(at: point)
+        if index >= 0 {
+            onContextMenu?(index, menu)
+        }
+        return menu
+    }
+
     override func mouseDown(with event: NSEvent) {
         let clipBefore = enclosingScrollView?.contentView.bounds.origin.y ?? -1
         if event.clickCount == 1, let chip = doneChipRect {
