@@ -130,6 +130,86 @@ final class PreviewAnchoredRevealTests: XCTestCase {
                       "and the flip-patch/full-render projections stay attribute-identical)")
     }
 
+    /// Ledger #6a: mid-edit source like a half-typed `$$x^` stops parsing
+    /// as a math/mermaid block at all — the kind flaps to paragraph for a
+    /// keystroke. The held preview and the editing frame stick through the
+    /// flap instead of vanishing and returning (the reported jumping).
+    func testPreviewSticksThroughKindReclassification() throws {
+        // Prime the session on a valid math block…
+        let mathSource = "# Doc\n\n$$x^2 + y^2 = z^2$$\n\nTail.\n"
+        let document = MarkdownConverter.parse(mathSource)
+        let block = try XCTUnwrap(document.blocks.first {
+            if case .mathBlock = $0.kind { return true }
+            return false
+        })
+        let slice = try XCTUnwrap(document.source.substring(in: block.range))
+        let renderer = AttributedRenderer()
+        _ = renderer.renderEditableSourceFragment(
+            slice, caretOffset: 0, block: block, document: document)
+
+        // …then delete the trailing `$` — one real keystroke. The slice
+        // stops parsing as math; the block flaps to another kind.
+        let flappedSlice = String(slice.dropLast())
+        let flappedDocument = MarkdownConverter.parse("# Doc\n\n\(flappedSlice)\n\nTail.\n")
+        let flappedBlock = try XCTUnwrap(flappedDocument.blocks.first { candidate in
+            if case .heading = candidate.kind { return false }
+            return flappedDocument.source.substring(in: candidate.range)?
+                .contains("x^2") == true
+        })
+        if case .mathBlock = flappedBlock.kind {
+            throw XCTSkip("parser kept the unbalanced source a math block; flap not exercised")
+        }
+        let revealed = renderer.renderEditableSourceFragment(
+            flappedSlice, caretOffset: 5, block: flappedBlock, document: flappedDocument)
+
+        XCTAssertGreaterThan(revealed.editableRange.location, 0,
+                             "the held preview must lead the fragment through the flap")
+        XCTAssertTrue(hasAttachment(revealed.attributed,
+                                    in: NSRange(location: 0, length: revealed.editableRange.location)),
+                      "the artifact never disappears mid-session")
+        let head = (revealed.attributed.string as NSString)
+            .substring(to: revealed.editableRange.location)
+        XCTAssertTrue(head.contains("paused"), "the flap reads as paused, not gone")
+        // And an UNRELATED slice never inherits the held preview.
+        let unrelated = renderer.renderEditableSourceFragment(
+            "A completely different paragraph of prose.", caretOffset: 0,
+            block: nil, document: nil)
+        XCTAssertEqual(unrelated.editableRange.location, 0)
+    }
+
+    /// Ledger #6a: the status line's height is RESERVED — healthy and
+    /// paused states have the same paragraph count before the source, so
+    /// validity flapping never reflows the layout.
+    func testStatusLineHeightIsReserved() throws {
+        let document = MarkdownConverter.parse(source)
+        let block = try mermaidBlock(in: document)
+        let slice = try XCTUnwrap(document.source.substring(in: block.range))
+        let renderer = AttributedRenderer()
+        let healthy = renderer.renderEditableSourceFragment(
+            slice, caretOffset: 0, block: block, document: document)
+        let healthyHead = (healthy.attributed.string as NSString)
+            .substring(to: healthy.editableRange.location)
+
+        // Break the SAME session's source with one contiguous edit (a
+        // garbage line before the closing fence) — still mermaid-kind,
+        // no longer parseable.
+        let brokenSlice = slice.replacingOccurrences(of: "\n```", with: "\n<<<garbage>>>\n```")
+        let brokenDocument = MarkdownConverter.parse("# Doc\n\n\(brokenSlice)\n\nTail.\n")
+        let brokenBlock = try mermaidBlock(in: brokenDocument)
+        if MermaidRenderer.attachmentString(source: brokenSlice, theme: Theme().diagramTheme) != nil {
+            throw XCTSkip("fixture unexpectedly parses; paused path not exercised")
+        }
+        let paused = renderer.renderEditableSourceFragment(
+            brokenSlice, caretOffset: 0, block: brokenBlock, document: brokenDocument)
+        let pausedHead = (paused.attributed.string as NSString)
+            .substring(to: paused.editableRange.location)
+
+        XCTAssertGreaterThan(healthyHead.filter { $0 == "\n" }.count, 0, "preview present")
+        XCTAssertEqual(healthyHead.filter { $0 == "\n" }.count,
+                       pausedHead.filter { $0 == "\n" }.count,
+                       "healthy and paused previews reserve the same line count")
+    }
+
     func testMathBlockGetsThePreviewToo() throws {
         let mathSource = "# Doc\n\n$$x^2 + y^2 = z^2$$\n\nTail.\n"
         let document = MarkdownConverter.parse(mathSource)

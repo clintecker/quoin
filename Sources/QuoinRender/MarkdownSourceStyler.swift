@@ -215,16 +215,21 @@ struct MarkdownSourceStyler {
         // HTML entities: `&amp;` renders as one character but reveals as
         // five — an entity-dense line wraps into new lines on reveal,
         // reflowing the layout around the caret (traced live at +100–200pt
-        // per click). Caret-scoped like every span: outside, the `&` shows
-        // faded at one character's width and the tail collapses; inside,
-        // the whole entity expands for editing.
+        // per click). Scoped to the caret's LINE, not just the entity under
+        // it: span-scoping left a row of naked faded `&`s with no clue
+        // which entity each one was (ledger #3) — on the caret's line every
+        // entity shows its literal source; other lines stay compact, so the
+        // anti-reflow win holds for the block.
         if collapsesNonLiteralSpans, let entities = try? NSRegularExpression(pattern: #"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#[0-9]{1,7}|#x[0-9a-fA-F]{1,6});"#) {
+            let caretLine: NSRange? = caretOffset.map {
+                text.lineRange(for: NSRange(location: max(0, min($0, text.length)), length: 0))
+            }
             for match in entities.matches(in: source, range: NSRange(location: 0, length: text.length)) {
                 let whole = match.range
                 guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }),
                       !SmartPairs.isInsideCodeContext(text: source, caretUTF16: whole.location) else { continue }
-                let caretInSpan = caretOffset.map { $0 >= whole.location && $0 <= NSMaxRange(whole) } ?? true
-                if caretInSpan {
+                let caretOnLine = caretLine.map { NSIntersectionRange($0, whole).length > 0 } ?? true
+                if caretOnLine {
                     output.addAttributes(delimiterAttributes, range: whole)
                 } else {
                     output.addAttributes(delimiterAttributes, range: NSRange(location: whole.location, length: 1))

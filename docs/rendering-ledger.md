@@ -37,7 +37,7 @@ objects; accidental flips are jarring. Activation paths for
 mermaid/math: the ‹/› edit chip, ⌘↩ (explicit keyboard intent), and the
 context menu. Code blocks/tables/TOC keep double-click.
 
-## #6 — Preview-anchored reveal: jumps while typing invalid math; wants side-by-side — OPEN
+## #6 — Preview-anchored reveal: jumps while typing invalid math; wants side-by-side — (a) FIXED / (b) DESIGN QUEUED
 
 *Reported 2026-07-10 (live use, math blocks).* Two parts:
 
@@ -104,7 +104,7 @@ document afterwards (walks attribute runs, not characters; perf budgets
 hold). Pinned by ActivationNeighborIntegrityTests — the two mechanism
 tests fail 2/2 with the sync disabled.
 
-## #3 — Revealed entity line shows a row of bare ampersands — OPEN
+## #3 — Revealed entity line shows a row of bare ampersands — FIXED
 
 *Reported 2026-07-10 (kitchen-sink §2 entities).* Clicking into a line
 of rendered HTML entities reveals "& & & & & … &#169; &." — every named

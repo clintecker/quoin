@@ -254,12 +254,33 @@ public struct AttributedRenderer {
     /// (Reference-boxed: the renderer is a struct whose render paths are
     /// non-mutating.)
     private final class ActivePreviewBox {
-        var value: (key: String, sourceText: String, attachment: NSAttributedString)?
+        var value: (key: String, sourceText: String, sliceText: String, attachment: NSAttributedString)?
     }
     private let activePreviewBox = ActivePreviewBox()
-    private var activePreview: (key: String, sourceText: String, attachment: NSAttributedString)? {
+    private var activePreview: (key: String, sourceText: String, sliceText: String, attachment: NSAttributedString)? {
         get { activePreviewBox.value }
         nonmutating set { activePreviewBox.value = newValue }
+    }
+
+    /// True when `slice` is plausibly the SAME editing session as the held
+    /// preview's slice: equal, or one contiguous edit apart, or mostly
+    /// shared. Guards the flap-stick (ledger #6a) against leaking a held
+    /// artifact onto an unrelated block when the renderer is used without
+    /// the model's session resets (exporters, tests, sequential reveals).
+    private func heldPreviewApplies(toSlice slice: String) -> Bool {
+        guard let held = activePreview else { return false }
+        let a = Array(slice.utf16), b = Array(held.sliceText.utf16)
+        if a == b { return true }
+        let shorter = min(a.count, b.count)
+        let longer = max(a.count, b.count)
+        guard longer > 0, shorter > 0 else { return false }
+        var prefix = 0
+        while prefix < shorter, a[prefix] == b[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < shorter - prefix, a[a.count - 1 - suffix] == b[b.count - 1 - suffix] { suffix += 1 }
+        // One contiguous edit (typing, or a big selection replace), or
+        // most of the text shared.
+        return prefix + suffix >= shorter || Double(prefix + suffix) / Double(longer) >= 0.5
     }
 
     public func resetActivePreview() {
@@ -539,12 +560,25 @@ public struct AttributedRenderer {
         source styled: NSMutableAttributedString, block: Block?
     ) -> RevealedFragment {
         let output = NSMutableAttributedString()
-        if let block, let preview = revealPreviewLine(for: block.kind) {
-            output.append(preview)
+        var previewShowing = false
+        if let block {
+            if let preview = revealPreviewLine(for: block.kind, slice: styled.string) {
+                output.append(preview)
+                previewShowing = true
+            } else if heldPreviewApplies(toSlice: styled.string), let held = heldPreviewLine() {
+                // Mid-edit source like `$$x^` stops PARSING as a math block
+                // — the kind flaps to paragraph for a keystroke. The held
+                // preview (and the editing frame below) stick through the
+                // flap; a vanish-and-return per keystroke was the reported
+                // jumping (ledger #6a). Guarded by slice lineage so a held
+                // artifact can never leak onto an unrelated block.
+                output.append(held)
+                previewShowing = true
+            }
         }
         let editableRange = NSRange(location: output.length, length: styled.length)
         output.append(styled)
-        if let block, isEmbedEditingKind(block.kind) {
+        if let block, isEmbedEditingKind(block.kind) || previewShowing {
             output.addAttribute(
                 QuoinAttribute.blockDecoration,
                 value: BlockDecoration(kind: .editingFrame(accent: theme.accent)),
@@ -559,7 +593,7 @@ public struct AttributedRenderer {
     /// Returns nil for every other kind, and for a block whose source has
     /// never rendered in this editing session (opening a broken diagram
     /// shows plain source — same as before this feature).
-    private func revealPreviewLine(for kind: BlockKind) -> NSAttributedString? {
+    private func revealPreviewLine(for kind: BlockKind, slice: String) -> NSAttributedString? {
         let key: String
         let noun: String
         let sourceText: String
@@ -595,9 +629,10 @@ public struct AttributedRenderer {
                 nil
             }
             if let fresh {
-                activePreview = (key, sourceText, fresh)
+                activePreview = (key, sourceText, slice, fresh)
                 attachment = fresh
-            } else if let held = activePreview, held.key == key {
+            } else if let held = activePreview, held.key == key,
+                      heldPreviewApplies(toSlice: slice) {
                 attachment = held.attachment
                 paused = true
             } else {
@@ -605,28 +640,52 @@ public struct AttributedRenderer {
             }
         }
 
+        return Self.previewParagraphs(
+            attachment: attachment, paused: paused, noun: noun,
+            centered: key == "math", theme: theme)
+    }
+
+    /// The held preview shown while the mid-edit source doesn't even parse
+    /// as its own kind anymore (the flap ledger #6a describes) — always
+    /// paused by definition.
+    private func heldPreviewLine() -> NSAttributedString? {
+        guard let held = activePreview else { return nil }
+        return Self.previewParagraphs(
+            attachment: held.attachment, paused: true,
+            noun: held.key == "math" ? "equation" : "diagram",
+            centered: held.key == "math", theme: theme)
+    }
+
+    /// Attachment paragraph + a status line whose HEIGHT is always
+    /// reserved: the paused note toggling a line in and out per keystroke
+    /// was half of ledger #6a's jumping. Healthy state shows an empty
+    /// caption line; paused shows the calm amber note in the same slot.
+    private static func previewParagraphs(
+        attachment: NSAttributedString, paused: Bool, noun: String,
+        centered: Bool, theme: Theme
+    ) -> NSAttributedString {
         let output = NSMutableAttributedString(attributedString: attachment)
-        let style = paragraphStyle()
-        if key == "math" { style.alignment = .center }
+        let style = NSMutableParagraphStyle()
+        if centered { style.alignment = .center }
         style.paragraphSpacingBefore = 6
-        style.paragraphSpacing = paused ? 2 : 8
+        style.paragraphSpacing = 2
         output.addAttribute(.paragraphStyle, value: style,
                             range: NSRange(location: 0, length: output.length))
         output.append(NSAttributedString(string: "\n", attributes: [
             .font: theme.captionFont(),
             .paragraphStyle: style,
         ]))
-        if paused {
-            var note = bodyAttributes()
-            note[.font] = theme.captionFont()
-            note[.foregroundColor] = PlatformColor.systemOrange
-            let noteStyle = paragraphStyle()
-            noteStyle.paragraphSpacing = 6
-            note[.paragraphStyle] = noteStyle
-            output.append(NSAttributedString(
-                string: "⚠︎ \(noun) paused — showing the last good render\n",
-                attributes: note))
-        }
+        let noteStyle = NSMutableParagraphStyle()
+        noteStyle.paragraphSpacing = 6
+        var note: [NSAttributedString.Key: Any] = [
+            .font: theme.captionFont(),
+            .paragraphStyle: noteStyle,
+            .foregroundColor: PlatformColor.systemOrange,
+        ]
+        if !paused { note[.foregroundColor] = PlatformColor.clear }
+        output.append(NSAttributedString(
+            string: (paused ? "⚠︎ \(noun) paused — showing the last good render" : "") + "\n",
+            attributes: note))
         return output
     }
 
