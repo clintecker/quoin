@@ -62,6 +62,13 @@ final class ReaderModel {
     @ObservationIgnored private var actionFailureTask: Task<Void, Never>?
     @ObservationIgnored private var editPipelineTask: Task<Void, Never>?
     @ObservationIgnored private var latestEditGeneration = 0
+    /// Mirror of the session's non-edit adoption counter, taken from the
+    /// snapshot each rendered document was built from. Every edit this
+    /// model computes is stamped with it, so an external reload that lands
+    /// between computing an edit and the session applying it makes the
+    /// session REJECT the edit instead of splicing stale offsets (launch
+    /// ledger, data integrity #14).
+    @ObservationIgnored private var sessionContentRevision = 0
     /// Monotonic revision stamped on every published RenderedDocument, so
     /// the view layer applies each projection (and its storage patches)
     /// exactly once.
@@ -140,9 +147,9 @@ final class ReaderModel {
                 }
             }
             await session.startWatching()
-            let snapshots = await session.snapshots()
-            for await document in snapshots {
-                await self?.ingest(document)
+            let snapshots = await session.revisionedSnapshots()
+            for await snapshot in snapshots {
+                await self?.ingest(snapshot.document, contentRevision: snapshot.contentRevision)
             }
         }
     }
@@ -208,7 +215,10 @@ final class ReaderModel {
     /// A new snapshot from the session (file change, checkbox, or our own
     /// edit). Skips re-rendering when both content and reveal state are
     /// unchanged.
-    private func ingest(_ document: QuoinDocument) {
+    private func ingest(_ document: QuoinDocument, contentRevision: Int) {
+        // Track the adoption revision even for echoes, so edit stamping
+        // always reflects the newest snapshot this model has seen.
+        sessionContentRevision = contentRevision
         // Our own edits already rendered via restoreCaret; skip the echo.
         guard document.sourceHash != self.document.sourceHash
                 || rendered.activeBlockID != activeBlockID else { return }
@@ -469,6 +479,11 @@ final class ReaderModel {
         guard let session else { return }
         let absolute = edit.range
         let replacement = edit.replacement
+        // Stamp NOW, synchronously: this is the revision of the content the
+        // edit's offsets were computed against. The session rejects the
+        // edit if an external reload replaces the content before the
+        // pipeline task applies it (ledger #14).
+        let baseRevision = sessionContentRevision
         latestEditGeneration += 1
         let generation = latestEditGeneration
         let previousEditTask = editPipelineTask
@@ -480,7 +495,7 @@ final class ReaderModel {
                 "model.session.applyEdit",
                 metadata: "range_offset=\(absolute.offset) replacement_bytes=\(replacement.utf8.count)"
             ) {
-                try await session.applyEdit(edit, publishSnapshot: false)
+                try await session.applyEdit(edit, baseRevision: baseRevision, publishSnapshot: false)
             }
             guard let newDocument else { return }
             guard generation == self.latestEditGeneration else { return }
@@ -749,9 +764,11 @@ final class ReaderModel {
         }
 
         let edit = SourceEdit(range: ByteRange(offset: offset, length: 0), replacement: markdown)
+        let baseRevision = sessionContentRevision
         Task {
             do {
-                let newDocument = try await session.applyEdit(edit, publishSnapshot: false)
+                let newDocument = try await session.applyEdit(
+                    edit, baseRevision: baseRevision, publishSnapshot: false)
                 QuoinPerformanceTrace.measure("model.restoreCaret.imageInsert") {
                     self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
                 }

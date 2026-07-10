@@ -349,6 +349,91 @@ final class SessionEditingTests: XCTestCase {
                        "autosave must resume after taking the disk side")
     }
 
+    // MARK: Edit base-revision stamping (ledger, data integrity #14)
+
+    func testEditWithStaleBaseRevisionIsRejected() async throws {
+        let session = DocumentSession(source: "alpha bravo")
+        let rev0 = await session.contentRevision
+        XCTAssertEqual(rev0, 0)
+
+        // An edit stamped against the current revision applies normally,
+        // and ordinary edits do NOT bump the revision (typing bursts stay
+        // valid across their own in-flight edits).
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 5), replacement: "first"),
+            baseRevision: rev0)
+        let revAfterEdit = await session.contentRevision
+        XCTAssertEqual(revAfterEdit, rev0)
+
+        // A non-edit adoption (external reload / wholesale apply) bumps it.
+        await session.apply(source: "completely different disk content")
+        let rev1 = await session.contentRevision
+        XCTAssertEqual(rev1, rev0 + 1)
+
+        // An in-flight edit computed against the OLD content is rejected
+        // instead of splicing at stale offsets.
+        do {
+            _ = try await session.applyEdit(
+                SourceEdit(range: ByteRange(offset: 6, length: 5), replacement: "junk"),
+                baseRevision: rev0)
+            XCTFail("stale-base edit must be rejected")
+        } catch SessionError.staleEditBase(let expected, let got) {
+            XCTAssertEqual(expected, rev1)
+            XCTAssertEqual(got, rev0)
+        }
+        let untouched = await session.document.source
+        XCTAssertEqual(untouched, "completely different disk content",
+                       "a rejected edit must not change the document")
+
+        // A freshly stamped edit passes.
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 10), replacement: "still"),
+            baseRevision: rev1)
+        let final = await session.document.source
+        XCTAssertEqual(final, "still different disk content")
+    }
+
+    func testExternalReloadBumpsContentRevisionAndRejectsInFlightEdit() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("first version".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        let base = await session.contentRevision
+
+        // Clean external reload (the #14 scenario: reload during an
+        // in-flight edit) bumps the revision…
+        try Data("second version, shifted offsets".utf8).write(to: file)
+        await session.reloadFromDisk()
+        let bumped = await session.contentRevision
+        XCTAssertEqual(bumped, base + 1)
+
+        // …so the edit stamped before the reload is refused.
+        do {
+            _ = try await session.applyEdit(
+                SourceEdit(range: ByteRange(offset: 6, length: 7), replacement: "draft"),
+                baseRevision: base)
+            XCTFail("edit computed before the reload must be rejected")
+        } catch SessionError.staleEditBase { }
+        let source = await session.document.source
+        XCTAssertEqual(source, "second version, shifted offsets")
+    }
+
+    func testRevisionedSnapshotsCarryTheAdoptionRevision() async throws {
+        let session = DocumentSession(source: "one")
+        let stream = await session.revisionedSnapshots()
+        var iterator = stream.makeAsyncIterator()
+        let first = await iterator.next()
+        XCTAssertEqual(first?.document.source, "one")
+        XCTAssertEqual(first?.contentRevision, 0)
+
+        await session.apply(source: "two")
+        let second = await iterator.next()
+        XCTAssertEqual(second?.document.source, "two")
+        XCTAssertEqual(second?.contentRevision, 1)
+    }
+
     // MARK: External rename/move (ledger, data integrity #6)
 
     private func makeTempDir() throws -> URL {

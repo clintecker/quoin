@@ -7,6 +7,10 @@ public enum SessionError: Error {
     /// A disk conflict is pending (external change landed while dirty);
     /// writing would clobber the version the user hasn't chosen against.
     case conflictUnresolved(URL)
+    /// The edit was computed against a content revision the session has
+    /// since replaced via a non-edit adoption (external reload); applying
+    /// it would splice stale bytes at stale offsets.
+    case staleEditBase(expected: Int, got: Int)
 }
 
 /// The single authority over one open document's source text.
@@ -41,6 +45,13 @@ public actor DocumentSession {
     private var vanishCheckTask: Task<Void, Never>?
     /// Dedupes the save-failure banner while typing into a detached session.
     private var didReportDetachedEdit = false
+    /// Bumped on every NON-edit content adoption (external reload, conflict
+    /// resolution, wholesale apply). Edits carry the revision they were
+    /// computed against; a mismatch at apply time means an external reload
+    /// slid in underneath and the edit's offsets are meaningless (launch
+    /// ledger, data integrity #14). Ordinary edits do NOT bump it — a
+    /// typing burst stays valid across its own in-flight edits.
+    public private(set) var contentRevision = 0
 
     private var watcher: FileWatcher?
     private var continuations: [UUID: AsyncStream<QuoinDocument>.Continuation] = [:]
@@ -147,10 +158,42 @@ public actor DocumentSession {
         continuations[id] = nil
     }
 
+    /// A published document paired with the session's non-edit adoption
+    /// counter, so consumers can stamp the edits they compute against it
+    /// (see `applyEdit(_:baseRevision:publishSnapshot:)`). Yielding both
+    /// atomically avoids the read-back race a separate query would have.
+    public struct RevisionedSnapshot: Sendable {
+        public let document: QuoinDocument
+        public let contentRevision: Int
+    }
+
+    private var revisionedContinuations: [UUID: AsyncStream<RevisionedSnapshot>.Continuation] = [:]
+
+    /// Like `snapshots()`, but each element carries `contentRevision`.
+    public func revisionedSnapshots() -> AsyncStream<RevisionedSnapshot> {
+        let id = UUID()
+        return AsyncStream { continuation in
+            revisionedContinuations[id] = continuation
+            continuation.yield(RevisionedSnapshot(document: document, contentRevision: contentRevision))
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                Task { await self.removeRevisionedContinuation(id) }
+            }
+        }
+    }
+
+    private func removeRevisionedContinuation(_ id: UUID) {
+        revisionedContinuations[id] = nil
+    }
+
     private func publish(_ newDocument: QuoinDocument) {
         document = newDocument
         for continuation in continuations.values {
             continuation.yield(newDocument)
+        }
+        let revisioned = RevisionedSnapshot(document: newDocument, contentRevision: contentRevision)
+        for continuation in revisionedContinuations.values {
+            continuation.yield(revisioned)
         }
     }
 
@@ -164,6 +207,7 @@ public actor DocumentSession {
     private func adoptExternal(_ newDocument: QuoinDocument) {
         undoStack.removeAll()
         redoStack.removeAll()
+        contentRevision += 1
         publish(newDocument)
     }
 
@@ -280,8 +324,20 @@ public actor DocumentSession {
     /// The editor's keystroke path: apply a byte-precise edit, re-parse,
     /// publish, and schedule a debounced autosave. Returns the new document
     /// so callers can restore the caret synchronously.
+    ///
+    /// `baseRevision` is the `contentRevision` of the snapshot the edit's
+    /// byte offsets were computed against (see `revisionedSnapshots()`).
+    /// When an external reload has replaced the content in the meantime,
+    /// the edit is rejected instead of spliced at stale offsets (ledger
+    /// #14). Pass nil only for callers that provably operate on the
+    /// session's own current document.
     @discardableResult
-    public func applyEdit(_ edit: SourceEdit, publishSnapshot: Bool = true) throws -> QuoinDocument {
+    public func applyEdit(
+        _ edit: SourceEdit, baseRevision: Int? = nil, publishSnapshot: Bool = true
+    ) throws -> QuoinDocument {
+        if let baseRevision, baseRevision != contentRevision {
+            throw SessionError.staleEditBase(expected: contentRevision, got: baseRevision)
+        }
         let parsed = try MarkdownConverter.parseAfterEdit(previous: document, edit: edit)
         undoStack.append(parsed.inverse)
         redoStack.removeAll()
