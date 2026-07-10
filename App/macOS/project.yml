@@ -61,12 +61,12 @@ targets:
         NSHumanReadableCopyright: "© 2026 Clint Ecker"
         CFBundleDocumentTypes:
           - CFBundleTypeName: Markdown Document
-            CFBundleTypeRole: Viewer
+            CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - net.daringfireball.markdown
           - CFBundleTypeName: Plain Text Document
-            CFBundleTypeRole: Viewer
+            CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - public.plain-text

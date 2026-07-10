@@ -82,7 +82,6 @@ struct ExportSheet: View {
                 ForEach(ExportFormat.allCases) { format in
                     formatCard(format)
                 }
-                disabledCard(title: "DOCX", caption: "Later")
             }
 
             // Options row per handoff §3.
@@ -121,20 +120,25 @@ struct ExportSheet: View {
         .frame(width: 440)
         // Escape reliably cancels the sheet even when focus sits in the
         // format grid (cancelAction alone doesn't fire from every responder).
-        .onAppear {
-            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                if event.keyCode == 53 { // Escape
-                    isPresented = false
-                    return nil
-                }
-                return event
+        .onAppear(perform: installEscapeMonitor)
+        .onDisappear(perform: removeEscapeMonitor)
+    }
+
+    private func installEscapeMonitor() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { // Escape
+                isPresented = false
+                return nil
             }
+            return event
         }
-        .onDisappear {
-            if let escapeMonitor {
-                NSEvent.removeMonitor(escapeMonitor)
-                self.escapeMonitor = nil
-            }
+    }
+
+    private func removeEscapeMonitor() {
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+            self.escapeMonitor = nil
         }
     }
 
@@ -165,28 +169,31 @@ struct ExportSheet: View {
         .onTapGesture { selected = format }
     }
 
-    private func disabledCard(title: String, caption: String) -> some View {
-        VStack(spacing: 3) {
-            Text(title).font(.system(size: 14, weight: .semibold))
-            Text(caption).font(.system(size: 10))
-        }
-        .foregroundStyle(.tertiary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-    }
-
     // MARK: - Export
 
     private func runExport() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [selected.contentType]
         panel.nameFieldStringValue = "\(documentName).\(selected.fileExtension)"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // The Escape monitor would eat the save panel's own cancel key —
+        // suspend it while the panel runs (it reinstalls afterwards
+        // unless the sheet is going away).
+        removeEscapeMonitor()
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            if response == .OK, let url = panel.url {
+                write(to: url)
+            }
+            if isPresented { installEscapeMonitor() }
+        }
+        // Window-modal, not app-modal: other windows stay usable.
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(panel.runModal())
+        }
+    }
 
+    private func write(to url: URL) {
         // Include-footnotes off: export a copy without the gathered
         // footnote definitions (inline refs remain, like a print excerpt).
         let exported = includeFootnotes ? document : QuoinDocument(

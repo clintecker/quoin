@@ -45,6 +45,7 @@ struct LibrarySidebar: View {
                 }
                 .buttonStyle(.borderless)
                 .help("New document (⌘N)")
+                .accessibilityLabel("New Document")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -63,6 +64,26 @@ struct LibrarySidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .contextMenu {
+            // Empty-area context menu: root-level file management (UI #9).
+            Button("New Document") {
+                if let url = library.createDocument() { onOpen(url) }
+            }
+            Button("New Folder") { library.createFolder() }
+        }
+        .overlay {
+            // Null state: a fresh library shouldn't read as broken (UI #17).
+            if library.root?.children?.isEmpty ?? true {
+                VStack(spacing: 6) {
+                    Text("No documents yet")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text("Press ⌘N to create one")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
         // Dropping onto empty sidebar space moves to the library root.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             guard let root = library.rootURL else { return false }
@@ -179,13 +200,42 @@ private struct LibraryRow: View {
                     LibraryRow(node: child, onOpen: onOpen, library: library)
                 }
             } label: {
-                Label(node.name, systemImage: "folder")
-                    .font(.system(size: 12.5))
-                    .onDrag { NSItemProvider(object: node.url as NSURL) }
-                    // Dropping a file onto a folder moves it there (⌘Z undoes).
-                    .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                        handleFileDrop(providers, into: node.url, library: library)
+                Group {
+                    if isRenaming {
+                        TextField("Name", text: $draftName, onCommit: {
+                            isRenaming = false
+                            _ = library.rename(url: node.url, to: draftName)
+                        })
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12.5))
+                    } else {
+                        Label(node.name, systemImage: "folder")
+                            .font(.system(size: 12.5))
                     }
+                }
+                .onDrag { NSItemProvider(object: node.url as NSURL) }
+                // Dropping a file onto a folder moves it there (⌘Z undoes).
+                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                    handleFileDrop(providers, into: node.url, library: library)
+                }
+                .contextMenu {
+                    Button("New Document in “\(node.name)”") {
+                        if let url = library.createDocument(in: node.url) { onOpen(url) }
+                    }
+                    Button("New Folder") { library.createFolder(in: node.url) }
+                    Button("Rename") {
+                        draftName = node.name
+                        isRenaming = true
+                    }
+                    Divider()
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([node.url])
+                    }
+                    Divider()
+                    Button("Move to Trash", role: .destructive) {
+                        library.trash(url: node.url)
+                    }
+                }
             }
         } else {
             row
@@ -229,6 +279,10 @@ private struct LibraryRow: View {
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([node.url])
             }
+            Divider()
+            Button("Move to Trash", role: .destructive) {
+                library.trash(url: node.url)
+            }
         }
     }
 }
@@ -255,23 +309,50 @@ struct QuickOpenPanel: View {
                     .focused($fieldFocused)
                     .onSubmit { openHighlighted() }
                     .onExitCommand { close() }
+                    // ↑/↓ walk the results (UI #10 — the highlight state
+                    // existed but nothing ever moved it).
+                    .onKeyPress(.downArrow) {
+                        guard !library.quickOpenResults.isEmpty else { return .ignored }
+                        highlighted = min(highlighted + 1, library.quickOpenResults.count - 1)
+                        return .handled
+                    }
+                    .onKeyPress(.upArrow) {
+                        guard highlighted > 0 else { return .ignored }
+                        highlighted -= 1
+                        return .handled
+                    }
             }
             .padding(12)
 
             if !library.quickOpenResults.isEmpty {
                 Divider()
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(Array(library.quickOpenResults.enumerated()), id: \.element.id) { index, result in
-                            resultRow(result, isHighlighted: index == highlighted)
-                                .onTapGesture {
-                                    onOpen(result.url)
-                                    close()
-                                }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(Array(library.quickOpenResults.enumerated()), id: \.element.id) { index, result in
+                                resultRow(result, isHighlighted: index == highlighted)
+                                    .id(index)
+                                    .onTapGesture {
+                                        onOpen(result.url)
+                                        close()
+                                    }
+                            }
                         }
                     }
+                    .frame(maxHeight: 320)
+                    .onChange(of: highlighted) { _, index in
+                        proxy.scrollTo(index)
+                    }
                 }
-                .frame(maxHeight: 320)
+            } else {
+                Divider()
+                Text(library.quickOpenQuery.trimmingCharacters(in: .whitespaces).isEmpty
+                     ? "Recent documents appear here as you work"
+                     : "No matches")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 14)
             }
         }
         .frame(width: 480)
@@ -367,6 +448,9 @@ struct DocumentTabBar: View {
         .background(isActive ? Color(nsColor: .textBackgroundColor) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture { activeTab = url }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(url.deletingPathExtension().lastPathComponent) tab")
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
         .onHover { inside in
             hoveredTab = inside ? url : (hoveredTab == url ? nil : hoveredTab)
         }

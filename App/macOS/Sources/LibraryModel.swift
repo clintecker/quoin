@@ -158,6 +158,38 @@ final class LibraryModel {
 
     var canUndoMove: Bool { !moveUndoStack.isEmpty }
 
+    /// Posted after a document is moved to the Trash so open tabs for it
+    /// can close instead of autosaving into a dead path.
+    static let documentTrashedNotification = Notification.Name("quoin.documentTrashed")
+
+    /// Move a file or folder to the Trash (recoverable — never a hard
+    /// delete; the Finder's undo owns restoration).
+    func trash(url: URL) {
+        guard (try? FileManager.default.trashItem(at: url, resultingItemURL: nil)) != nil else { return }
+        NotificationCenter.default.post(
+            name: Self.documentTrashedNotification, object: nil, userInfo: ["url": url])
+        rescan()
+    }
+
+    /// New folder inside `parent` (or the library root), pre-expanded so
+    /// the user sees where it landed.
+    @discardableResult
+    func createFolder(in parent: URL? = nil) -> URL? {
+        guard let target = parent ?? rootURL else { return nil }
+        // uniqueURL appends an extension; folders name themselves.
+        var candidate = target.appendingPathComponent("New Folder", isDirectory: true)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = target.appendingPathComponent("New Folder \(counter)", isDirectory: true)
+            counter += 1
+        }
+        guard (try? FileManager.default.createDirectory(
+            at: candidate, withIntermediateDirectories: false)) != nil else { return nil }
+        expandedFolders.insert(target.standardizedFileURL.path)
+        rescan()
+        return candidate
+    }
+
     /// Undoes the most recent sidebar move (moves the file back on disk).
     func undoLastMove() {
         guard let last = moveUndoStack.popLast() else { return }

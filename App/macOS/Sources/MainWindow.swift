@@ -127,6 +127,17 @@ struct MainWindow: View {
             guard isKeyWindow else { return }
             isLibrarySearchVisible.toggle()
         }
+        // A trashed document's tabs close in EVERY window (deliberately
+        // not key-gated) — a live session would autosave into the Trash.
+        .onReceive(NotificationCenter.default.publisher(for: LibraryModel.documentTrashedNotification)) { note in
+            if let url = note.userInfo?["url"] as? URL {
+                close(url)
+                openTabs.removeAll { $0.path.hasPrefix(url.path + "/") }
+                if let activeTab, !openTabs.contains(activeTab) {
+                    self.activeTab = openTabs.last
+                }
+            }
+        }
         // Help ▸ Markdown Guide / Welcome to Quoin: LIVE documents in the
         // library (editable examples — the guide teaches by being edited).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openGuideNotification)) { _ in
