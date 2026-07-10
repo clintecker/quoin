@@ -126,7 +126,11 @@ final class FlipTransitionController {
         guard let scrollView, let textView, textView.window != nil else { return }
         let clip = scrollView.contentView
         let visible = clip.documentVisibleRect
-        let overscan: CGFloat = 600
+        // Overscan exists so an upward slide has pixels to reveal below
+        // the viewport — and the slide delta is capped at viewport/2 (any
+        // larger becomes a crossfade), so viewport/2 is exactly enough.
+        // The old fixed 600pt over-rasterized short viewports (perf #9).
+        let overscan: CGFloat = min(600, visible.height / 2)
         // Clamped to the document: caching a rect past the view's bounds
         // is undefined.
         let captureRect = CGRect(

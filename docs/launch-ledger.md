@@ -133,8 +133,14 @@ top-down; nothing ships while a BLOCKER is open.*
   + CFEqual; dictionaries bridge only for runs that differ): ~110ms →
   ~11ms walk on a 66k-char doc, same diff detection. Budgeted in
   RenderPathLatencyTests. #8.
-- [OPEN] Flip capture rasterizes viewport+overscan before knowing the plan
-  is `.none` (most prose clicks) — pre-estimate delta; 1x capture. #9.
+- [FIXED] Flip capture rasterizes viewport+overscan before knowing the plan
+  is `.none` (most prose clicks) — `flipCaptureWorthwhile` now gates the
+  capture pre-splice: exact skips on the plan's hard inputs (≥200k docs,
+  degenerate viewport) plus a conservative height-delta estimate of the
+  new fragment (skip only when confidently ≤ the 40pt threshold; anything
+  ambiguous captures as before — a wrong skip is cosmetic-only by
+  construction). Overscan clamped 600pt → viewport/2 (the max slide
+  delta). Capture stays at backing scale: 1x would blur retina overlays. #9.
 - [OPEN] Panel geometry callback dispatches per draw pass — dedupe. #10.
 - [FIXED] blockID()/topVisibleBlockID are O(blocks) linear scans on
   caret/scroll paths (string alloc per key in the scroll path!) — now a

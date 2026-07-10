@@ -317,7 +317,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
                let flipID = rendered.activeBlockID ?? coordinator.lastActiveBlockID,
                let oldRange = coordinator.blockRanges[flipID],
                let oldRect = coordinator.blockScreenRect(oldRange, in: textView),
-               oldRect.minY < viewport, oldRect.maxY > 0 {
+               oldRect.minY < viewport, oldRect.maxY > 0,
+               coordinator.flipCaptureWorthwhile(
+                   oldBlockRect: oldRect, flipID: flipID, rendered: rendered,
+                   viewportHeight: viewport, in: textView) {
                 flipMotionID = flipID
                 coordinator.flipTransition?.capture(oldBlockRect: oldRect)
             } else {

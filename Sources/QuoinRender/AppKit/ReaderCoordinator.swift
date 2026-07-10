@@ -1396,6 +1396,39 @@ extension MarkdownReaderView {
         /// shares the view lifetime.
         var flipTransition: FlipTransitionController?
 
+        /// Pre-splice gate for the flip snapshot (ledger perf #9): most
+        /// prose clicks produce `Plan.none` — the reveal keeps the block's
+        /// vertical skeleton, so |Δh| ≤ 40 — yet the viewport+overscan was
+        /// rasterized BEFORE the plan could say so. The plan's inputs are
+        /// (conservatively) knowable beforehand: document length and
+        /// viewport height exactly; the new block's height estimated by
+        /// measuring its already-rendered fragment. Skipping is safe by
+        /// construction: no capture just means no cosmetic overlay (`run`
+        /// bails on a nil pending capture); the real layout applies
+        /// instantly either way. The margin (16 vs the plan's 40pt
+        /// threshold) absorbs boundingRect-vs-TextKit-2 estimate error;
+        /// anything ambiguous captures exactly as before.
+        func flipCaptureWorthwhile(
+            oldBlockRect: CGRect, flipID: BlockID, rendered: RenderedDocument,
+            viewportHeight: CGFloat, in textView: NSTextView
+        ) -> Bool {
+            // Exact plan inputs: these alone force .none.
+            guard rendered.attributed.length < 200_000, viewportHeight > 0 else { return false }
+            guard let newRange = rendered.blockRanges[flipID],
+                  NSMaxRange(newRange) <= rendered.attributed.length,
+                  newRange.length <= 20_000, // don't burn time estimating giants
+                  let container = textView.textContainer
+            else { return true } // can't estimate — capture, as before
+            let width = container.size.width - 2 * container.lineFragmentPadding
+            guard width > 50 else { return true }
+            let fragment = rendered.attributed.attributedSubstring(from: newRange)
+            let estimated = fragment.boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).height
+            return abs(estimated - oldBlockRect.height) > 16
+        }
+
         /// The side-by-side preview panel (ledger #6b), created lazily and
         /// repositioned from the editing frame's drawn geometry. Its
         /// presentation runs through the choreographer — the raw per-draw
