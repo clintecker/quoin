@@ -466,31 +466,52 @@ extension MarkdownReaderView {
 
         /// Double-click on an embed block flips it to editable source
         /// (QuoinTextView routes the gesture here). The caret lands at the
-        /// source position matching the click, not at the block end.
+        /// source position matching the click: code bodies map exactly
+        /// (1:1 with source content); embeds without a body marker (tables,
+        /// math, diagrams) fall back to the raw rendered offset, which the
+        /// model's rendered↔source alignment maps — the same machinery that
+        /// keeps prose and list clicks exact. The old nil fallback dumped
+        /// the caret at the BLOCK END, and the caret-line pin then dragged
+        /// the last line up to the click.
         func activateEmbedBlock(atCharIndex index: Int) {
             guard isEmbedBlock(atCharIndex: index),
                   let id = blockID(atCharIndex: index),
                   id != parent.rendered.activeBlockID else { return }
-            parent.onActivateBlock?(id, embedCaretHint(atCharIndex: index))
+            let hint = embedCaretHint(atCharIndex: index)
+                ?? blockRanges[id].map { index - $0.location }
+            parent.onActivateBlock?(id, hint)
         }
 
-        /// Where the caret should land when an embed block flips to source:
-        /// the start of the code content (just inside the opening fence), so a
-        /// double-click doesn't dump the caret after the closing fence. Precise
-        /// click-to-source mapping isn't attempted — TextKit 2 point hit-testing
-        /// is unreliable in the decorated canvas — but once in source mode the
-        /// text is plain, so the next click lands exactly where the user aims.
+        /// Where the caret should land when an embed block flips to source.
+        /// The rendered code body is character-for-character 1:1 with the
+        /// source content (the copy button and edit mapping depend on it),
+        /// so a double-click INSIDE the body maps exactly: source content
+        /// start + the click's offset into the rendered body. The old
+        /// content-start-only shortcut teleported the caret to the block's
+        /// first line — and the caret-line viewport pin then dragged line 1
+        /// down to the clicked position, lurching the whole block. Clicks
+        /// outside the body (header chip, attachment) keep the
+        /// content-start fallback.
         func embedCaretHint(atCharIndex index: Int) -> Int? {
             guard let storage = textView?.textContentStorage?.textStorage,
                   let id = blockID(atCharIndex: index),
                   let blockRange = blockRanges[id] else { return nil }
             var contentStart: Int?
+            var bodyRange: NSRange?
             let clamped = NSRange(
                 location: blockRange.location,
                 length: min(blockRange.length, storage.length - blockRange.location)
             )
-            storage.enumerateAttribute(QuoinAttribute.embedSourceStart, in: clamped) { value, _, stop in
-                if let start = value as? NSNumber { contentStart = start.intValue; stop.pointee = true }
+            storage.enumerateAttribute(QuoinAttribute.embedSourceStart, in: clamped) { value, range, stop in
+                if let start = value as? NSNumber {
+                    contentStart = start.intValue
+                    bodyRange = range
+                    stop.pointee = true
+                }
+            }
+            guard let contentStart else { return nil }
+            if let bodyRange, index >= bodyRange.location, index <= NSMaxRange(bodyRange) {
+                return contentStart + (index - bodyRange.location)
             }
             return contentStart
         }

@@ -128,3 +128,53 @@ final class CaretLineAnchorTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(AppKit)
+/// Double-clicking INSIDE a code block's body must land the caret at the
+/// clicked position, not the content start — the rendered body is 1:1 with
+/// the source content. The old content-start shortcut teleported the caret
+/// to the block's first line, and the caret-line pin then dragged that
+/// first line down to the click (traced live at ~500pt in long blocks).
+final class EmbedCaretHintTests: XCTestCase {
+    func testDoubleClickMapsIntoCodeBody() throws {
+        var source = "# Code\n\n"
+        source += "```swift\n"
+        for i in 0..<12 { source += "let line\(i) = \(i) // padding line \(i)\n" }
+        source += "```\n\nTail.\n"
+        let document = MarkdownConverter.parse(source)
+        let renderer = AttributedRenderer()
+        var cache: [BlockID: NSAttributedString] = [:]
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+
+        let contentStorage = NSTextContentStorage()
+        let layoutManager = NSTextLayoutManager()
+        contentStorage.addTextLayoutManager(layoutManager)
+        let container = NSTextContainer(size: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
+        layoutManager.textContainer = container
+        let textView = QuoinTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), textContainer: container)
+        textView.textContentStorage?.textStorage?.setAttributedString(reading.attributed)
+
+        let view = MarkdownReaderView(rendered: RenderedDocument(
+            attributed: reading.attributed, blockRanges: reading.blockRanges))
+        let coordinator = MarkdownReaderView.Coordinator(parent: view)
+        coordinator.textView = textView
+        coordinator.blockRanges = reading.blockRanges
+
+        // "Double-click" on line 8 of the rendered body.
+        let storage = try XCTUnwrap(textView.textContentStorage?.textStorage)
+        let clickTarget = (storage.string as NSString).range(of: "let line8").location
+        XCTAssertNotEqual(clickTarget, NSNotFound)
+        let hint = try XCTUnwrap(coordinator.embedCaretHint(atCharIndex: clickTarget))
+
+        // The hint is a UTF-16 offset into the block's SOURCE slice; it must
+        // point at "let line8" there, not at the content start.
+        let code = try XCTUnwrap(document.blocks.first {
+            if case .codeBlock = $0.kind { return true }
+            return false
+        })
+        let slice = try XCTUnwrap(document.source.substring(in: code.range))
+        let expected = (slice as NSString).range(of: "let line8").location
+        XCTAssertEqual(hint, expected, "double-click must map into the clicked line")
+    }
+}
+#endif
