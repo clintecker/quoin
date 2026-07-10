@@ -4,6 +4,9 @@ public enum SessionError: Error {
     case fileUnreadable(URL)
     case fileWriteFailed(URL, String)
     case taskNotTogglable
+    /// A disk conflict is pending (external change landed while dirty);
+    /// writing would clobber the version the user hasn't chosen against.
+    case conflictUnresolved(URL)
 }
 
 /// The single authority over one open document's source text.
@@ -24,6 +27,12 @@ public actor DocumentSession {
     public private(set) var lastSaveError: SessionError?
     private var isDirty = false
     public var hasUnsavedChanges: Bool { isDirty }
+    /// True from the moment an external change lands while dirty until the
+    /// user picks a side. While set, NOTHING writes to disk — continued
+    /// typing used to re-arm the debounced autosave and silently clobber
+    /// the disk version while the banner asked the user to decide (launch
+    /// ledger, data integrity #5).
+    public private(set) var hasUnresolvedConflict = false
 
     private var watcher: FileWatcher?
     private var continuations: [UUID: AsyncStream<QuoinDocument>.Continuation] = [:]
@@ -149,6 +158,7 @@ public actor DocumentSession {
         // cancelled so it can't overwrite the disk version while the user
         // decides.
         if isDirty {
+            hasUnresolvedConflict = true
             autosaveTask?.cancel()
             onConflict?(source)
             return
@@ -158,12 +168,14 @@ public actor DocumentSession {
 
     /// Merge-banner resolution: overwrite disk with the local version.
     public func resolveConflictKeepingMine() throws {
+        hasUnresolvedConflict = false
         try saveNow()
     }
 
     /// Merge-banner resolution: adopt the on-disk version, discarding
     /// unsaved local edits.
     public func resolveConflictTakingDisk(_ diskSource: String) {
+        hasUnresolvedConflict = false
         isDirty = false
         lastSaveError = nil
         autosaveTask?.cancel()
@@ -223,6 +235,9 @@ public actor DocumentSession {
     private func scheduleAutosave() {
         guard fileURL != nil else { return }
         isDirty = true
+        // Conflict pending: the edit is held in memory, but no write may
+        // land until the user picks a side (ledger #5).
+        guard !hasUnresolvedConflict else { return }
         autosaveTask?.cancel()
         autosaveTask = Task { [autosaveDelay] in
             try? await Task.sleep(for: autosaveDelay)
@@ -251,6 +266,11 @@ public actor DocumentSession {
 
     public func saveNow() throws {
         guard let fileURL else { return }
+        guard !hasUnresolvedConflict else {
+            // Even an explicit flush (⌘Q drain) must not clobber the disk
+            // side while the merge banner is unanswered.
+            throw SessionError.conflictUnresolved(fileURL)
+        }
         let source = document.source
         let wasDirty = isDirty
         do {
@@ -317,7 +337,11 @@ public actor DocumentSession {
         if base.sourceHash != viewed.sourceHash {
             // The toggle was re-anchored onto content the user never edited
             // locally — an external adoption plus a toggle. Stale undo
-            // offsets don't apply to it.
+            // offsets don't apply to it, and memory now equals disk, so any
+            // pending conflict is resolved toward the disk side.
+            hasUnresolvedConflict = false
+            isDirty = false
+            autosaveTask?.cancel()
             adoptExternal(MarkdownConverter.parse(newSource))
         } else {
             publish(MarkdownConverter.parse(newSource))

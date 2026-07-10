@@ -257,6 +257,88 @@ final class SessionEditingTests: XCTestCase {
         XCTAssertEqual(source, "replaced entirely")
     }
 
+    func testConflictSuspendsAutosaveUntilResolved() async throws {
+        // Ledger (data integrity #5): typing after the merge banner used to
+        // re-arm the debounced autosave and clobber the disk version while
+        // the user was still deciding.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("shared base".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        // Local edit → dirty (autosave still inside its debounce window).
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 11, length: 0), replacement: " plus local"))
+        // External change lands while dirty → conflict.
+        let external = "external version"
+        try Data(external.utf8).write(to: file)
+        await session.reloadFromDisk()
+        let conflicted = await session.hasUnresolvedConflict
+        XCTAssertTrue(conflicted)
+
+        // Continued typing while the banner is up must not write anything.
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "more "))
+        try await Task.sleep(for: .milliseconds(1300))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), external,
+                       "autosave must be suspended while a conflict is unresolved")
+
+        // Even an explicit flush must refuse.
+        do {
+            try await session.saveNow()
+            XCTFail("saveNow must refuse while the conflict is unresolved")
+        } catch SessionError.conflictUnresolved(let url) {
+            XCTAssertEqual(url, file)
+        }
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), external)
+
+        // Resolution (keep mine) writes the local side and re-arms saving.
+        try await session.resolveConflictKeepingMine()
+        let localAfterResolve = await session.document.source
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), localAfterResolve)
+        let stillConflicted = await session.hasUnresolvedConflict
+        XCTAssertFalse(stillConflicted)
+
+        // Subsequent edits autosave normally again.
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "again "))
+        try await Task.sleep(for: .milliseconds(700))
+        let finalSource = await session.document.source
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), finalSource,
+                       "autosave must resume after the conflict is resolved")
+    }
+
+    func testConflictResolvedByTakingDiskResumesAutosave() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("shared base".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "local "))
+        let external = "external version"
+        try Data(external.utf8).write(to: file)
+        await session.reloadFromDisk()
+        let conflicted = await session.hasUnresolvedConflict
+        XCTAssertTrue(conflicted)
+
+        await session.resolveConflictTakingDisk(external)
+        let source = await session.document.source
+        XCTAssertEqual(source, external)
+
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "typed "))
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "typed " + external,
+                       "autosave must resume after taking the disk side")
+    }
+
     func testUntouchedRegionsAreByteLossless() throws {
         // The acceptance-checklist guarantee: editing one block leaves every
         // other byte of the file identical.
