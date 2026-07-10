@@ -127,6 +127,15 @@ justification in the TRD first; the default answer is no.
   `lldb -p <pid> --batch -o 'bt all' -o 'detach'` (full symbols).
   Unified log: use `/usr/bin/log` — plain `log` is a zsh builtin that
   errors with "too many arguments".
+- Viewport/caret bug forensics: launch with `QUOIN_EDIT_PERF_LOG=1 …/Quoin
+  > /tmp/quoin.log 2>&1 &` and watch the `anchor.capture` /
+  `anchor.pinCaretLine` / `click.mouseDown` / `model.activate` trace phases
+  while the user reproduces. `model.activate` logs the activated block's
+  kind + source head (identifies WHICH block in one click);
+  `pinCaretLine`'s `clipY→newY` is the reflow magnitude, and `sel` vs `loc`
+  exposes caret-mapping drift. A user's perceptual one-liner ("cursor lands
+  between the n and g of formatting") localizes faster than any amount of
+  static analysis — get the trace AND the sentence.
 - The app is sandboxed. `-QuoinLibraryPath` works for folders inside the
   container / test fixtures, but NOT for arbitrary user folders from a
   plain CLI launch — a normal launch restores the saved security-scoped

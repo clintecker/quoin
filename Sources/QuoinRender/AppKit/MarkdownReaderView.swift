@@ -146,7 +146,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
         context.coordinator.textView = textView
         textView.onDoubleClick = { [weak coordinator = context.coordinator] index in
-            coordinator?.activateEmbedBlock(atCharIndex: index)
+            coordinator?.activateEmbedBlock(atCharIndex: index) ?? false
         }
         return scrollView
     }

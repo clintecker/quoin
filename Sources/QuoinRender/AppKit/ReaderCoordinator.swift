@@ -473,13 +473,15 @@ extension MarkdownReaderView {
         /// keeps prose and list clicks exact. The old nil fallback dumped
         /// the caret at the BLOCK END, and the caret-line pin then dragged
         /// the last line up to the click.
-        func activateEmbedBlock(atCharIndex index: Int) {
+        @discardableResult
+        func activateEmbedBlock(atCharIndex index: Int) -> Bool {
             guard isEmbedBlock(atCharIndex: index),
                   let id = blockID(atCharIndex: index),
-                  id != parent.rendered.activeBlockID else { return }
+                  id != parent.rendered.activeBlockID else { return false }
             let hint = embedCaretHint(atCharIndex: index)
                 ?? blockRanges[id].map { index - $0.location }
             parent.onActivateBlock?(id, hint)
+            return true
         }
 
         /// Where the caret should land when an embed block flips to source.

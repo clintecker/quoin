@@ -15,17 +15,25 @@ final class QuoinTextView: NSTextView {
     var decorationRuns: [(range: NSRange, decoration: BlockDecoration)] = []
     private var runsAreStale = true
 
-    /// Set by the coordinator: a double-click landed on the character at this
-    /// index. The coordinator decides whether it's an embed block worth
-    /// flipping to source.
-    var onDoubleClick: ((Int) -> Void)?
+    /// Set by the coordinator: a double-click landed on the character at
+    /// this index. Returns true when it consumed the gesture (an embed flip)
+    /// — the event must NOT fall through to super then: AppKit's word-select
+    /// tracking would run while the flip replaces the text underneath it,
+    /// and its indexes would resolve into the newly revealed source as a
+    /// random selection ("double clicking selects random portions of the
+    /// mermaid source").
+    var onDoubleClick: ((Int) -> Bool)?
 
     override func mouseDown(with event: NSEvent) {
         let clipBefore = enclosingScrollView?.contentView.bounds.origin.y ?? -1
         if event.clickCount == 2 {
             let point = convert(event.locationInWindow, from: nil)
             let index = characterIndexForInsertion(at: point)
-            if index >= 0 { onDoubleClick?(index) }
+            if index >= 0, onDoubleClick?(index) == true {
+                // Embed flip: consume the event — no word-select tracking
+                // over text that is about to be replaced.
+                return
+            }
             // Fall through to super so text blocks still get word-select.
         }
         super.mouseDown(with: event)
