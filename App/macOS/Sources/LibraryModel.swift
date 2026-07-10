@@ -144,6 +144,23 @@ final class LibraryModel {
         return renamed
     }
 
+    /// Drops from INSIDE the library move; drops from outside COPY — a
+    /// drag from Desktop must never make the original vanish (UI #21).
+    func importOrMove(url: URL, into folder: URL) {
+        let standardized = url.standardizedFileURL.path
+        if let rootPath = rootURL?.standardizedFileURL.path,
+           standardized.hasPrefix(rootPath + "/") {
+            move(url: url, into: folder)
+        } else {
+            let destination = Library.uniqueURL(
+                baseName: url.deletingPathExtension().lastPathComponent,
+                extension: url.pathExtension,
+                in: folder)
+            guard (try? FileManager.default.copyItem(at: url, to: destination)) != nil else { return }
+            rescan()
+        }
+    }
+
     /// Sidebar drag-to-move: a real file move, recorded for ⌘Z.
     @discardableResult
     func move(url: URL, into folder: URL) -> URL? {

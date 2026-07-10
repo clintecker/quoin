@@ -169,7 +169,7 @@ func handleFileDrop(_ providers: [NSItemProvider], into folder: URL, library: Li
             }
             guard let url else { return }
             Task { @MainActor in
-                library.move(url: url, into: folder)
+                library.importOrMove(url: url, into: folder)
             }
         }
     }

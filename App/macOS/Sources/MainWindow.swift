@@ -10,6 +10,9 @@ struct MainWindow: View {
     @State private var sidebarSelection: URL?
     @State private var openTabs: [URL] = []
     @State private var activeTab: URL?
+    /// Workspace memory (UI #4): open tabs survive relaunch. First line
+    /// is the active tab's path, the rest are the tab order.
+    @SceneStorage("QuoinOpenTabs") private var persistedTabs = ""
     @State private var isQuickOpenVisible = false
     @State private var isLibrarySearchVisible = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -150,7 +153,47 @@ struct MainWindow: View {
             if let url = library.materializeBundledDocument(
                 resource: "WelcomeToQuoin", as: "Welcome to Quoin.md") { open(url) }
         }
-        .onAppear(perform: applyShotState)
+        .onAppear {
+            restoreTabs()
+            applyShotState()
+        }
+        .onChange(of: openTabs) { persistTabs() }
+        .onChange(of: activeTab) { persistTabs() }
+        // Sidebar keyboard selection (↑/↓ + the List's type-select) opens
+        // documents, not just mouse clicks (UI #23). open() re-sets the
+        // selection to the same URL, so this settles after one pass.
+        .onChange(of: sidebarSelection) { _, url in
+            if let url, url.pathExtension.lowercased() == "md", activeTab != url {
+                open(url)
+            }
+        }
+    }
+
+    // MARK: - Workspace persistence (UI #4)
+
+    private func persistTabs() {
+        persistedTabs = ([activeTab?.path ?? ""] + openTabs.map(\.path)).joined(separator: "\n")
+    }
+
+    /// Restores tabs from the last session. Only files reachable through
+    /// the library's security scope come back — a sandboxed relaunch has
+    /// no access to one-off files that were opened via the panel.
+    private func restoreTabs() {
+        guard openTabs.isEmpty, !persistedTabs.isEmpty,
+              let rootPath = library.rootURL?.standardizedFileURL.path else { return }
+        let lines = persistedTabs.components(separatedBy: "\n")
+        guard lines.count > 1 else { return }
+        let restored = lines.dropFirst()
+            .filter { $0.hasPrefix(rootPath + "/") && FileManager.default.fileExists(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
+        guard !restored.isEmpty else { return }
+        openTabs = restored
+        let active = URL(fileURLWithPath: lines[0])
+        activeTab = restored.contains(active) ? active : restored.last
+        if let activeTab {
+            sidebarSelection = activeTab
+            library.reveal(url: activeTab)
+        }
     }
 
     /// Screenshot automation: `-QuoinShotOpen name.md` opens a library file
