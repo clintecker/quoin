@@ -189,6 +189,74 @@ final class SessionEditingTests: XCTestCase {
         XCTAssertEqual(onDisk, "hello world")
     }
 
+    func testExternalReloadClearsUndoRedoStacks() async throws {
+        // Ledger (data integrity #3): ⌘Z after an external disk change used
+        // to splice stale bytes at old offsets, then autosave the corruption.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quoin-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("doc.md")
+        try Data("alpha bravo".utf8).write(to: file)
+
+        let session = try DocumentSession.open(fileURL: file)
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 6, length: 5), replacement: "charlie"))
+        _ = try await session.undo()
+        let canUndoBefore = await session.canUndo
+        let canRedoBefore = await session.canRedo
+        XCTAssertFalse(canUndoBefore)
+        XCTAssertTrue(canRedoBefore)
+        // Let the autosave settle so the session is clean when disk moves.
+        try await Task.sleep(for: .milliseconds(700))
+
+        let external = "totally different content\nwith new offsets\n"
+        try Data(external.utf8).write(to: file)
+        await session.reloadFromDisk()
+
+        let reloaded = await session.document.source
+        XCTAssertEqual(reloaded, external)
+        let canUndo = await session.canUndo
+        let canRedo = await session.canRedo
+        XCTAssertFalse(canUndo, "undo stack must not survive an external reload")
+        XCTAssertFalse(canRedo, "redo stack must not survive an external reload")
+
+        // Attempted undo is a no-op and cannot corrupt the adopted content.
+        let undone = try await session.undo()
+        XCTAssertNil(undone)
+        let afterUndo = await session.document.source
+        XCTAssertEqual(afterUndo, external)
+    }
+
+    func testConflictResolutionTakingDiskClearsUndoRedoStacks() async throws {
+        let session = DocumentSession(source: "one two three")
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 4, length: 3), replacement: "2"))
+        let canUndoBefore = await session.canUndo
+        XCTAssertTrue(canUndoBefore)
+
+        await session.resolveConflictTakingDisk("disk wins, different bytes")
+        let canUndo = await session.canUndo
+        XCTAssertFalse(canUndo, "adopting the disk side must clear undo history")
+        let undone = try await session.undo()
+        XCTAssertNil(undone)
+        let source = await session.document.source
+        XCTAssertEqual(source, "disk wins, different bytes")
+    }
+
+    func testWholesaleApplyClearsUndoRedoStacks() async throws {
+        let session = DocumentSession(source: "hello")
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 5, length: 0), replacement: " world"))
+        await session.apply(source: "replaced entirely")
+        let canUndo = await session.canUndo
+        XCTAssertFalse(canUndo)
+        let undone = try await session.undo()
+        XCTAssertNil(undone)
+        let source = await session.document.source
+        XCTAssertEqual(source, "replaced entirely")
+    }
+
     func testUntouchedRegionsAreByteLossless() throws {
         // The acceptance-checklist guarantee: editing one block leaves every
         // other byte of the file identical.

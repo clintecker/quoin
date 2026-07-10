@@ -115,6 +115,19 @@ public actor DocumentSession {
         }
     }
 
+    /// Adopts content that did NOT come through the edit path (external
+    /// reload, conflict resolution, wholesale apply, toggle re-anchor on
+    /// changed disk content). The undo/redo stacks hold byte-offset edits
+    /// computed against the OLD source; replaying one against adopted
+    /// content splices stale bytes at stale offsets — and autosave then
+    /// persists the corruption (launch ledger, data integrity #3).
+    /// Clearing both stacks is the safe rebase.
+    private func adoptExternal(_ newDocument: QuoinDocument) {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        publish(newDocument)
+    }
+
     // MARK: - Mutations
 
     /// Reloads from disk after an external change. No-ops when the content
@@ -140,7 +153,7 @@ public actor DocumentSession {
             onConflict?(source)
             return
         }
-        publish(MarkdownConverter.parse(source))
+        adoptExternal(MarkdownConverter.parse(source))
     }
 
     /// Merge-banner resolution: overwrite disk with the local version.
@@ -154,13 +167,13 @@ public actor DocumentSession {
         isDirty = false
         lastSaveError = nil
         autosaveTask?.cancel()
-        publish(MarkdownConverter.parse(diskSource))
+        adoptExternal(MarkdownConverter.parse(diskSource))
     }
 
     /// Applies new source text wholesale (no undo tracking; external inputs).
     public func apply(source: String) {
         guard SHA256Hex.hash(of: source) != document.sourceHash else { return }
-        publish(MarkdownConverter.parse(source))
+        adoptExternal(MarkdownConverter.parse(source))
     }
 
     // MARK: - Editing
@@ -281,7 +294,7 @@ public actor DocumentSession {
             guard let relocated = TaskLocator.relocate(intended, in: fresh) else {
                 // Can't prove which task the user meant. Surface the current
                 // truth so they re-click on accurate content, then refuse.
-                publish(fresh)
+                adoptExternal(fresh)
                 throw SessionError.taskNotTogglable
             }
             base = fresh
@@ -301,6 +314,13 @@ public actor DocumentSession {
                 throw failure
             }
         }
-        publish(MarkdownConverter.parse(newSource))
+        if base.sourceHash != viewed.sourceHash {
+            // The toggle was re-anchored onto content the user never edited
+            // locally — an external adoption plus a toggle. Stale undo
+            // offsets don't apply to it.
+            adoptExternal(MarkdownConverter.parse(newSource))
+        } else {
+            publish(MarkdownConverter.parse(newSource))
+        }
     }
 }
