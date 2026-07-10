@@ -13,7 +13,7 @@ venn support (circle placement should solve for the union weights, or
 at least overlap pairs with nonzero intersections). Belongs to the
 MermaidKit repo + its CI; queue a MermaidKit session.
 
-## #8 — Chart editing: preview not updating live; ✓ done leaves corrupted chrome — OPEN
+## #8 — Chart editing: preview not updating live; ✓ done leaves corrupted chrome — FIXED (shares #4's root)
 
 *Reported 2026-07-10 (live use, mermaid).* While editing a chart the
 anchored preview never re-rendered; clicking ✓ done left a blank
@@ -78,7 +78,7 @@ by BLOCK KIND (the renderer knows it's a code block; don't re-derive
 from text), and resolve embedSourceStart per-line or map through
 line+column instead of a contiguous byte offset.
 
-## #4 — Activating a callout corrupts callout chrome — its own and its neighbors' — OPEN
+## #4 — Activating a callout corrupts callout chrome — its own and its neighbors' — FIXED
 
 *Reported 2026-07-10 (kitchen-sink §callouts).* Fresh render is correct.
 Click into a callout and: the active callout's tinted box lingers
@@ -91,6 +91,18 @@ Recovers on… (verify: does clicking away restore?). Suspects:
 QuoinTextView.noteStorageEdit run partitioning around the flip patch,
 activationFlipUpdate patch extents for container blocks, restyle
 attribute sync.
+*Root cause (found via the second field screenshot):* SwiftUI coalesces
+projection revisions; the fallback splice trims by common STRING
+prefix/suffix, but attributes differ beyond the string change — a
+revealed callout body is string-identical to its rendered text, so the
+splice kept those characters with their reveal attributes (tint, no box
+→ box shrunk to the title line). The same mechanism kept the OLD
+attachment when a re-rendered diagram produced the same U+FFFC
+character — #8's 'preview never updates' and its stale ✓ done frame.
+Fix: the splice now runs syncAttributesWhereDifferent across the whole
+document afterwards (walks attribute runs, not characters; perf budgets
+hold). Pinned by ActivationNeighborIntegrityTests — the two mechanism
+tests fail 2/2 with the sync disabled.
 
 ## #3 — Revealed entity line shows a row of bare ampersands — OPEN
 
