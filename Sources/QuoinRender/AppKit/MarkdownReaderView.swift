@@ -80,6 +80,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// A block's markdown source slice, for the context menu's Copy
     /// Markdown Source (the render layer holds only the projection).
     public let blockSourceProvider: ((BlockID) -> String?)?
+    /// Focus mode: every block except the caret's recedes to a fraction
+    /// of its ink. Rendering attributes only — no reflow, no re-render.
+    public let focusModeEnabled: Bool
 
     public init(
         rendered: RenderedDocument,
@@ -99,7 +102,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         formatCommand: FormatCommand? = nil,
         formatGeneration: Int = 0,
         editSourceToggleGeneration: Int = 0,
-        blockSourceProvider: ((BlockID) -> String?)? = nil
+        blockSourceProvider: ((BlockID) -> String?)? = nil,
+        focusModeEnabled: Bool = false
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -119,6 +123,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.formatGeneration = formatGeneration
         self.editSourceToggleGeneration = editSourceToggleGeneration
         self.blockSourceProvider = blockSourceProvider
+        self.focusModeEnabled = focusModeEnabled
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -445,6 +450,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
             coordinator.appliedEditSourceToggleGeneration = editSourceToggleGeneration
             coordinator.toggleEditSource(in: textView)
         }
+
+        // Focus mode: re-derive the dimming whenever the projection, the
+        // caret, or the toggle changed (rendering attributes — no layout).
+        coordinator.applyFocusDimming(in: textView, theme: theme)
 
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {
             coordinator.appliedScrollGeneration = scrollGeneration

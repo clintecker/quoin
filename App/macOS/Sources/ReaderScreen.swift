@@ -27,6 +27,8 @@ struct ReaderScreen: View {
 
     @State private var isOutlineVisible = true
     @State private var isExportVisible = false
+    /// Focus mode: everything but the paragraph you're on recedes.
+    @AppStorage("QuoinFocusMode") private var isFocusMode = false
     @State private var isFindVisible = false
     @State private var searchQuery = ""
     @State private var activeMatch = 0
@@ -76,7 +78,8 @@ struct ReaderScreen: View {
                 blockSourceProvider: { id in
                     model.document.blocks.first { $0.id == id }
                         .flatMap { model.document.source.substring(in: $0.range) }
-                }
+                },
+                focusModeEnabled: isFocusMode
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -127,7 +130,19 @@ struct ReaderScreen: View {
             .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    isFocusMode.toggle()
+                } label: {
+                    Label("Focus", systemImage: isFocusMode ? "scope" : "circle.dashed")
+                }
+                .help(isFocusMode ? "Leave focus mode (⌥⌘F)" : "Focus mode: dim everything but the current paragraph (⌥⌘F)")
+                Button {
+                    isExportVisible = true
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .help("Export as Markdown, HTML, or PDF (⇧⌘E)")
                 Button {
                     isOutlineVisible.toggle()
                 } label: {
@@ -193,6 +208,31 @@ struct ReaderScreen: View {
         // ⌘↩ / Format ▸ Edit Source (embed-editing keyboard grammar).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleEditSourceNotification)) { _ in
             editSourceToggleGeneration += 1
+        }
+        // Format menu (⌘B/⌘I/⇧⌘H/⌘K) → the selection formatter.
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.formatNotification)) { note in
+            switch note.userInfo?["format"] as? String {
+            case "bold": fireFormat(.bold)
+            case "italic": fireFormat(.italic)
+            case "highlight": fireFormat(.highlight)
+            case "link": fireFormat(.link)
+            default: break
+            }
+        }
+        // Edit ▸ Undo/Redo → the document session's undo stack.
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.undoNotification)) { _ in
+            model.undo()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.redoNotification)) { _ in
+            model.redo()
+        }
+        // File ▸ Export… (⇧⌘E).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.exportNotification)) { _ in
+            isExportVisible = true
+        }
+        // View ▸ Toggle Focus Mode (⌥⌘F).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleFocusModeNotification)) { _ in
+            isFocusMode.toggle()
         }
         // Lets the Format menu title follow the editing state.
         .focusedSceneValue(\.quoinIsEditingBlock, model.activeBlockID != nil)
@@ -273,21 +313,9 @@ struct ReaderScreen: View {
                 .keyboardShortcut("g", modifiers: .command)
             Button("") { previousMatch() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-            // ⌘0/⌥⌘0 live in the View menu (QuoinApp.commands).
-            Button("") { model.undo() }
-                .keyboardShortcut("z", modifiers: .command)
-            Button("") { model.redo() }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-            Button("") { isExportVisible = true }
-                .keyboardShortcut("e", modifiers: [.command, .shift])
-            Button("") { fireFormat(.bold) }
-                .keyboardShortcut("b", modifiers: .command)
-            Button("") { fireFormat(.italic) }
-                .keyboardShortcut("i", modifiers: .command)
-            Button("") { fireFormat(.highlight) }
-                .keyboardShortcut("h", modifiers: [.command, .shift])
-            Button("") { fireFormat(.link) }
-                .keyboardShortcut("k", modifiers: .command)
+            // ⌘0/⌥⌘0/⌥⌘F, ⌘Z/⇧⌘Z, ⌘B/I/⇧⌘H/⌘K, and ⇧⌘E now live in REAL
+            // menus (View/Edit/Format/File — QuoinApp.commands); only the
+            // find family and print stay window-local.
             // ⌘P keeps its system meaning: print.
             Button("") {
                 DocumentExporters.runPrintOperation(
@@ -448,6 +476,43 @@ struct OutlinePanel: View {
     let currentSectionID: BlockID?
     let onSelect: (BlockID) -> Void
 
+    /// Collapsed heading subtrees (session-scoped). A heading hides when
+    /// any ancestor — the nearest preceding heading of a shallower level —
+    /// is collapsed.
+    @State private var collapsed: Set<BlockID> = []
+
+    /// Which headings own children (the next entry is deeper).
+    private var parents: Set<BlockID> {
+        var result: Set<BlockID> = []
+        for (index, heading) in outline.enumerated() {
+            if index + 1 < outline.count, outline[index + 1].level > heading.level {
+                result.insert(heading.id)
+            }
+        }
+        return result
+    }
+
+    /// The outline with collapsed subtrees removed. The CURRENT section
+    /// always shows — jumping around the document must never leave the
+    /// "you are here" marker hidden inside a collapsed branch.
+    private var visible: [HeadingInfo] {
+        var result: [HeadingInfo] = []
+        var hiddenBelowLevel: Int?
+        for heading in outline {
+            if let level = hiddenBelowLevel {
+                if heading.level > level, heading.id != currentSectionID {
+                    continue
+                }
+                hiddenBelowLevel = heading.level > level ? level : nil
+            }
+            result.append(heading)
+            if collapsed.contains(heading.id) {
+                hiddenBelowLevel = min(hiddenBelowLevel ?? heading.level, heading.level)
+            }
+        }
+        return result
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -459,11 +524,22 @@ struct OutlinePanel: View {
                     .padding(.top, 12)
                     .padding(.bottom, 6)
 
-                ForEach(outline) { heading in
+                ForEach(visible) { heading in
                     OutlineRow(
                         heading: heading,
                         isCurrent: heading.id == currentSectionID,
-                        onSelect: onSelect
+                        isParent: parents.contains(heading.id),
+                        isCollapsed: collapsed.contains(heading.id),
+                        onSelect: onSelect,
+                        onToggle: {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                if collapsed.contains(heading.id) {
+                                    collapsed.remove(heading.id)
+                                } else {
+                                    collapsed.insert(heading.id)
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -481,7 +557,10 @@ struct OutlinePanel: View {
 private struct OutlineRow: View {
     let heading: HeadingInfo
     let isCurrent: Bool
+    let isParent: Bool
+    let isCollapsed: Bool
     let onSelect: (BlockID) -> Void
+    let onToggle: () -> Void
 
     private var indent: CGFloat {
         switch heading.level {
@@ -505,14 +584,37 @@ private struct OutlineRow: View {
             onSelect(heading.id)
         } label: {
             VStack(alignment: .leading, spacing: 0) {
-                Text(heading.title)
-                    .font(.system(size: 12, weight: weight))
-                    .foregroundStyle(isCurrent ? Color.accentColor : Color.primary)
-                    .lineLimit(1)
-                    .padding(.leading, 12 + indent)
-                    .padding(.trailing, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 3) {
+                    // Disclosure chevron: only headings with children get
+                    // one; leaves keep a spacer so titles align.
+                    if isParent {
+                        Button(action: onToggle) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                                .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                                .frame(width: 12, height: 12)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(isCollapsed ? "Expand section" : "Collapse section")
+                    } else {
+                        Color.clear.frame(width: 12, height: 12)
+                    }
+                    Text(heading.title)
+                        .font(.system(size: 12, weight: weight))
+                        .foregroundStyle(isCurrent ? Color.accentColor : Color.primary)
+                        .lineLimit(1)
+                    if isCollapsed, isParent {
+                        Text("…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.leading, 8 + indent)
+                .padding(.trailing, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Rectangle()
                     .fill(Color.primary.opacity(0.08))
                     .frame(height: 1)

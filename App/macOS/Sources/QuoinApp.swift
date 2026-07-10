@@ -12,17 +12,27 @@ struct QuoinApp: App {
         }
         .defaultSize(width: 1180, height: 760) // handoff: default ~1180×760pt
         .commands {
-            // Save is automatic (autosave-in-place); undo lives in the
-            // document session, wired via window-local shortcuts.
+            // Save is automatic (autosave-in-place). Undo/Redo are REAL
+            // menu items (an Edit menu without Undo reads as broken) —
+            // they route to the key window's document session.
             CommandGroup(replacing: .saveItem) {}
-            CommandGroup(replacing: .undoRedo) {}
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") {
+                    NotificationCenter.default.post(name: AppDelegate.undoNotification, object: nil)
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                Button("Redo") {
+                    NotificationCenter.default.post(name: AppDelegate.redoNotification, object: nil)
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+            }
             AboutCommands()
-            // Format menu: the embed-editing keyboard grammar. ⌘↩ toggles
-            // the block under the caret between rendered and source
-            // (commit-and-close on the way out, same contract as Escape).
+            // Format menu: the whole formatting grammar lives in the menu
+            // bar (discoverable), not only behind invisible shortcuts.
             FormatCommands()
             // View menu: the handoff's panel toggles (⌘0 sidebar, ⌥⌘0
-            // outline), delivered to the key window via notifications.
+            // outline) + focus mode, delivered to the key window via
+            // notifications.
             CommandGroup(before: .sidebar) {
                 Button("Show/Hide Sidebar") {
                     NotificationCenter.default.post(name: AppDelegate.toggleSidebarNotification, object: nil)
@@ -32,7 +42,17 @@ struct QuoinApp: App {
                     NotificationCenter.default.post(name: AppDelegate.toggleOutlineNotification, object: nil)
                 }
                 .keyboardShortcut("0", modifiers: [.command, .option])
+                Button("Toggle Focus Mode") {
+                    NotificationCenter.default.post(name: AppDelegate.toggleFocusModeNotification, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .option])
                 Divider()
+            }
+            CommandGroup(after: .importExport) {
+                Button("Export…") {
+                    NotificationCenter.default.post(name: AppDelegate.exportNotification, object: nil)
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
             }
         }
 
@@ -63,17 +83,31 @@ extension FocusedValues {
     }
 }
 
-/// Format ▸ Edit Source / Done Editing (⌘↩): one toggle, its title
-/// following the focused window's editing state — a menu item that
-/// mislabels its action reads as broken.
+/// Format menu: the formatting grammar as real, discoverable menu items.
+/// The Edit Source title follows the focused window's editing state — a
+/// menu item that mislabels its action reads as broken.
 private struct FormatCommands: Commands {
     @FocusedValue(\.quoinIsEditingBlock) private var isEditingBlock
 
+    private func post(_ name: Notification.Name, format: String? = nil) {
+        NotificationCenter.default.post(
+            name: name, object: nil,
+            userInfo: format.map { ["format": $0] })
+    }
+
     var body: some Commands {
         CommandMenu("Format") {
+            Button("Bold") { post(AppDelegate.formatNotification, format: "bold") }
+                .keyboardShortcut("b", modifiers: .command)
+            Button("Italic") { post(AppDelegate.formatNotification, format: "italic") }
+                .keyboardShortcut("i", modifiers: .command)
+            Button("Highlight") { post(AppDelegate.formatNotification, format: "highlight") }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+            Button("Add Link") { post(AppDelegate.formatNotification, format: "link") }
+                .keyboardShortcut("k", modifiers: .command)
+            Divider()
             Button(isEditingBlock == true ? "Done Editing" : "Edit Source") {
-                NotificationCenter.default.post(
-                    name: AppDelegate.toggleEditSourceNotification, object: nil)
+                post(AppDelegate.toggleEditSourceNotification)
             }
             .keyboardShortcut(.return, modifiers: .command)
         }
@@ -99,6 +133,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let toggleSidebarNotification = Notification.Name("quoin.toggleSidebar")
     static let toggleOutlineNotification = Notification.Name("quoin.toggleOutline")
     static let toggleEditSourceNotification = Notification.Name("quoin.toggleEditSource")
+    static let toggleFocusModeNotification = Notification.Name("quoin.toggleFocusMode")
+    static let formatNotification = Notification.Name("quoin.format")
+    static let undoNotification = Notification.Name("quoin.undo")
+    static let redoNotification = Notification.Name("quoin.redo")
+    static let exportNotification = Notification.Name("quoin.export")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Quoin has its own document tabs; the system window-tab items

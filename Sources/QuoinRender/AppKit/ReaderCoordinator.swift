@@ -407,6 +407,9 @@ extension MarkdownReaderView {
                   let textView else { return }
             let selection = textView.selectedRange()
 
+            // Focus mode follows the caret across blocks.
+            refreshFocusDimmingOnSelectionChange(in: textView)
+
             // Span-level syntax reveal: as the caret moves inside the
             // active block, re-style it so only the caret's span shows its
             // delimiters. Attribute-only pass; the text never changes.
@@ -604,6 +607,53 @@ extension MarkdownReaderView {
             var contentEnd = ns.length
             while contentEnd > 0, ns.character(at: contentEnd - 1) == 0x0A { contentEnd -= 1 }
             return blockRange.location + min(max(0, mapped), contentEnd)
+        }
+
+        // MARK: Focus mode
+
+        /// The block the dimming currently spares, plus whether dimming is
+        /// applied at all — the dedupe that keeps caret blinks and scroll
+        /// passes from re-painting rendering attributes.
+        private var focusDimmedForBlock: BlockID?
+        private var focusDimmingActive = false
+
+        /// Focus mode: every block except the caret's recedes to 30% ink.
+        /// Rendering attributes only (TextKit 2 overlay) — glyphs keep
+        /// their layout exactly; nothing reflows, nothing re-renders, and
+        /// the projection's real attributes are untouched.
+        func applyFocusDimming(in textView: NSTextView, theme: Theme) {
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let storage = contentStorage.textStorage
+            else { return }
+            let enabled = parent.focusModeEnabled && storage.length > 0
+            let caret = textView.selectedRange().location
+            let currentBlock = enabled ? blockID(atCharIndex: min(caret, max(0, storage.length - 1))) : nil
+
+            guard enabled != focusDimmingActive
+                    || currentBlock != focusDimmedForBlock
+                    || appliedRevision != focusAppliedRevision else { return }
+            focusDimmingActive = enabled
+            focusDimmedForBlock = currentBlock
+            focusAppliedRevision = appliedRevision
+
+            layoutManager.removeRenderingAttribute(
+                .foregroundColor, for: contentStorage.documentRange)
+            guard enabled else { return }
+            let dimmed = theme.ink.withAlphaComponent(0.3)
+            for (id, range) in blockRanges where id != currentBlock {
+                guard let textRange = nsTextRange(range, in: contentStorage) else { continue }
+                layoutManager.addRenderingAttribute(
+                    .foregroundColor, value: dimmed, for: textRange)
+            }
+        }
+        private var focusAppliedRevision = -2
+
+        /// Caret moved into a different block while focus mode is on —
+        /// called from the selection-change path.
+        func refreshFocusDimmingOnSelectionChange(in textView: NSTextView) {
+            guard parent.focusModeEnabled else { return }
+            applyFocusDimming(in: textView, theme: parent.theme)
         }
 
         /// ⌘↩ / Format ▸ Edit Source: toggles the block under the caret
