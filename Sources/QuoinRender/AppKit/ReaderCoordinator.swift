@@ -115,6 +115,19 @@ extension MarkdownReaderView {
             storage.beginEditing()
             storage.replaceCharacters(in: oldChanged, with: replacement)
             storage.endEditing()
+            // The string splice bounds the TEXT change, but attributes can
+            // differ far beyond it: a revealed callout's body is
+            // string-identical to its rendered text (only the reveal tint
+            // and chrome differ), and a re-rendered diagram is the same
+            // U+FFFC attachment character carrying a NEW attachment. The
+            // string-trimmed splice kept those characters with their stale
+            // attributes — the shipped symptom family (ledger #4/#8):
+            // callout boxes shrunk to their title line, reveal tint
+            // stranded on neighbors, ✓ done frames surviving close, and
+            // live previews that never updated. Sync attribute runs across
+            // the whole document after the splice (walks runs, not
+            // characters).
+            _ = syncAttributesWhereDifferent(in: storage, to: newAttr)
             return NSRange(location: prefix, length: newChangedLen)
         }
 

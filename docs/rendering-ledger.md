@@ -29,7 +29,7 @@ then pin open → type → close equivalence against a fresh full render;
 fix what the test exposes, including QuoinTextView.noteStorageEdit run
 maintenance if implicated.
 
-## #7 — Diagrams/math must require the explicit ‹/› edit click — OPEN
+## #7 — Diagrams/math must require the explicit ‹/› edit click — FIXED (937adcd)
 
 *Directive 2026-07-10.* Double-clicking (or typing on) a rendered
 diagram/equation must NOT flip it to source — those are presentation
@@ -103,7 +103,7 @@ follow the span-delimiter rule — the entity under/near the caret shows
 its full literal source (`&amp;`), others may stay collapsed; a line of
 naked ampersands is never acceptable.
 
-## #2 — Nested content inside loose list items escapes the item — OPEN
+## #2 — Nested content inside loose list items escapes the item — FIXED (937adcd)
 
 *Reported 2026-07-10 (kitchen-sink §6.4 Loose Lists).* Two symptoms, one
 family with #1: (a) a continuation paragraph belonging to a loose item
@@ -113,8 +113,11 @@ the item's content; (b) a fenced code block inside a loose item draws
 its canvas full-width, breaking out of the list exactly like #1's quote
 case. Expected: nested content aligns under the item's text column;
 boxed children inset accordingly.
+*Fix note:* cards carry `BlockDecoration.leadingInset`; the quote RULE still
+pauses alongside a nested card (one decoration attribute per range) — tracked
+as polish, the inset canvas reads as nested either way.
 
-## #1 — Code block inside a blockquote breaks out of the quote — OPEN
+## #1 — Code block inside a blockquote breaks out of the quote — FIXED (937adcd)
 
 *Reported 2026-07-10 (kitchen-sink §5 Blockquotes).* A fenced code block
 nested in a blockquote draws its dark canvas at FULL column width,
