@@ -59,7 +59,20 @@ public enum BlockEditing {
         } else if blockIndex > 0 {
             start = blocks[blockIndex - 1].range.upperBound
         } else {
-            end = source.utf8.count // sole block: take trailing bytes too
+            // Sole block: consume only the block's own line terminator.
+            // Taking everything to EOF (the old behavior) erased trailing
+            // bytes that belong to no rendered block — blank lines, stray
+            // whitespace, link reference definitions — breaking the
+            // byte-lossless rule (launch ledger, data integrity #15).
+            let utf8 = source.utf8
+            var index = utf8.index(utf8.startIndex, offsetBy: end)
+            if index < utf8.endIndex, utf8[index] == 0x0D { // CR of a CRLF
+                end += 1
+                index = utf8.index(after: index)
+            }
+            if index < utf8.endIndex, utf8[index] == 0x0A { // LF
+                end += 1
+            }
         }
         return SourceEdit(range: ByteRange(offset: start, length: end - start), replacement: "")
     }
