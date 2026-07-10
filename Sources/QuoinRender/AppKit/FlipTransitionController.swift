@@ -210,6 +210,11 @@ final class FlipTransitionController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
+    /// True while a frozen cover is mounted — subordinate motion (the
+    /// preview panel) must present directly under it; the cover owns the
+    /// transition.
+    var isCovering: Bool { container != nil }
+
     /// Truncate to the end state: remove every overlay immediately.
     func cancel() {
         pending = nil

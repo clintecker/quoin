@@ -808,8 +808,25 @@ extension MarkdownReaderView {
         var flipTransition: FlipTransitionController?
 
         /// The side-by-side preview panel (ledger #6b), created lazily and
-        /// repositioned from the editing frame's drawn geometry.
+        /// repositioned from the editing frame's drawn geometry. Its
+        /// presentation runs through the choreographer — the raw per-draw
+        /// stream never reaches Core Animation directly.
         private var previewPanel: PreviewPanelView?
+        private var panelChoreographer = PreviewPanelChoreographer()
+        private var panelBadgeVisible = false
+        private var panelRecheck: DispatchWorkItem?
+        private var lastPanelFrameBox: CGRect?
+
+        /// Minimum source-column width before the panel yields (narrow
+        /// windows: readable source beats a squeezed preview — ~44 mono
+        /// chars, enough for a real mermaid edge line).
+        private static let minimumSourceWidth: CGFloat = 340
+
+        /// The badge is two words; the full explanation rides its tooltip.
+        private func statusTooltip(for panel: RenderedDocument.PreviewPanel) -> String? {
+            panel.statusMessage == nil ? nil
+                : "The source doesn't parse yet. The last valid render stays until it does."
+        }
 
         /// Shows/hides/positions the preview panel for the current
         /// projection. `frameBox` is the drawn editing frame in text-view
@@ -824,10 +841,23 @@ extension MarkdownReaderView {
                         + "panel=\(panel == nil ? "nil" : "img@\(UInt(bitPattern: ObjectIdentifier(panel!.image).hashValue) % 100_000)")"
                         + " status=\(panel?.statusMessage != nil) active=\(parent.rendered.activeBlockID != nil) rev=\(parent.rendered.revision)")
             }
+            lastPanelFrameBox = frameBox
+            panelRecheck?.cancel()
+            panelRecheck = nil
+            let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            let panelWidth = AttributedRenderer.previewPanelWidth
             guard let frameBox,
                   let panel = parent.rendered.previewPanel,
-                  parent.rendered.activeBlockID != nil else {
-                previewPanel?.isHidden = true
+                  parent.rendered.activeBlockID != nil,
+                  frameBox.width - panelWidth >= Self.minimumSourceWidth else {
+                panelChoreographer.reset()
+                panelBadgeVisible = false
+                previewPanel?.dismiss()
+                if let quoinView = textView as? QuoinTextView,
+                   quoinView.editingFrameTintOverride != nil {
+                    quoinView.editingFrameTintOverride = nil
+                    quoinView.redrawDecorations()
+                }
                 return
             }
             let view: PreviewPanelView
@@ -838,12 +868,58 @@ extension MarkdownReaderView {
                 textView.addSubview(view)
                 previewPanel = view
             }
-            view.present(
-                image: panel.image,
-                statusMessage: panel.statusMessage,
-                in: frameBox,
-                panelWidth: AttributedRenderer.previewPanelWidth
-            )
+
+            let plan = panelChoreographer.plan(
+                for: .init(image: panel.image,
+                           paused: panel.statusMessage != nil,
+                           revision: parent.rendered.revision),
+                at: ProcessInfo.processInfo.systemUptime)
+            // A mounted flip cover owns the transition — the panel
+            // presents directly beneath it. (The coordinator always runs
+            // on main; the controller is @MainActor.)
+            var suppress = reduceMotion
+            if let flipTransition,
+               MainActor.assumeIsolated({ flipTransition.isCovering }) {
+                suppress = true
+            }
+            view.apply(plan, in: frameBox, panelWidth: panelWidth,
+                       statusMessage: statusTooltip(for: panel),
+                       suppressAnimation: suppress)
+            // Ambient status at the locus's edge: the editing frame's
+            // stroke turns amber while paused is ADMITTED (a cut, not a
+            // fade — binary signals that fade read as uncertainty).
+            let tint: NSColor? = plan.showsPausedBadge ? .systemOrange : nil
+            if let quoinView = textView as? QuoinTextView,
+               quoinView.editingFrameTintOverride != tint {
+                quoinView.editingFrameTintOverride = tint
+                quoinView.redrawDecorations()
+            }
+
+            // VoiceOver hears pause/resume when the badge transitions —
+            // silence would strand a non-sighted user on a frozen artifact.
+            if plan.showsPausedBadge != panelBadgeVisible {
+                NSAccessibility.post(
+                    element: textView,
+                    notification: .announcementRequested,
+                    userInfo: [
+                        .announcement: plan.showsPausedBadge
+                            ? "Preview paused — showing the last good render"
+                            : "Preview resumed",
+                        .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                    ])
+            }
+            panelBadgeVisible = plan.showsPausedBadge
+
+            // A swap or badge decision is pending on time — re-evaluate
+            // exactly when the choreographer asked.
+            if let after = plan.recheckAfter {
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.updatePreviewPanel(editingFrame: self.lastPanelFrameBox)
+                }
+                panelRecheck = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + after, execute: work)
+            }
         }
 
         /// The on-screen y (distance from the viewport's top) of a block's

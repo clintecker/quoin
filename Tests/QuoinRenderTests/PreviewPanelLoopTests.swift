@@ -103,12 +103,13 @@ final class PreviewPanelLoopTests: XCTestCase {
         coordinator.blockRanges = fixedProjection.blockRanges
         coordinator.updatePreviewPanel(editingFrame: frameBox)
 
-        let fixedImage = try XCTUnwrap(panelImageView(in: textView)?.image)
         XCTAssertNil(fixedProjection.previewPanel?.statusMessage,
                      "fixed source is healthy — no paused note")
-        XCTAssertFalse(fixedImage === healthyImage || fixedImage.size == .zero
-                        ? fixedImage === healthyImage && fixedProjection.previewPanel?.statusMessage != nil
-                        : false, "sanity")
+        // Good news is instant: the fixing render lands with the very
+        // keystroke, no debounce, no waiting on any timer. (A held stale
+        // image here is exactly the 'fixed chart never re-renders'
+        // failure shape.)
+        let fixedImage = try XCTUnwrap(panelImageView(in: textView)?.image)
         XCTAssertTrue(fixedImage === fixedProjection.previewPanel?.image,
                       "the panel view shows the projection's CURRENT image — " +
                       "'the fixed node never re-renders' was the field report")

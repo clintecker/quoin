@@ -58,6 +58,11 @@ final class QuoinTextView: NSTextView {
     /// preview panel positions itself against it.
     var onEditingFrameGeometry: ((CGRect?) -> Void)?
 
+    /// Ambient paused status: while the live preview is paused (admitted),
+    /// the editing frame's stroke turns this color instead of the accent.
+    /// Set by the coordinator; changes as a cut, never a fade.
+    var editingFrameTintOverride: NSColor?
+
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let menu = super.menu(for: event) else { return nil }
         let point = convert(event.locationInWindow, from: nil)
@@ -343,30 +348,37 @@ final class QuoinTextView: NSTextView {
             context.fillPath()
 
         case .editingFrame(let accent):
-            // The open block's mode chrome: 1.5pt accent frame with the
-            // drawn ✓ done chip at its top-right (mode indicators are never
+            // The open block's mode chrome: 1.5pt frame with the drawn
+            // ✓ done chip at its top-right (mode indicators are never
             // hover-gated). Drawn ink only — the revealed source under it
-            // stays 1:1 with the file.
+            // stays 1:1 with the file. The stroke turns amber while the
+            // live preview is paused (ambient status at the locus's edge).
+            let stroke = editingFrameTintOverride ?? accent
             let rect = box.insetBy(dx: -4, dy: -4)
             context.addPath(CGPath(
                 roundedRect: rect.insetBy(dx: 0.75, dy: 0.75),
                 cornerWidth: 8, cornerHeight: 8, transform: nil
             ))
-            context.setStrokeColor(accent.withAlphaComponent(0.8).cgColor)
+            context.setStrokeColor(stroke.withAlphaComponent(0.8).cgColor)
             context.setLineWidth(1.5)
             context.strokePath()
+            // ✓ done wears the same chip shape as its siblings (‹/› edit,
+            // ⧉ copy): capsule fill, radius 6, 2×6 padding.
             let label = NSAttributedString(string: "✓ done", attributes: [
                 .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
                 .foregroundColor: accent,
             ])
             let size = label.size()
             let chip = CGRect(
-                x: rect.maxX - size.width - 10,
+                x: rect.maxX - size.width - 6 - 10,
                 y: rect.minY + 5,
-                width: size.width,
-                height: size.height
+                width: size.width + 12,
+                height: size.height + 4
             )
-            label.draw(at: chip.origin)
+            context.addPath(CGPath(roundedRect: chip, cornerWidth: 6, cornerHeight: 6, transform: nil))
+            context.setFillColor(accent.withAlphaComponent(0.12).cgColor)
+            context.fillPath()
+            label.draw(at: CGPoint(x: chip.minX + 6, y: chip.minY + 2))
             doneChipRect = chip
             // Side-by-side preview panel tracks this frame (mutating the
             // view hierarchy mid-draw is illegal — next turn).
