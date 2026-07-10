@@ -61,7 +61,7 @@ the revealed source's paragraphs taking a tailIndent to make room; or
 NSTextContainer exclusion paths. Needs a taste pass — sketch both,
 pick with Clint.
 
-## #5 — Revealed indented code block: styled as markdown, caret lands oddly — OPEN
+## #5 — Revealed indented code block: styled as markdown, caret lands oddly — FIXED (styling; caret uses the generic walk)
 
 *Reported 2026-07-10 (kitchen-sink §7.1 Indented Code Block).* Clicking
 into an indented (non-fenced) code block reveals source where markdown
