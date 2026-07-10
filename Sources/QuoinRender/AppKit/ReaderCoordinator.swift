@@ -743,6 +743,39 @@ extension MarkdownReaderView {
 
         // MARK: Scroll anchoring
 
+        /// The block's full on-screen rect (viewport coordinates: y is the
+        /// distance from the viewport's top), or nil when geometry is
+        /// unavailable. The flip motion system measures the flipped block
+        /// with this on both sides of the splice.
+        func blockScreenRect(_ range: NSRange, in textView: NSTextView) -> CGRect? {
+            guard let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let textRange = nsTextRange(range, in: contentStorage),
+                  let clip = textView.enclosingScrollView?.contentView
+            else { return nil }
+            layoutManager.ensureLayout(for: textRange)
+            var union: CGRect?
+            layoutManager.enumerateTextLayoutFragments(
+                from: textRange.location, options: [.ensuresLayout]
+            ) { fragment in
+                if fragment.rangeInElement.location.compare(textRange.endLocation) != .orderedAscending {
+                    return false
+                }
+                let frame = fragment.layoutFragmentFrame
+                union = union.map { $0.union(frame) } ?? frame
+                return true
+            }
+            guard var rect = union else { return nil }
+            rect.origin.x = 0
+            rect.origin.y += textView.textContainerOrigin.y - clip.bounds.origin.y
+            rect.size.width = clip.bounds.width
+            return rect
+        }
+
+        /// The motion layer for activate/deactivate flips; owned here so it
+        /// shares the view lifetime.
+        var flipTransition: FlipTransitionController?
+
         /// The on-screen y (distance from the viewport's top) of a block's
         /// first laid-out fragment, or nil when geometry is unavailable.
         /// Captured BEFORE an activate/deactivate splice so the flipped

@@ -176,6 +176,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         }
 
         context.coordinator.textView = textView
+        context.coordinator.flipTransition = FlipTransitionController(
+            scrollView: scrollView, textView: textView)
         textView.onDoubleClick = { [weak coordinator = context.coordinator] index in
             coordinator?.activateEmbedBlock(atCharIndex: index) ?? false
         }
@@ -223,6 +225,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
             && caretGeneration != coordinator.appliedCaretGeneration
             && rendered.activeEditableRange != nil
         var caretLineAnchorY: CGFloat?
+        var flipMotionID: BlockID?
 
         if coordinator.appliedRevision != rendered.revision,
            let storage = textView.textContentStorage?.textStorage {
@@ -253,6 +256,20 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 if screenY > -viewport * 2, screenY < viewport * 2 {
                     flipAnchor = (flipID, screenY)
                 }
+            }
+            // Motion (embed-editing brief, Phase 3): freeze the current
+            // pixels before the splice so the flip can animate. A non-flip
+            // projection (typing) instead truncates any transition still
+            // running — a storage mutation invalidates frozen pixels.
+            if flipPending,
+               let flipID = rendered.activeBlockID ?? coordinator.lastActiveBlockID,
+               let oldRange = coordinator.blockRanges[flipID],
+               let oldRect = coordinator.blockScreenRect(oldRange, in: textView),
+               oldRect.minY < viewport, oldRect.maxY > 0 {
+                flipMotionID = flipID
+                coordinator.flipTransition?.capture(oldBlockRect: oldRect)
+            } else {
+                coordinator.flipTransition?.cancel()
             }
             coordinator.suppressSelectionCallback = true
             let preSelection = textView.selectedRange()
@@ -397,6 +414,19 @@ public struct MarkdownReaderView: NSViewRepresentable {
             if textView.window?.firstResponder !== textView {
                 textView.window?.makeFirstResponder(textView)
             }
+        }
+
+        // Motion, second half: with the splice applied and the pin's settle
+        // pass already queued, measure the flipped block's REAL new
+        // geometry and start the choreography — its animations enqueue
+        // behind the settle, so they converge on truth, never estimates.
+        if let flipMotionID,
+           let newRange = rendered.blockRanges[flipMotionID],
+           let storage = textView.textContentStorage?.textStorage,
+           let newRect = coordinator.blockScreenRect(newRange, in: textView) {
+            coordinator.flipTransition?.run(newBlockRect: newRect, documentLength: storage.length)
+        } else if flipMotionID != nil {
+            coordinator.flipTransition?.cancel()
         }
 
         QuoinPerformanceTrace.measure("render.search.apply", metadata: "query_empty=\(searchQuery.isEmpty)") {
