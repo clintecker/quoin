@@ -269,8 +269,12 @@ public struct MarkdownReaderView: NSViewRepresentable {
             if let caretLineAnchorY {
                 // Flip: the caret's line goes back exactly where the user
                 // was looking (the clicked table row, the list item the
-                // arrow key entered) regardless of the height change.
-                coordinator.pinCaretLine(at: location, toScreenY: caretLineAnchorY, in: textView)
+                // arrow key entered) regardless of the height change. The
+                // revealed block's full range is laid out first so the pin
+                // measures real geometry, not estimates.
+                coordinator.pinCaretLine(
+                    at: location, toScreenY: caretLineAnchorY, in: textView,
+                    ensuringLayoutOf: rendered.activeBlockID.flatMap { rendered.blockRanges[$0] })
             } else {
                 // Edit round-trip: scroll ONLY if the caret left the
                 // viewport, and then by the minimal amount — arrowing and

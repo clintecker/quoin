@@ -519,7 +519,8 @@ extension MarkdownReaderView {
         /// un-laid-out splice region is what briefly draws overlapping
         /// lines. Content above the splice is untouched by the flip, so the
         /// fragment frame is exact once the range itself is laid out.
-        func scrollBlockTop(_ range: NSRange, toScreenY screenY: CGFloat, in textView: NSTextView) {
+        func scrollBlockTop(_ range: NSRange, toScreenY screenY: CGFloat, in textView: NSTextView,
+                            settle: Bool = true) {
             guard let layoutManager = textView.textLayoutManager,
                   let contentStorage = textView.textContentStorage,
                   let textRange = nsTextRange(range, in: contentStorage),
@@ -533,9 +534,21 @@ extension MarkdownReaderView {
             // don't touch the clip view for a sub-point correction, or
             // keyboard traversal picks up a micro-jitter at every block
             // boundary.
-            guard abs(y - clip.bounds.origin.y) > 0.5 else { return }
-            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
-            textView.enclosingScrollView?.reflectScrolledClipView(clip)
+            if abs(y - clip.bounds.origin.y) > 0.5 {
+                clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+                textView.enclosingScrollView?.reflectScrolledClipView(clip)
+            }
+            guard settle else { return }
+            // Second pass after TextKit resolves estimated geometry for the
+            // spliced region (see pinCaretLine — same lie, same cure).
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, let textView,
+                      let layoutManager = textView.textLayoutManager else { return }
+                if let viewport = layoutManager.textViewportLayoutController.viewportRange {
+                    layoutManager.ensureLayout(for: viewport)
+                }
+                self.scrollBlockTop(range, toScreenY: screenY, in: textView, settle: false)
+            }
         }
 
         /// The on-screen y of the LINE containing `location` (distance from
@@ -556,19 +569,48 @@ extension MarkdownReaderView {
         /// Scrolls so the line containing `location` sits at `screenY` from
         /// the viewport top — restoring the user's point of attention after
         /// a projection change, whatever happened to the heights around it.
-        func pinCaretLine(at location: Int, toScreenY screenY: CGFloat, in textView: NSTextView) {
+        ///
+        /// TWO passes, because TextKit 2 lies at first: the immediate pin
+        /// measures against whatever geometry exists NOW — and a fresh
+        /// splice's heights are ESTIMATES that can settle hundreds of points
+        /// away (a link-heavy list wraps its revealed source; a block
+        /// spanning the fold resolves lazily). The reported symptom: click a
+        /// list item near the fold and the whole list dives down-screen.
+        /// So: eagerly lay out the revealed block first (real within-block
+        /// geometry), pin, then re-pin on the next runloop turn after
+        /// ensuring the viewport's real layout — idempotent, and a no-op
+        /// when the first pin was already right.
+        func pinCaretLine(
+            at location: Int, toScreenY screenY: CGFloat, in textView: NSTextView,
+            ensuringLayoutOf blockRange: NSRange? = nil, settle: Bool = true
+        ) {
             guard let layoutManager = textView.textLayoutManager,
                   let contentStorage = textView.textContentStorage,
                   let textRange = nsTextRange(NSRange(location: location, length: 0), in: contentStorage),
                   let clip = textView.enclosingScrollView?.contentView
             else { return }
+            if let blockRange, let blockTextRange = nsTextRange(blockRange, in: contentStorage) {
+                layoutManager.ensureLayout(for: blockTextRange)
+            }
             layoutManager.ensureLayout(for: textRange)
             guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { return }
             let documentY = fragment.layoutFragmentFrame.minY + textView.textContainerOrigin.y
             let y = max(0, documentY - screenY)
-            guard abs(y - clip.bounds.origin.y) > 0.5 else { return }
-            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
-            textView.enclosingScrollView?.reflectScrolledClipView(clip)
+            if abs(y - clip.bounds.origin.y) > 0.5 {
+                clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y))
+                textView.enclosingScrollView?.reflectScrolledClipView(clip)
+            }
+            guard settle else { return }
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self, let textView,
+                      let layoutManager = textView.textLayoutManager else { return }
+                // Settle the geometry the user is about to see, then correct.
+                if let viewport = layoutManager.textViewportLayoutController.viewportRange {
+                    layoutManager.ensureLayout(for: viewport)
+                }
+                self.pinCaretLine(at: location, toScreenY: screenY, in: textView,
+                                  ensuringLayoutOf: blockRange, settle: false)
+            }
         }
 
         /// Scrolls only when the caret is NOT already visible — and then by
