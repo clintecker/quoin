@@ -150,11 +150,16 @@ final class FlipTransitionController {
     /// the splice + pin (the animation itself starts on the next runloop
     /// turn, behind the pin's settle pass, so it converges on REAL
     /// geometry, never estimates).
+    /// Overrides the system Reduce Motion setting; tests pin it (CI
+    /// runners report Reduce Motion ON, which silently switches the plan).
+    var reduceMotionOverride: Bool?
+
     func run(newBlockRect: CGRect, documentLength: Int) {
         guard let capture = pending else { return }
         pending = nil
         guard let scrollView else { return }
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let reduceMotion = reduceMotionOverride
+            ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let plan = Self.plan(
             oldBlockHeight: capture.oldBlockRect.height,
             newBlockHeight: newBlockRect.height,

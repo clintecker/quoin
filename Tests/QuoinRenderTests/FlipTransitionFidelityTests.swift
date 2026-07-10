@@ -65,8 +65,12 @@ final class FlipTransitionFidelityTests: XCTestCase {
         scroll.contentView.scroll(to: NSPoint(x: 0, y: 300))
         scroll.reflectScrolledClipView(scroll.contentView)
 
-        // Capture + mount slices for a large-delta flip.
+        // Capture + mount slices for a large-delta flip. Reduce Motion is
+        // pinned OFF: CI runners report it ON, which legitimately switches
+        // the plan to a full-viewport crossfade (covered separately below)
+        // and mounts a different overlay than this test dissects.
         let controller = FlipTransitionController(scrollView: scroll, textView: textView)
+        controller.reduceMotionOverride = false
         let oldBlockRect = CGRect(x: 0, y: 100, width: 600, height: 150)
         controller.capture(oldBlockRect: oldBlockRect)
         controller.run(newBlockRect: CGRect(x: 0, y: 100, width: 600, height: 40),
@@ -219,6 +223,37 @@ final class FlipTransitionFidelityTests: XCTestCase {
         XCTAssertTrue(scroll.subviews.allSatisfy {
             !String(describing: type(of: $0)).contains("OverlayContainer")
         }, "cancel must remove the cover")
+    }
+
+    /// Reduce Motion collapses every flip to a single full-viewport
+    /// crossfade cover — discovered as a CI-runner surprise (headless
+    /// runners report it ON) and pinned here as intended behavior.
+    func testReduceMotionMountsASingleFullViewportCover() throws {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textView = QuoinTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 800))
+        scroll.documentView = textView
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = scroll
+        defer { window.orderOut(nil) }
+        textView.textContentStorage?.textStorage?.setAttributedString(
+            NSAttributedString(string: String(repeating: "content line\n", count: 100)))
+
+        let controller = FlipTransitionController(scrollView: scroll, textView: textView)
+        controller.reduceMotionOverride = true
+        controller.capture(oldBlockRect: CGRect(x: 0, y: 100, width: 600, height: 150))
+        controller.run(newBlockRect: CGRect(x: 0, y: 100, width: 600, height: 40),
+                       documentLength: 1_000)
+
+        let container = try XCTUnwrap(scroll.subviews.first {
+            String(describing: type(of: $0)).contains("OverlayContainer")
+        })
+        XCTAssertEqual(container.subviews.count, 1, "one cover, no slices")
+        let cover = try XCTUnwrap(container.subviews.first)
+        XCTAssertEqual(cover.frame.height, scroll.contentView.bounds.height, accuracy: 1,
+                       "the cover spans the viewport")
+        controller.cancel()
     }
 
     func testCancelRemovesTheCoverUnconditionally() throws {
