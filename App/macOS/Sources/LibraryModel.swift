@@ -211,9 +211,12 @@ final class LibraryModel {
     /// its URL — the guide and welcome docs are LIVE documents, editable
     /// like everything else, never read-only bundle views.
     func materializeBundledDocument(resource: String, as filename: String) -> URL? {
-        guard let rootURL,
-              let source = Bundle.main.url(forResource: resource, withExtension: "md")
-        else { return nil }
+        // XcodeGen folder-type resources land under Resources/ inside the
+        // bundle; a plain lookup returned nil and the Welcome/Guide
+        // buttons silently did nothing (field report).
+        let source = Bundle.main.url(forResource: resource, withExtension: "md")
+            ?? Bundle.main.url(forResource: resource, withExtension: "md", subdirectory: "Resources")
+        guard let rootURL, let source else { return nil }
         let destination = rootURL.appendingPathComponent(filename)
         if !FileManager.default.fileExists(atPath: destination.path) {
             guard (try? FileManager.default.copyItem(at: source, to: destination)) != nil else {

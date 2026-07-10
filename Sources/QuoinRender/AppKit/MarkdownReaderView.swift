@@ -513,6 +513,16 @@ public struct MarkdownReaderView: NSViewRepresentable {
         // caret, or the toggle changed (rendering attributes — no layout).
         coordinator.applyFocusDimming(in: textView, theme: theme)
 
+        // A freshly opened document must be TYPEABLE immediately — ⌘N
+        // then typing did nothing until a manual click (field report).
+        // Claim first responder exactly once, when the window exists.
+        if !coordinator.hasClaimedInitialFocus, let window = textView.window {
+            coordinator.hasClaimedInitialFocus = true
+            if window.firstResponder === window || window.firstResponder == nil {
+                window.makeFirstResponder(textView)
+            }
+        }
+
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {
             coordinator.appliedScrollGeneration = scrollGeneration
             if let range = rendered.blockRanges[scrollTarget] {

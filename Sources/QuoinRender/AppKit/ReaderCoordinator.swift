@@ -30,6 +30,8 @@ extension MarkdownReaderView {
         var appliedCaretGeneration: Int = -1
         var appliedFormatGeneration: Int = 0
         var appliedEditSourceToggleGeneration: Int = 0
+        /// One-shot initial focus claim (⌘N must be typeable immediately).
+        var hasClaimedInitialFocus = false
         var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []

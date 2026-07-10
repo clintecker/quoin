@@ -825,4 +825,13 @@ final class ReaderModel {
         }
         liveSessions.removeAll { $0() == nil }
     }
+
+    /// Main-actor-synchronous snapshot for the termination path: the
+    /// delegate grabs the sessions HERE (on main, where the registry
+    /// lives) and flushes them on a detached executor — a plain
+    /// MainActor Task may never run in the terminateLater runloop mode,
+    /// which is exactly how the first flush implementation lost data.
+    static func liveSessionSnapshot() -> [DocumentSession] {
+        liveSessions.compactMap { $0() }
+    }
 }

@@ -185,9 +185,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// ⌘Q inside the autosave debounce window used to drop the last
     /// keystrokes — drain every live session before the process dies.
+    /// The flush runs DETACHED (sessions are plain actors, not
+    /// main-actor): a MainActor Task is not guaranteed to execute while
+    /// the runloop spins in the terminateLater mode — the first
+    /// implementation of this method lost data exactly that way.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        Task { @MainActor in
-            await ReaderModel.flushAllSessions()
+        let sessions = ReaderModel.liveSessionSnapshot()
+        guard !sessions.isEmpty else { return .terminateNow }
+        Task.detached(priority: .userInitiated) {
+            for session in sessions {
+                try? await session.saveNow()
+            }
+            DispatchQueue.main.async {
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+        }
+        // Watchdog: never let a hung save wedge quit for more than 3s.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
