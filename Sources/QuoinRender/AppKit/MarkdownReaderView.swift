@@ -234,6 +234,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 }
             }
             coordinator.suppressSelectionCallback = true
+            let preSelection = textView.selectedRange()
+            let preLength = storage.length
             // Splice only the changed span into the live storage rather than
             // replacing the whole document. TextKit 2 then re-lays-out just
             // that region, so unchanged content keeps its exact layout and the
@@ -281,6 +283,20 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 ) {
                     layoutManager.ensureLayout(for: contentStorage.documentRange)
                 }
+            }
+            // A range selection straddling the changed region has no meaning
+            // in the new text — AppKit clamps the stale indexes into whatever
+            // the splice put there, which reads as a random selection.
+            // Collapse it to its start; selections clear of the change (and
+            // all carets) survive untouched. The caret-restore paths below
+            // override this when they apply.
+            if let collapsed = Coordinator.collapsedSelection(
+                preSelection,
+                changedOldRange: Coordinator.changedOldRange(
+                    for: application, oldLength: preLength, newLength: storage.length),
+                newLength: storage.length
+            ) {
+                textView.setSelectedRange(collapsed)
             }
             coordinator.renderedGeneration = rendered.attributed
             coordinator.appliedRevision = rendered.revision

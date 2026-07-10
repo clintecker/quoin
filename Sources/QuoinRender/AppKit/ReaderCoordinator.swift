@@ -185,6 +185,52 @@ extension MarkdownReaderView {
             case spliced(NSRange?)
         }
 
+        /// The pre-edit extent a projection application replaced, in OLD
+        /// (pre-application) coordinates — what a pre-existing selection
+        /// must be checked against. Patches carry their old ranges
+        /// directly; a splice reports its new range, so the old extent is
+        /// recovered from the length delta; a full replacement (nil splice)
+        /// is everything.
+        static func changedOldRange(
+            for application: ProjectionApplication, oldLength: Int, newLength: Int
+        ) -> NSRange? {
+            switch application {
+            case .patched(let patches):
+                return patches.reduce(nil as NSRange?) { union, patch in
+                    union.map { NSUnionRange($0, patch.oldRange) } ?? patch.oldRange
+                }
+            case .spliced(let newRange):
+                guard let newRange else {
+                    return NSRange(location: 0, length: oldLength)
+                }
+                let oldEnd = oldLength - (newLength - NSMaxRange(newRange))
+                return NSRange(location: newRange.location,
+                               length: max(0, oldEnd - newRange.location))
+            }
+        }
+
+        /// Where a RANGE selection goes when a projection changes the text
+        /// under it: nil when the selection is clear of the change and
+        /// survives as-is; otherwise a zero-length caret at its start —
+        /// AppKit would clamp the stale indexes into whatever content the
+        /// splice put there, which read as a random selection. Zero-length
+        /// changes (pure insertions) invalidate only when they land
+        /// strictly inside the selection.
+        static func collapsedSelection(
+            _ selection: NSRange, changedOldRange: NSRange?, newLength: Int
+        ) -> NSRange? {
+            guard selection.length > 0, let changed = changedOldRange else { return nil }
+            let intersects: Bool
+            if changed.length > 0 {
+                intersects = NSIntersectionRange(selection, changed).length > 0
+            } else {
+                intersects = changed.location > selection.location
+                    && changed.location < NSMaxRange(selection)
+            }
+            guard intersects else { return nil }
+            return NSRange(location: min(selection.location, newLength), length: 0)
+        }
+
         /// Applies a published projection to the live storage. Patches are
         /// trusted ONLY when the storage is exactly the state they were
         /// computed against (`patchBaseLength`): SwiftUI coalesces rapid
