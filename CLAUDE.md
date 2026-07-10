@@ -102,8 +102,34 @@ justification in the TRD first; the default answer is no.
   emphasis).
 - Interactive runs use link plumbing: `quoin-task://` (checkboxes),
   `quoin-anchor://` (heading jumps), `quoin-copy://` (code-block copy
-  button reads `QuoinAttribute.copySource`). Handle new schemes in
+  button reads `QuoinAttribute.copySource`), `quoin-edit://` (the
+  `‹/› edit` chips; toggles activation, closing with the Escape-identical
+  caret restore). Handle new schemes in
   `Coordinator.textView(_:clickedOnLink:at:)`.
+- Embed editing (docs/design/embed-editing-ux.md — implemented, all four
+  phases): caret hints carry their coordinate space as
+  `CaretHint.rendered/.source` — embed hints are SOURCE offsets (1:1 body
+  tag), prose hints are RENDERED offsets; feeding one through the other's
+  mapping re-ships a caret-lands-early bug. Typing on a rendered block
+  activates it AND replays the keystroke (`pendingInsertion` through
+  `activateBlock`). Revealed fragments are `RevealedFragment` (fragment +
+  editable subrange): mermaid/math reveals lead with a LIVE PREVIEW of
+  the artifact (last-good render held while mid-edit source is broken),
+  so `activeEditableRange` ≠ block start there — all three projection
+  paths (render loop, flip patch, per-keystroke ActiveBlockRenderPatch)
+  offset through `editableRange`, and the per-keystroke patch replaces
+  the whole old fragment so the preview refreshes. The open block's
+  `✓ done` chip + accent frame are the `editingFrame` DECORATION (drawn
+  ink with its own hit-testing/tooltip — never a text run; the revealed
+  source stays 1:1). Flips animate via `FlipTransitionController`
+  (snapshot overlay, delta-keyed, Reduce-Motion-aware, 500ms watchdog);
+  it is cosmetic by construction — real layout applies instantly.
+- Snapshot-overlay pixels: NEVER trust `CALayer.render(in:)` or a bare
+  CARenderer readout for orientation — each disagrees with the screen
+  differently (a mirrored overlay was built twice, each "verified" by one
+  of them). Slices are NSImageView on CGImage crops (raster-space,
+  upright in any hierarchy); FlipTransitionFidelityTests self-calibrates
+  its CARenderer readout with an NSImageView red/blue anchor.
 - Scroll-to-block commands (outline clicks) use `scrollTarget` +
   `scrollGeneration` — the generation bump is what re-fires a repeat click
   on the same heading; don't compare targets alone.

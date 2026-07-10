@@ -7,6 +7,18 @@ handoff, and the viewport-invariant work. This is the blueprint for the
 "embed editing" milestone: how entering/editing/exiting code, diagram, math,
 and table blocks should look, move, and feel.*
 
+**Status (2026-07-10): all four phases implemented and shipped**, plus
+tooltips and a stateful Format menu. Deltas from spec, each deliberate:
+chips are always-visible (matching `⧉ copy`; hover-gating deferred — no
+tracking machinery exists), the `✓ done` chip is decoration-drawn (a text
+run would break the revealed source's 1:1 mapping), the motion mechanism
+uses two slices (block crossfade + below-content slide; content above the
+pinned anchor never moves, so it is never covered), and the
+object-selection ring / Enter-to-open grammar remains queued. Bugs found
+by building it: embed caret hints were double-mapped (fixed with typed
+`CaretHint`), html-block hints off by one, `BlockDecoration` compared by
+pointer identity.
+
 ## The bar we are building to
 
 Hovering a diagram frames it softly and shows a quiet edit chip; opening it
