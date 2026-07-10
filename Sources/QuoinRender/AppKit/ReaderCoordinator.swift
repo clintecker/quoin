@@ -283,11 +283,22 @@ extension MarkdownReaderView {
 
         func reportTopBlock() {
             guard let textView else { return }
+            // Reading progress (idea #12): scroll fraction of the document.
+            if let onScrollProgress = parent.onScrollProgress,
+               let clip = textView.enclosingScrollView?.contentView {
+                let scrollable = max(1, textView.bounds.height - clip.bounds.height)
+                let fraction = min(1, max(0, clip.bounds.origin.y / scrollable))
+                if abs(fraction - lastReportedProgress) > 0.002 {
+                    lastReportedProgress = fraction
+                    onScrollProgress(fraction)
+                }
+            }
             let top = topVisibleBlockID(in: textView)
             guard top != lastReportedTopBlock else { return }
             lastReportedTopBlock = top
             parent.onTopBlockChange(top)
         }
+        private var lastReportedProgress: Double = -1
 
         // MARK: Links & checkboxes
 
@@ -323,6 +334,8 @@ extension MarkdownReaderView {
             }
             if let slug = QuoinLink.anchorSlug(from: url) {
                 if let blockID = parent.anchorResolver(slug), let range = blockRanges[blockID] {
+                    // Record where we were — ⌘[ brings the reader back.
+                    parent.onAnchorJump?(topVisibleBlockID(in: textView))
                     scrollBlockToTop(range, in: textView)
                 }
                 return true

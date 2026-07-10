@@ -205,6 +205,41 @@ final class LibraryModel {
         return candidate
     }
 
+    // MARK: - Recents (idea #13) + daily note (idea #14)
+
+    private static let recentsKey = "QuoinRecentDocuments"
+
+    /// Called on every document open; feeds quick open's empty-query list.
+    func recordOpen(_ url: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        UserDefaults.standard.set(Array(paths.prefix(20)), forKey: Self.recentsKey)
+    }
+
+    var recentDocuments: [URL] {
+        (UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? [])
+            .map { URL(fileURLWithPath: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Today's note: `Journal/YYYY-MM-DD.md`, created on first visit with
+    /// a date heading.
+    func dailyNote() -> URL? {
+        guard let rootURL else { return nil }
+        let journal = rootURL.appendingPathComponent("Journal", isDirectory: true)
+        try? FileManager.default.createDirectory(at: journal, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let name = formatter.string(from: Date())
+        let url = journal.appendingPathComponent("\(name).md")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            guard (try? Data("# \(name)\n\n".utf8).write(to: url)) != nil else { return nil }
+            rescan()
+        }
+        return url
+    }
+
     // MARK: - Quick open
 
     func runQuickOpen() {
@@ -215,8 +250,15 @@ final class LibraryModel {
         }
         let query = quickOpenQuery
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            // Empty query = the recents list: what you touched last is
+            // what you almost always want next (idea #13).
             quickOpenTask?.cancel()
-            quickOpenResults = []
+            quickOpenResults = recentDocuments.prefix(8).map {
+                QuickOpen.Result(
+                    url: $0,
+                    title: $0.deletingPathExtension().lastPathComponent,
+                    snippet: "", score: 0)
+            }
             return
         }
         quickOpenTask?.cancel()

@@ -29,6 +29,15 @@ struct ReaderScreen: View {
     @State private var isExportVisible = false
     /// Focus mode: everything but the paragraph you're on recedes.
     @AppStorage("QuoinFocusMode") private var isFocusMode = false
+    /// Typewriter scrolling: the caret line holds a fixed height.
+    @AppStorage("QuoinTypewriter") private var isTypewriter = false
+    /// Word-count goal (0 = off): progress shows in the status bar.
+    @AppStorage("QuoinWordGoal") private var wordGoal = 0
+    /// Jump history (TOC clicks, anchor links, breadcrumbs): ⌘[ / ⌘].
+    @State private var backStack: [BlockID] = []
+    @State private var forwardStack: [BlockID] = []
+    /// Reading progress, 0…1 (hairline under the toolbar).
+    @State private var scrollProgress: Double = 0
     @State private var isFindVisible = false
     @State private var searchQuery = ""
     @State private var activeMatch = 0
@@ -79,7 +88,10 @@ struct ReaderScreen: View {
                     model.document.blocks.first { $0.id == id }
                         .flatMap { model.document.source.substring(in: $0.range) }
                 },
-                focusModeEnabled: isFocusMode
+                focusModeEnabled: isFocusMode,
+                typewriterEnabled: isTypewriter,
+                onAnchorJump: { from in recordJump(from: from) },
+                onScrollProgress: { progress in scrollProgress = progress }
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -124,10 +136,20 @@ struct ReaderScreen: View {
                 outline: model.outline,
                 currentSectionID: currentSection?.id
             ) { headingID in
-                scrollTarget = headingID
-                scrollGeneration += 1
+                jump(to: headingID)
             }
             .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
+        }
+        // Reading progress hairline (idea #12): a quiet accent line along
+        // the editor's top edge, width = scroll fraction.
+        .overlay(alignment: .top) {
+            GeometryReader { proxy in
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.35))
+                    .frame(width: proxy.size.width * scrollProgress, height: 2)
+            }
+            .frame(height: 2)
+            .allowsHitTesting(false)
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -234,6 +256,10 @@ struct ReaderScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleFocusModeNotification)) { _ in
             isFocusMode.toggle()
         }
+        // View ▸ Typewriter Scrolling (⌥⌘T).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleTypewriterNotification)) { _ in
+            isTypewriter.toggle()
+        }
         // Lets the Format menu title follow the editing state.
         .focusedSceneValue(\.quoinIsEditingBlock, model.activeBlockID != nil)
         .background(hiddenShortcuts)
@@ -316,6 +342,11 @@ struct ReaderScreen: View {
             // ⌘0/⌥⌘0/⌥⌘F, ⌘Z/⇧⌘Z, ⌘B/I/⇧⌘H/⌘K, and ⇧⌘E now live in REAL
             // menus (View/Edit/Format/File — QuoinApp.commands); only the
             // find family and print stay window-local.
+            // Jump history (idea #7).
+            Button("") { goBack() }
+                .keyboardShortcut("[", modifiers: .command)
+            Button("") { goForward() }
+                .keyboardShortcut("]", modifiers: .command)
             // ⌘P keeps its system meaning: print.
             Button("") {
                 DocumentExporters.runPrintOperation(
@@ -332,6 +363,50 @@ struct ReaderScreen: View {
     private func fireFormat(_ command: FormatCommand) {
         formatCommand = command
         formatGeneration += 1
+    }
+
+    // MARK: - Jump history (idea #7): ⌘[ back, ⌘] forward
+
+    /// Record the pre-jump position; any new jump clears the forward stack.
+    private func recordJump(from: BlockID?) {
+        guard let from else { return }
+        backStack.append(from)
+        forwardStack.removeAll()
+    }
+
+    /// Navigate to a heading, recording history (TOC, breadcrumb).
+    private func jump(to id: BlockID) {
+        recordJump(from: topBlockID)
+        scrollTarget = id
+        scrollGeneration += 1
+    }
+
+    private func goBack() {
+        guard let target = backStack.popLast() else { return }
+        if let here = topBlockID { forwardStack.append(here) }
+        scrollTarget = target
+        scrollGeneration += 1
+    }
+
+    private func goForward() {
+        guard let target = forwardStack.popLast() else { return }
+        if let here = topBlockID { backStack.append(here) }
+        scrollTarget = target
+        scrollGeneration += 1
+    }
+
+    /// The ancestor chain of the current section (H1 › H2 › …), for the
+    /// status-bar breadcrumb (idea #6).
+    private var breadcrumb: [HeadingInfo] {
+        guard let current = currentSection else { return [] }
+        var path: [HeadingInfo] = [current]
+        var level = current.level
+        guard let index = model.outline.firstIndex(where: { $0.id == current.id }) else { return path }
+        for heading in model.outline[..<index].reversed() where heading.level < level {
+            path.insert(heading, at: 0)
+            level = heading.level
+        }
+        return path
     }
 
     // MARK: - Merge banner (non-blocking, per handoff)
@@ -387,12 +462,33 @@ struct ReaderScreen: View {
         VStack(spacing: 0) {
             Divider()
             HStack {
-                if let section = currentSection {
-                    Text("§ \(section.title)")
-                        .lineLimit(1)
+                // Breadcrumb (idea #6): the current section as a clickable
+                // ancestor path — jump to any level.
+                if !breadcrumb.isEmpty {
+                    Menu {
+                        ForEach(breadcrumb) { heading in
+                            Button(heading.title) { jump(to: heading.id) }
+                        }
+                    } label: {
+                        Text("§ " + breadcrumb.map(\.title).joined(separator: " › "))
+                            .lineLimit(1)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Jump to a section in the current path")
                 }
                 Spacer()
-                StatsButton(stats: model.stats)
+                // Word-count goal (idea #3): quiet progress next to stats.
+                if wordGoal > 0 {
+                    let fraction = min(1, Double(model.stats.wordCount) / Double(wordGoal))
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                        .frame(width: 56)
+                        .tint(fraction >= 1 ? .green : .accentColor)
+                        .help("\(model.stats.wordCount) of \(wordGoal) words")
+                }
+                StatsButton(stats: model.stats, wordGoal: $wordGoal)
             }
             .font(.system(size: 10.5, design: .monospaced))
             .foregroundStyle(.secondary)
@@ -630,6 +726,7 @@ private struct OutlineRow: View {
 
 struct StatsButton: View {
     let stats: DocumentStats
+    var wordGoal: Binding<Int>?
     @State private var isPresented = false
 
     private var summary: String {
@@ -646,7 +743,7 @@ struct StatsButton: View {
         }
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            StatsView(stats: stats)
+            StatsView(stats: stats, wordGoal: wordGoal)
         }
         .help("Document statistics")
     }
@@ -654,6 +751,7 @@ struct StatsButton: View {
 
 struct StatsView: View {
     let stats: DocumentStats
+    var wordGoal: Binding<Int>?
 
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
@@ -671,6 +769,17 @@ struct StatsView: View {
             if stats.taskTotal > 0 {
                 Divider()
                 row("Tasks", "\(stats.taskDone) of \(stats.taskTotal) done")
+            }
+            if let wordGoal {
+                Divider()
+                GridRow {
+                    Text("Word goal").foregroundStyle(.secondary)
+                    TextField("Off", value: wordGoal, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                        .multilineTextAlignment(.trailing)
+                        .help("Set a word-count goal (0 turns it off); progress shows in the status bar")
+                }
             }
         }
         .padding(16)

@@ -83,6 +83,16 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// Focus mode: every block except the caret's recedes to a fraction
     /// of its ink. Rendering attributes only — no reflow, no re-render.
     public let focusModeEnabled: Bool
+    /// Typewriter scrolling: while typing, the caret's line stays pinned
+    /// at a fixed height (~40% of the viewport) instead of drifting to
+    /// the fold.
+    public let typewriterEnabled: Bool
+    /// Fires before an in-document anchor jump with the block at the top
+    /// of the viewport — the host records it as back/forward history.
+    public let onAnchorJump: ((BlockID?) -> Void)?
+    /// Scroll position as a 0…1 fraction of the document (reading
+    /// progress hairline).
+    public let onScrollProgress: ((Double) -> Void)?
 
     public init(
         rendered: RenderedDocument,
@@ -103,7 +113,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
         formatGeneration: Int = 0,
         editSourceToggleGeneration: Int = 0,
         blockSourceProvider: ((BlockID) -> String?)? = nil,
-        focusModeEnabled: Bool = false
+        focusModeEnabled: Bool = false,
+        typewriterEnabled: Bool = false,
+        onAnchorJump: ((BlockID?) -> Void)? = nil,
+        onScrollProgress: ((Double) -> Void)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -124,6 +137,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.editSourceToggleGeneration = editSourceToggleGeneration
         self.blockSourceProvider = blockSourceProvider
         self.focusModeEnabled = focusModeEnabled
+        self.typewriterEnabled = typewriterEnabled
+        self.onAnchorJump = onAnchorJump
+        self.onScrollProgress = onScrollProgress
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -412,6 +428,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 coordinator.pinCaretLine(
                     at: location, toScreenY: caretLineAnchorY, in: textView,
                     ensuringLayoutOf: rendered.activeBlockID.flatMap { rendered.blockRanges[$0] })
+            } else if typewriterEnabled, rendered.activeBlockID != nil {
+                // Typewriter scrolling (idea #1): while typing, the
+                // caret's line holds a fixed height — the page moves, the
+                // eye doesn't. Reuses the viewport-invariant pin.
+                let anchorY = scrollView.contentView.bounds.height * 0.4
+                coordinator.pinCaretLine(
+                    at: location, toScreenY: anchorY, in: textView, settle: false)
             } else {
                 // Edit round-trip: scroll ONLY if the caret left the
                 // viewport, and then by the minimal amount — arrowing and

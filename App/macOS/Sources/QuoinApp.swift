@@ -46,6 +46,10 @@ struct QuoinApp: App {
                     NotificationCenter.default.post(name: AppDelegate.toggleFocusModeNotification, object: nil)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option])
+                Button("Typewriter Scrolling") {
+                    NotificationCenter.default.post(name: AppDelegate.toggleTypewriterNotification, object: nil)
+                }
+                .keyboardShortcut("t", modifiers: [.command, .option])
                 Divider()
             }
             CommandGroup(after: .importExport) {
@@ -134,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let toggleOutlineNotification = Notification.Name("quoin.toggleOutline")
     static let toggleEditSourceNotification = Notification.Name("quoin.toggleEditSource")
     static let toggleFocusModeNotification = Notification.Name("quoin.toggleFocusMode")
+    static let toggleTypewriterNotification = Notification.Name("quoin.toggleTypewriter")
     static let formatNotification = Notification.Name("quoin.format")
     static let undoNotification = Notification.Name("quoin.undo")
     static let redoNotification = Notification.Name("quoin.redo")

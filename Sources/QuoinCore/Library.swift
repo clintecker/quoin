@@ -178,6 +178,13 @@ public enum QuickOpen {
         public let score: Int
 
         public var id: URL { url }
+
+        public init(url: URL, title: String, snippet: String, score: Int) {
+            self.url = url
+            self.title = title
+            self.snippet = snippet
+            self.score = score
+        }
     }
 
     /// Case- and diacritic-insensitive fold, matching the content-snippet

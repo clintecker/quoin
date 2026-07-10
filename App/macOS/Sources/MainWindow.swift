@@ -117,6 +117,8 @@ struct MainWindow: View {
         // Reveal in the tree: expand ancestor folders so the selection is
         // visible when the doc was opened via quick open or Finder.
         library.reveal(url: url)
+        // Feeds quick open's empty-query recents (idea #13).
+        library.recordOpen(url)
     }
 
     private func close(_ url: URL) {
@@ -142,6 +144,11 @@ struct MainWindow: View {
             .keyboardShortcut("w", modifiers: .command)
             Button("") { isLibrarySearchVisible.toggle() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+            // Today's note: Journal/YYYY-MM-DD.md (idea #14).
+            Button("") {
+                if let url = library.dailyNote() { open(url) }
+            }
+            .keyboardShortcut("d", modifiers: .command)
             // ⌘Z undoes sidebar file moves when no document is open;
             // with a document open, its edit-undo owns the shortcut.
             if activeTab == nil {
