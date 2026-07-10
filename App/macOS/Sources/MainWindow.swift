@@ -13,6 +13,12 @@ struct MainWindow: View {
     @State private var isQuickOpenVisible = false
     @State private var isLibrarySearchVisible = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    /// Menu actions must land in the KEY window only — every observer
+    /// below guards on this (launch ledger BLOCKER: two windows used to
+    /// both undo/export on one menu click).
+    @Environment(\.controlActiveState) private var controlActiveState
+
+    private var isKeyWindow: Bool { controlActiveState == .key }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -26,26 +32,39 @@ struct MainWindow: View {
                 }
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
             } else {
-                chooseLibraryPrompt
+                // Onboarding lives in the DETAIL pane (below) where there's
+                // room; the sidebar stays quiet until a library exists.
+                VStack(spacing: 6) {
+                    Image(systemName: "books.vertical")
+                        .foregroundStyle(.tertiary)
+                    Text("No library yet")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } detail: {
             VStack(spacing: 0) {
-                DocumentTabBar(tabs: openTabs, activeTab: $activeTab) { url in
-                    close(url)
-                }
-                if let activeTab {
-                    // Keyed by URL: each document gets its own model/session.
-                    ReaderScreen(fileURL: activeTab, initialText: "", onFileRenamed: { newURL in
-                        if let index = openTabs.firstIndex(of: activeTab) {
-                            openTabs[index] = newURL
-                        }
-                        self.activeTab = newURL
-                        sidebarSelection = newURL
-                        library.rescan()
-                    })
-                    .id(activeTab)
+                if !library.hasLibrary {
+                    chooseLibraryPrompt
                 } else {
-                    emptyState
+                    DocumentTabBar(tabs: openTabs, activeTab: $activeTab) { url in
+                        close(url)
+                    }
+                    if let activeTab {
+                        // Keyed by URL: each document gets its own model/session.
+                        ReaderScreen(fileURL: activeTab, initialText: "", onFileRenamed: { newURL in
+                            if let index = openTabs.firstIndex(of: activeTab) {
+                                openTabs[index] = newURL
+                            }
+                            self.activeTab = newURL
+                            sidebarSelection = newURL
+                            library.rescan()
+                        })
+                        .id(activeTab)
+                    } else {
+                        emptyState
+                    }
                 }
             }
         }
@@ -62,23 +81,61 @@ struct MainWindow: View {
         }
         .background(windowShortcuts)
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openDocumentNotification)) { note in
+            guard isKeyWindow else { return }
             if let url = note.userInfo?["url"] as? URL {
                 open(url)
             }
         }
         // ⌘0 / View ▸ Show/Hide Sidebar (handoff keyboard map).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleSidebarNotification)) { _ in
+            guard isKeyWindow else { return }
             withAnimation {
                 columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
             }
         }
+        // File ▸ New Document (⌘N).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.newDocumentNotification)) { _ in
+            guard isKeyWindow else { return }
+            if let url = library.createDocument() { open(url) }
+        }
+        // File ▸ Close Tab (⌘W).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.closeTabNotification)) { _ in
+            guard isKeyWindow, let activeTab else { return }
+            close(activeTab)
+        }
+        // File ▸ Open… (⌘O): native panel, markdown files only.
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openFilePanelNotification)) { _ in
+            guard isKeyWindow else { return }
+            presentOpenPanel()
+        }
+        // File ▸ Change Library Folder….
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.changeLibraryNotification)) { _ in
+            guard isKeyWindow else { return }
+            library.chooseLibraryFolder()
+        }
+        // Go ▸ Quick Open (⇧⌘O) / Daily Note (⌘D).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleQuickOpenNotification)) { _ in
+            guard isKeyWindow else { return }
+            isQuickOpenVisible.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.dailyNoteNotification)) { _ in
+            guard isKeyWindow else { return }
+            if let url = library.dailyNote() { open(url) }
+        }
+        // Edit ▸ Find ▸ Search Library (⇧⌘F).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleLibrarySearchNotification)) { _ in
+            guard isKeyWindow else { return }
+            isLibrarySearchVisible.toggle()
+        }
         // Help ▸ Markdown Guide / Welcome to Quoin: LIVE documents in the
         // library (editable examples — the guide teaches by being edited).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openGuideNotification)) { _ in
+            guard isKeyWindow else { return }
             if let url = library.materializeBundledDocument(
                 resource: "MarkdownGuide", as: "Markdown Guide.md") { open(url) }
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openWelcomeNotification)) { _ in
+            guard isKeyWindow else { return }
             if let url = library.materializeBundledDocument(
                 resource: "WelcomeToQuoin", as: "Welcome to Quoin.md") { open(url) }
         }
@@ -127,8 +184,10 @@ struct MainWindow: View {
         // Reveal in the tree: expand ancestor folders so the selection is
         // visible when the doc was opened via quick open or Finder.
         library.reveal(url: url)
-        // Feeds quick open's empty-query recents (idea #13).
+        // Feeds quick open's empty-query recents (idea #13) + the system's
+        // recents (dock menu, Spotlight "recent items").
         library.recordOpen(url)
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
     }
 
     private func close(_ url: URL) {
@@ -138,27 +197,25 @@ struct MainWindow: View {
         }
     }
 
+    /// File ▸ Open…: markdown files anywhere on disk; each becomes a tab.
+    private func presentOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.markdownDocument, .plainText]
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls where url.pathExtension.lowercased() == "md" {
+            open(url)
+        }
+    }
+
     // MARK: - Shortcuts (conflict-audited map from the handoff)
 
+    /// Only what has no menu-bar home: tab switching (⌘1–9) and the
+    /// no-document sidebar-move undo. Everything else moved into REAL
+    /// menus (File/Edit/View/Go/Format — QuoinApp.commands).
     private var windowShortcuts: some View {
         Group {
-            Button("") { isQuickOpenVisible = true }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
-            Button("") {
-                if let url = library.createDocument() { open(url) }
-            }
-            .keyboardShortcut("n", modifiers: .command)
-            Button("") {
-                if let activeTab { close(activeTab) }
-            }
-            .keyboardShortcut("w", modifiers: .command)
-            Button("") { isLibrarySearchVisible.toggle() }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
-            // Today's note: Journal/YYYY-MM-DD.md (idea #14).
-            Button("") {
-                if let url = library.dailyNote() { open(url) }
-            }
-            .keyboardShortcut("d", modifiers: .command)
             // ⌘Z undoes sidebar file moves when no document is open;
             // with a document open, its edit-undo owns the shortcut.
             if activeTab == nil {

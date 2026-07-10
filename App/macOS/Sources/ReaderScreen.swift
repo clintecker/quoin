@@ -48,8 +48,19 @@ struct ReaderScreen: View {
     @State private var scrollGeneration = 0
     @State private var topBlockID: BlockID?
     @FocusState private var findFieldFocused: Bool
+    /// Menu actions must land in the KEY window only (launch ledger
+    /// BLOCKER: with two windows, ⌘Z used to undo in both documents).
+    @Environment(\.controlActiveState) private var controlActiveState
+
+    private var isKeyWindow: Bool { controlActiveState == .key }
 
     var body: some View {
+        // Split into layout → chrome → menu wiring: one flat modifier
+        // chain here exceeds the type-checker's budget.
+        menuObservers(windowChrome(panelChrome(layout)))
+    }
+
+    private var layout: some View {
         VStack(spacing: 0) {
             if isFindVisible {
                 findBar
@@ -129,6 +140,10 @@ struct ReaderScreen: View {
                 statusBar
             }
         }
+    }
+
+    private func panelChrome(_ content: some View) -> some View {
+        content
         .onChange(of: colorScheme) {
             // Appearance flipped (system or the Settings preference): the
             // rendered projection has the old palette baked into its
@@ -159,6 +174,10 @@ struct ReaderScreen: View {
             .frame(height: 2)
             .allowsHitTesting(false)
         }
+    }
+
+    private func windowChrome(_ content: some View) -> some View {
+        content
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -189,6 +208,9 @@ struct ReaderScreen: View {
             )
         }
         .navigationTitle((model.fileURL ?? fileURL)?.deletingPathExtension().lastPathComponent ?? "Untitled")
+        // Titlebar document proxy: drag the file icon, ⌘-click the title
+        // for the path — table-stakes Mac behavior (launch ledger UI #14).
+        .navigationDocument(ifPresent: model.fileURL ?? fileURL)
         .onAppear {
             model.onFileRenamed = onFileRenamed
             model.start(fileURL: fileURL, initialText: initialText)
@@ -231,16 +253,23 @@ struct ReaderScreen: View {
             }
         }
         .onDisappear { model.stop() }
+    }
+
+    private func menuObservers(_ content: some View) -> some View {
+        content
         // ⌥⌘0 / View ▸ Show/Hide Outline (menu command, handoff keyboard map).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleOutlineNotification)) { _ in
+            guard isKeyWindow else { return }
             isOutlineVisible.toggle()
         }
         // ⌘↩ / Format ▸ Edit Source (embed-editing keyboard grammar).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleEditSourceNotification)) { _ in
+            guard isKeyWindow else { return }
             editSourceToggleGeneration += 1
         }
         // Format menu (⌘B/⌘I/⇧⌘H/⌘K) → the selection formatter.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.formatNotification)) { note in
+            guard isKeyWindow else { return }
             switch note.userInfo?["format"] as? String {
             case "bold": fireFormat(.bold)
             case "italic": fireFormat(.italic)
@@ -251,37 +280,58 @@ struct ReaderScreen: View {
         }
         // Edit ▸ Undo/Redo → the document session's undo stack.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.undoNotification)) { _ in
+            guard isKeyWindow else { return }
             model.undo()
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.redoNotification)) { _ in
+            guard isKeyWindow else { return }
             model.redo()
         }
-        // File ▸ Export… (⇧⌘E).
+        // File ▸ Export… (⇧⌘E) / Print… (⌘P).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.exportNotification)) { _ in
+            guard isKeyWindow else { return }
             isExportVisible = true
         }
-        // View ▸ Toggle Focus Mode (⌥⌘F).
-        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleFocusModeNotification)) { _ in
-            isFocusMode.toggle()
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.printNotification)) { _ in
+            guard isKeyWindow else { return }
+            DocumentExporters.runPrintOperation(
+                for: model.document,
+                jobTitle: fileURL?.deletingPathExtension().lastPathComponent ?? "Quoin Document"
+            )
         }
-        // View ▸ Typewriter Scrolling (⌥⌘T).
-        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleTypewriterNotification)) { _ in
-            isTypewriter.toggle()
+        // Edit ▸ Find family (⌘F/⌘G/⇧⌘G).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.findNotification)) { _ in
+            guard isKeyWindow else { return }
+            openFind()
         }
-        // View ▸ Sentence Focus (granularity for focus mode).
-        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleSentenceFocusNotification)) { _ in
-            isSentenceFocus.toggle()
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.findNextNotification)) { _ in
+            guard isKeyWindow else { return }
+            nextMatch()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.findPreviousNotification)) { _ in
+            guard isKeyWindow else { return }
+            previousMatch()
+        }
+        // Go ▸ Back/Forward (⌘[ / ⌘]).
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.goBackNotification)) { _ in
+            guard isKeyWindow else { return }
+            goBack()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.goForwardNotification)) { _ in
+            guard isKeyWindow else { return }
+            goForward()
         }
         // Format ▸ Move Block Up/Down (⌥⌘↑ / ⌥⌘↓) — acts on the caret's
         // block (idea #9's keyboard grammar).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.moveBlockNotification)) { note in
-            guard let id = model.activeBlockID else { return }
+            guard isKeyWindow, let id = model.activeBlockID else { return }
             let direction = note.userInfo?["direction"] as? String
             model.perform(direction == "up" ? .moveUp : .moveDown, on: id)
         }
-        // Lets the Format menu title follow the editing state.
+        // Lets the Format menu title follow the editing state, and File/
+        // Edit/Go items enable only when a document can receive them.
         .focusedSceneValue(\.quoinIsEditingBlock, model.activeBlockID != nil)
-        .background(hiddenShortcuts)
+        .focusedSceneValue(\.quoinHasDocument, true)
     }
 
     // MARK: - Format pill (B/I/U + link, floats over the editor)
@@ -346,37 +396,6 @@ struct ReaderScreen: View {
             }
         }
         return current ?? model.outline.first
-    }
-
-    // MARK: - Keyboard map (conflict-audited; never override ⌘P/⌘E/⌘H)
-
-    private var hiddenShortcuts: some View {
-        Group {
-            Button("") { openFind() }
-                .keyboardShortcut("f", modifiers: .command)
-            Button("") { nextMatch() }
-                .keyboardShortcut("g", modifiers: .command)
-            Button("") { previousMatch() }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-            // ⌘0/⌥⌘0/⌥⌘F, ⌘Z/⇧⌘Z, ⌘B/I/⇧⌘H/⌘K, and ⇧⌘E now live in REAL
-            // menus (View/Edit/Format/File — QuoinApp.commands); only the
-            // find family and print stay window-local.
-            // Jump history (idea #7).
-            Button("") { goBack() }
-                .keyboardShortcut("[", modifiers: .command)
-            Button("") { goForward() }
-                .keyboardShortcut("]", modifiers: .command)
-            // ⌘P keeps its system meaning: print.
-            Button("") {
-                DocumentExporters.runPrintOperation(
-                    for: model.document,
-                    jobTitle: fileURL?.deletingPathExtension().lastPathComponent ?? "Quoin Document"
-                )
-            }
-            .keyboardShortcut("p", modifiers: .command)
-        }
-        .opacity(0)
-        .accessibilityHidden(true)
     }
 
     private func fireFormat(_ command: FormatCommand) {
@@ -602,6 +621,19 @@ struct ReaderScreen: View {
     private func previousMatch() {
         guard matchCount > 0 else { return }
         activeMatch = (activeMatch - 1 + matchCount) % matchCount
+    }
+}
+
+private extension View {
+    /// `navigationDocument` has no optional overload; a detached session
+    /// (open failure) has no URL and gets no proxy.
+    @ViewBuilder
+    func navigationDocument(ifPresent url: URL?) -> some View {
+        if let url {
+            navigationDocument(url)
+        } else {
+            self
+        }
     }
 }
 
