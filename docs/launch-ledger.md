@@ -118,7 +118,11 @@ top-down; nothing ships while a BLOCKER is open.*
   sentence mode dedupes on the caret's resolved sentence: an unchanged
   sentence is a no-op, a sentence move repaints only the current block.
   `ReaderCoordinator.applyFocusDimming`. Budgeted in RenderPathLatencyTests. #4.
-- [OPEN] Active search rescans the whole document per keystroke. #5.
+- [FIXED] Active search rescans the whole document per keystroke — the
+  scan is now debounced (120ms, keyed on query+ordinal+revision so
+  unrelated passes can't starve it), ⌘G cycling recolors the two affected
+  matches without any rescan, and clearing stays immediate.
+  `ReaderCoordinator.applySearch`/`performSearchScan`. #5.
 - [OPEN] Whole-document SHA-256 per keystroke in both fast paths. #6.
 - [OPEN] Eager whole-doc layout per projection below 200k chars. #7.
 - [OPEN] syncAttributesWhereDifferent walks all runs on every fallback

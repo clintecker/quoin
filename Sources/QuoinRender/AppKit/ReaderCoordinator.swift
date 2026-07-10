@@ -1715,27 +1715,110 @@ extension MarkdownReaderView {
 
         // MARK: Search highlighting
 
+        /// Debounce for the document-wide match scan (ledger perf #5):
+        /// while search is active, EVERY projection change used to rescan
+        /// the whole document synchronously in the same pass (updateNSView
+        /// nils `appliedQuery` on new content), and every find-bar
+        /// keystroke rescanned immediately. Bursts now coalesce into one
+        /// scan shortly after the last change.
+        static let searchDebounceInterval: TimeInterval = 0.12
+        private var pendingSearchScan: DispatchWorkItem?
+        private var pendingSearchKey: PendingSearchKey?
+        private struct PendingSearchKey: Equatable {
+            let query: String
+            let ordinal: Int
+            let revision: Int
+        }
+
         func applySearch(query: String, activeOrdinal: Int) {
-            guard query != appliedQuery || activeOrdinal != appliedOrdinal else { return }
+            guard query != appliedQuery || activeOrdinal != appliedOrdinal else {
+                // Already applied — a still-pending scan can only be for a
+                // stale intermediate query (typed and reverted); drop it.
+                cancelPendingSearchScan()
+                return
+            }
             guard let textView,
                   let layoutManager = textView.textLayoutManager,
-                  let contentStorage = textView.textContentStorage,
-                  let storage = contentStorage.textStorage
+                  let contentStorage = textView.textContentStorage
             else { return }
 
             let trimmed = query.trimmingCharacters(in: .whitespaces)
-            defer {
-                appliedQuery = query
-                appliedOrdinal = activeOrdinal
-                parent.onMatchCount(matchRanges.count)
-            }
+
+            // Clearing (find bar closed / emptied) stays immediate:
+            // lingering highlights read as broken.
             guard !trimmed.isEmpty else {
+                cancelPendingSearchScan()
                 if hasAppliedSearchHighlights {
                     layoutManager.removeRenderingAttribute(.backgroundColor, for: contentStorage.documentRange)
                     hasAppliedSearchHighlights = false
                 }
                 matchRanges = []
+                appliedQuery = query
+                appliedOrdinal = activeOrdinal
+                parent.onMatchCount(0)
                 return
+            }
+
+            // ⌘G cycling: same query over the same content — recolor the
+            // two ordinals and scroll; never rescan the document.
+            if query == appliedQuery, activeOrdinal != appliedOrdinal {
+                let theme = parent.theme
+                if appliedOrdinal >= 0, appliedOrdinal < matchRanges.count,
+                   let textRange = nsTextRange(matchRanges[appliedOrdinal], in: contentStorage) {
+                    layoutManager.addRenderingAttribute(
+                        .backgroundColor,
+                        value: theme.searchHighlight.withAlphaComponent(0.35), for: textRange)
+                }
+                if activeOrdinal >= 0, activeOrdinal < matchRanges.count,
+                   let textRange = nsTextRange(matchRanges[activeOrdinal], in: contentStorage) {
+                    layoutManager.addRenderingAttribute(
+                        .backgroundColor, value: theme.searchHighlight, for: textRange)
+                    textView.scrollRangeToVisible(matchRanges[activeOrdinal])
+                }
+                appliedOrdinal = activeOrdinal
+                parent.onMatchCount(matchRanges.count)
+                return
+            }
+
+            // Query change or content change (appliedQuery is nilled per
+            // projection): debounce the whole-document scan. A repeat call
+            // with the same pending key must NOT push the deadline —
+            // unrelated updateNSView passes would otherwise starve the scan.
+            let key = PendingSearchKey(query: query, ordinal: activeOrdinal, revision: appliedRevision)
+            guard key != pendingSearchKey else { return }
+            cancelPendingSearchScan()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pendingSearchScan = nil
+                self.pendingSearchKey = nil
+                self.performSearchScan(query: query, activeOrdinal: activeOrdinal)
+            }
+            pendingSearchScan = work
+            pendingSearchKey = key
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.searchDebounceInterval, execute: work)
+        }
+
+        private func cancelPendingSearchScan() {
+            pendingSearchScan?.cancel()
+            pendingSearchScan = nil
+            pendingSearchKey = nil
+        }
+
+        /// The document-wide scan + repaint — the old synchronous body of
+        /// `applySearch`, now behind the debounce. Internal for the
+        /// latency budget test.
+        func performSearchScan(query: String, activeOrdinal: Int) {
+            guard let textView,
+                  let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let storage = contentStorage.textStorage
+            else { return }
+            let trimmed = query.trimmingCharacters(in: .whitespaces)
+            defer {
+                appliedQuery = query
+                appliedOrdinal = activeOrdinal
+                parent.onMatchCount(matchRanges.count)
             }
 
             // Clear previous highlights across the whole document, not just
@@ -1749,6 +1832,7 @@ extension MarkdownReaderView {
                 hasAppliedSearchHighlights = false
             }
             matchRanges = []
+            guard !trimmed.isEmpty else { return }
 
             let haystack = storage.string as NSString
             var searchRange = NSRange(location: 0, length: haystack.length)
