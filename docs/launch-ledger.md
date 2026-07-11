@@ -154,8 +154,13 @@ top-down; nothing ships while a BLOCKER is open.*
 - [OPEN] Startup: only the parse half of "<1s to interactive" is budgeted;
   cold diagram rasterization is unmeasured. #13. Memory: AsyncImageStore
   count-limited not cost-limited (~1.5GB worst case). #14.
-- [OPEN] One new RenderPathLatencyTests file enrolling focus/preview/list-
-  typing/search/sync in the 25ms budget convention. #16.
+- [PARTIAL] One new RenderPathLatencyTests file enrolling focus/preview/
+  list-typing/search/sync in the 25ms budget convention. #16. SHIPPED:
+  Tests/QuoinRenderTests/RenderPathLatencyTests.swift enrolls the
+  focus-dim pass (block move + sentence move + no-op dedupe), the
+  attribute-sync splice, blockID/topVisibleBlockID lookups, and pins the
+  search debounce/⌘G-no-rescan behavior. REMAINING: preview and
+  list-typing budgets belong to the #1/#3 architectural pass.
 
 ## PRODUCT (PM track) — see agent report for full specs
 
