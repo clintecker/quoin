@@ -33,10 +33,24 @@ struct MathTypesetter {
         var width: CGFloat
         var ascent: CGFloat
         var descent: CGFloat
+        /// The top of the actual INK above the baseline (≤ ascent). Accents
+        /// sit on this so a hat over `x` hugs the glyph instead of floating
+        /// at the font's cap-height ascent. Defaults to `ascent` for
+        /// composite boxes where we don't measure ink separately.
+        var inkAscent: CGFloat
         /// Draws at `pen` = baseline origin, y-up coordinates.
         var draw: (CGContext, CGPoint) -> Void
 
         var height: CGFloat { ascent + descent }
+
+        init(width: CGFloat, ascent: CGFloat, descent: CGFloat,
+             inkAscent: CGFloat? = nil, draw: @escaping (CGContext, CGPoint) -> Void) {
+            self.width = width
+            self.ascent = ascent
+            self.descent = descent
+            self.inkAscent = inkAscent ?? ascent
+            self.draw = draw
+        }
 
         static let empty = MathBox(width: 0, ascent: 0, descent: 0, draw: { _, _ in })
     }
@@ -74,6 +88,13 @@ struct MathTypesetter {
 
         case .matrix(let rows, let left, let right, let style):
             return matrixBox(rows, left: left, right: right, style: style, size: s)
+
+        case .accent(let base, let accent):
+            return accentBox(base, accent: accent, size: s, display: display)
+
+        case .genfrac(let top, let bottom, let hasRule, let left, let right):
+            return genfracBox(top, bottom, hasRule: hasRule, left: left, right: right,
+                              size: s, display: display)
 
         case .unsupported(let source):
             // Never reached when callers gate on isFullySupported, but draw
@@ -116,8 +137,12 @@ struct MathTypesetter {
         var descent: CGFloat = 0
         var leading: CGFloat = 0
         let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+        // Ink top for accent hugging: the actual painted extent above the
+        // baseline, clamped to the typographic ascent.
+        let imageBounds = CTLineGetImageBounds(line, nil)
+        let inkAscent = min(ascent, max(0, imageBounds.maxY))
 
-        return MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
+        return MathBox(width: width, ascent: ascent, descent: descent, inkAscent: inkAscent) { context, pen in
             context.saveGState()
             context.setFillColor(resolvedCGColor(ink))
             context.textPosition = pen
@@ -165,6 +190,8 @@ struct MathTypesetter {
         case .functionName: return .largeOperator
         case .fraction, .radical, .delimited, .row, .matrix: return .ordinary
         case .scripts(let base, _, _): return atomClass(of: base)
+        case .accent(let base, _): return atomClass(of: base)
+        case .genfrac: return .ordinary
         case .space, .unsupported: return nil
         }
     }
@@ -229,6 +256,91 @@ struct MathTypesetter {
                 y: ruleY - ruleThickness / 2 - gap - bottom.ascent
             )
             bottom.draw(context, bottomPen)
+        }
+    }
+
+    // MARK: - Generalized fraction (\binom, ruleless stacks)
+
+    private func genfracBox(_ top: MathNode, _ bottom: MathNode, hasRule: Bool,
+                            left: String, right: String, size: CGFloat, display: Bool) -> MathBox {
+        let partSize = size * (display ? 0.9 : 0.8)
+        let topBox = layout(top, size: partSize, display: false)
+        let bottomBox = layout(bottom, size: partSize, display: false)
+
+        let ruleThickness = hasRule ? max(1, size * 0.045) : 0
+        // Ruleless stacks (binomials) need a touch more breathing room since
+        // nothing separates the rows.
+        let gap = hasRule ? size * 0.14 : size * 0.18
+        let axis = size * 0.26
+        let width = max(topBox.width, bottomBox.width) + size * 0.24
+        let ascent = axis + ruleThickness / 2 + gap + topBox.height
+        let descent = max(-(axis - ruleThickness / 2 - gap - bottomBox.height),
+                          bottomBox.height + gap - axis)
+        let ink = theme.ink
+
+        let stack = MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
+            let ruleY = pen.y + axis
+            if hasRule {
+                context.saveGState()
+                context.setFillColor(resolvedCGColor(ink))
+                context.fill(CGRect(x: pen.x + size * 0.04, y: ruleY - ruleThickness / 2,
+                                    width: width - size * 0.08, height: ruleThickness))
+                context.restoreGState()
+            }
+            topBox.draw(context, CGPoint(
+                x: pen.x + (width - topBox.width) / 2,
+                y: ruleY + ruleThickness / 2 + gap + topBox.descent))
+            bottomBox.draw(context, CGPoint(
+                x: pen.x + (width - bottomBox.width) / 2,
+                y: ruleY - ruleThickness / 2 - gap - bottomBox.ascent))
+        }
+
+        guard !left.isEmpty || !right.isEmpty else { return stack }
+        return delimitedBoxAround(stack, left: left, right: right, size: size)
+    }
+
+    // MARK: - Accents
+
+    private func accentBox(_ base: MathNode, accent: MathAccent, size: CGFloat, display: Bool) -> MathBox {
+        let baseBox = layout(base, size: size, display: display)
+        let ink = theme.ink
+        let ruleThickness = max(1, size * 0.045)
+        let gap = size * 0.08
+
+        // Drawn rules: \overline above, \underline below.
+        if accent == .overline || accent == .underline {
+            let over = accent == .overline
+            let ascent = baseBox.ascent + (over ? gap + ruleThickness : 0)
+            let descent = baseBox.descent + (over ? 0 : gap + ruleThickness)
+            return MathBox(width: baseBox.width, ascent: ascent, descent: descent) { context, pen in
+                baseBox.draw(context, pen)
+                context.saveGState()
+                context.setFillColor(resolvedCGColor(ink))
+                let y = over ? pen.y + baseBox.ascent + gap
+                             : pen.y - baseBox.descent - gap - ruleThickness
+                context.fill(CGRect(x: pen.x, y: y, width: baseBox.width, height: ruleThickness))
+                context.restoreGState()
+            }
+        }
+
+        guard let glyph = accent.glyph else { return baseBox }
+        // Stretchy accents (\widehat/\widetilde) scale toward the base width;
+        // point accents keep their natural size.
+        let accentSize = accent.isStretchy
+            ? min(size * 1.6, max(size * 0.7, baseBox.width * 0.9))
+            : size * 0.9
+        let accentBoxGlyph = textBox(glyph, size: accentSize, italic: false)
+        let clearance = size * 0.04
+        // Sit the accent on the base's INK top (a hat hugs `x`), not its
+        // font ascent — but never let the composite's ascent shrink below
+        // the base's, or neighboring atoms misalign.
+        let accentBaseY = baseBox.inkAscent + clearance
+        let ascent = max(baseBox.ascent, accentBaseY + accentBoxGlyph.height)
+        return MathBox(width: baseBox.width, ascent: ascent, descent: baseBox.descent) { context, pen in
+            baseBox.draw(context, pen)
+            let x = pen.x + (baseBox.width - accentBoxGlyph.width) / 2
+            let y = pen.y + accentBaseY + accentBoxGlyph.descent
+            accentBoxGlyph.draw(context, CGPoint(x: x, y: y))
         }
     }
 

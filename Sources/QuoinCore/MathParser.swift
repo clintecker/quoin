@@ -21,9 +21,63 @@ public indirect enum MathNode: Hashable, Sendable {
     case functionName(String)
     /// Explicit spacing (multiples of an em quad).
     case space(Double)
+    /// An accent over (or rule under) a base: \hat \vec \bar \overline …
+    case accent(base: MathNode, accent: MathAccent)
+    /// Generalized fraction: numerator over denominator with an optional
+    /// rule and optional enclosing fences. `\frac` is rule-yes/no-fence;
+    /// `\binom` is rule-no/paren-fence.
+    case genfrac(top: MathNode, bottom: MathNode, hasRule: Bool, left: String, right: String)
     /// Something we don't understand — rendered as literal marked source
     /// (the PRD rule: unknown input degrades, never errors).
     case unsupported(String)
+}
+
+/// An accent decoration placed over (or, for rules, over/under) a base.
+public enum MathAccent: Hashable, Sendable {
+    case hat, check, tilde, bar, vec, dot, ddot, breve, mathring, acute, grave
+    case widehat, widetilde   // stretchy variants
+    case overline, underline  // drawn rules, not glyphs
+
+    /// The glyph drawn above the base (nil for the rule accents).
+    public var glyph: String? {
+        switch self {
+        case .hat, .widehat: return "^"
+        case .check: return "ˇ"
+        case .tilde, .widetilde: return "~"
+        case .bar: return "‾"
+        case .vec: return "⃗"
+        case .dot: return "˙"
+        case .ddot: return "¨"
+        case .breve: return "˘"
+        case .mathring: return "˚"
+        case .acute: return "´"
+        case .grave: return "`"
+        case .overline, .underline: return nil
+        }
+    }
+
+    public var isStretchy: Bool { self == .widehat || self == .widetilde }
+
+    public init?(command: String) {
+        switch command {
+        case "hat": self = .hat
+        case "check": self = .check
+        case "tilde": self = .tilde
+        case "bar": self = .bar
+        case "vec": self = .vec
+        case "dot": self = .dot
+        case "ddot": self = .ddot
+        case "breve": self = .breve
+        case "mathring": self = .mathring
+        case "acute": self = .acute
+        case "grave": self = .grave
+        case "widehat": self = .widehat
+        case "widetilde": self = .widetilde
+        case "overline": self = .overline
+        case "underline": self = .underline
+        default: return nil
+        }
+    }
 }
 
 /// TeX atom classes drive inter-atom spacing (thin/medium/thick).
@@ -229,10 +283,15 @@ public enum MathParser {
     private static func commandNode(_ name: String, _ tokens: inout ArraySlice<Token>) -> MathNode {
         // Structural commands.
         switch name {
-        case "frac", "tfrac", "dfrac":
+        case "frac", "tfrac", "dfrac", "cfrac":
             let numerator = parseAtom(&tokens) ?? .row([])
             let denominator = parseAtom(&tokens) ?? .row([])
             return .fraction(numerator: numerator, denominator: denominator)
+
+        case "binom", "dbinom", "tbinom":
+            let top = parseAtom(&tokens) ?? .row([])
+            let bottom = parseAtom(&tokens) ?? .row([])
+            return .genfrac(top: top, bottom: bottom, hasRule: false, left: "(", right: ")")
 
         case "sqrt":
             // Optional degree: \sqrt[3]{x}
@@ -284,6 +343,12 @@ public enum MathParser {
 
         case "begin":
             return parseEnvironment(&tokens)
+
+        case "hat", "check", "tilde", "bar", "vec", "dot", "ddot", "breve",
+             "mathring", "acute", "grave", "widehat", "widetilde",
+             "overline", "underline":
+            let base = parseAtom(&tokens) ?? .row([])
+            return .accent(base: base, accent: MathAccent(command: name)!)
 
         // Spacing.
         case ",": return .space(3.0 / 18.0)
@@ -546,6 +611,10 @@ public enum MathParser {
             return isFullySupported(body)
         case .matrix(let rows, _, _, _):
             return rows.allSatisfy { $0.allSatisfy(isFullySupported) }
+        case .accent(let base, _):
+            return isFullySupported(base)
+        case .genfrac(let top, let bottom, _, _, _):
+            return isFullySupported(top) && isFullySupported(bottom)
         }
     }
 
@@ -581,6 +650,10 @@ public enum MathParser {
                 walk(body)
             case .matrix(let rows, _, _, _):
                 rows.forEach { $0.forEach(walk) }
+            case .accent(let base, _):
+                walk(base)
+            case .genfrac(let top, let bottom, _, _, _):
+                walk(top); walk(bottom)
             }
         }
         walk(node)

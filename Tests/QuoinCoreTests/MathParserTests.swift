@@ -162,8 +162,8 @@ final class MathParserTests: XCTestCase {
     }
 
     func testUnsupportedCommandsDedupesAndPreservesOrder() {
-        let node = MathParser.parse("\\foo x + \\bar y + \\foo z")
-        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\foo", "\\bar"])
+        let node = MathParser.parse("\\foo x + \\zzz y + \\foo z")
+        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\foo", "\\zzz"])
     }
 
     func testUnsupportedCommandsCaps() {
@@ -252,6 +252,52 @@ final class MathParserTests: XCTestCase {
         for op in ["\\Pr", "\\argmax", "\\limsup"] {
             XCTAssertTrue(MathParser.isFullySupported(MathParser.parse(op)), "\(op) should render")
         }
+    }
+
+    // MARK: - Accents & genfrac (Phase 2)
+
+    func testAccentParses() {
+        guard case .accent(_, let accent) = MathParser.parse("\\hat{x}") else {
+            return XCTFail("expected accent")
+        }
+        XCTAssertEqual(accent, .hat)
+        XCTAssertTrue(MathParser.isFullySupported(MathParser.parse("\\vec{v} + \\bar{y} + \\dot{z}")))
+    }
+
+    func testOverlineUnderlineAreAccents() {
+        guard case .accent(_, .overline) = MathParser.parse("\\overline{AB}") else {
+            return XCTFail("expected overline accent")
+        }
+        guard case .accent(_, .underline) = MathParser.parse("\\underline{x}") else {
+            return XCTFail("expected underline accent")
+        }
+    }
+
+    func testWideAccentsAreStretchy() {
+        guard case .accent(_, let accent) = MathParser.parse("\\widehat{abc}") else {
+            return XCTFail("expected accent")
+        }
+        XCTAssertTrue(accent.isStretchy)
+    }
+
+    func testBinomialIsGenfracWithParensNoRule() {
+        guard case .genfrac(_, _, let hasRule, let left, let right) = MathParser.parse("\\binom{n}{k}") else {
+            return XCTFail("expected genfrac")
+        }
+        XCTAssertFalse(hasRule)
+        XCTAssertEqual(left, "(")
+        XCTAssertEqual(right, ")")
+    }
+
+    func testCfracIsAFraction() {
+        guard case .fraction = MathParser.parse("\\cfrac{1}{x}") else {
+            return XCTFail("expected fraction")
+        }
+    }
+
+    func testAccentAndBinomFullySupported() {
+        XCTAssertTrue(MathParser.isFullySupported(
+            MathParser.parse("\\widehat{abc} + \\dbinom{n}{k} + \\overline{z}")))
     }
 
     /// Convenience: the single mapped glyph of a one-atom expression.

@@ -13121,13 +13121,13 @@
         "t" : ", and"
       },
       {
-        "f" : "12.50/0.00m",
-        "fg" : "#1D1D1F8C",
+        "fg" : "#333333",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
+          "attachment",
           "math"
         ],
-        "t" : "\\nabla \\cdot \\vec{E} = \\rho/\\varepsilon_0"
+        "t" : "￼"
       },
       {
         "f" : "14.00/0.00",
@@ -13599,85 +13599,24 @@
         "t" : "\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "10.50/0.00m",
-        "fg" : "#FFFFFF73",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
-        "q" : [
-          "embed",
-          "math"
-        ],
-        "t" : "latex    "
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-edit://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb16.00 fh8.00 hi8.00 ti-8.00 al2 tabs12",
         "q" : [
           "embed",
           "math"
         ],
-        "t" : "‹/› edit    "
+        "t" : "‹/› edit\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "10.50/0.00m",
-        "fg" : "accent",
-        "link" : "quoin-copy://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps16.00 psb0.00 fh0.00 hi0.00 ti0.00 al1 tabs12",
         "q" : [
-          "copy",
+          "attachment",
           "embed",
           "math"
         ],
-        "t" : "⧉ copy\n"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "\\hat{x},\\ \\bar{x},\\ \\vec{x},\\ \\tilde{x},\\ \\dot{x},\\ \\ddot{x},\\ \\widehat{"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#FFCB6B",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "ABC"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "},\\ \\overline{z_1z_2}"
-      },
-      {
-        "f" : "10.50/0.00m",
-        "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-          "embed"
-        ],
-        "t" : "\nmath · \\hat, \\bar, \\vec, \\tilde aren't natively typeset yet"
+        "t" : "￼"
       },
       {
         "f" : "14.00/0.00",
@@ -14295,121 +14234,24 @@
         "t" : "\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "10.50/0.00m",
-        "fg" : "#FFFFFF73",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
-        "q" : [
-          "embed",
-          "math"
-        ],
-        "t" : "latex    "
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
         "f" : "10.50/0.00m",
         "fg" : "accent",
         "link" : "quoin-edit://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps2.00 psb16.00 fh8.00 hi8.00 ti-8.00 al2 tabs12",
         "q" : [
           "embed",
           "math"
         ],
-        "t" : "‹/› edit    "
+        "t" : "‹/› edit\n"
       },
       {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "10.50/0.00m",
-        "fg" : "accent",
-        "link" : "quoin-copy://block",
-        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "p" : "lh1.70 ps16.00 psb0.00 fh0.00 hi0.00 ti0.00 al1 tabs12",
         "q" : [
-          "copy",
+          "attachment",
           "embed",
           "math"
         ],
-        "t" : "⧉ copy\n"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps0.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "\\begin{vmatrix}\na & b \\\\\nc & d\n\\end{vmatrix}\n= ad-bc\n\\qquad\n\\begin{"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#FFCB6B",
-        "p" : "lh1.60 ps0.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "Vmatrix"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps0.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "}\n\\vec{u} & \\vec{v}\n"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "\\end{"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#FFCB6B",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "Vmatrix"
-      },
-      {
-        "deco" : "codeCanvas(#1E2430)",
-        "f" : "12.00/0.00m",
-        "fg" : "#D6DCE6",
-        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
-        "q" : [
-          "embed",
-          "embedStart=-1",
-          "math"
-        ],
-        "t" : "}"
-      },
-      {
-        "f" : "10.50/0.00m",
-        "fg" : "#1D1D1F8C",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-          "embed"
-        ],
-        "t" : "\nmath · \\vec isn't natively typeset yet"
+        "t" : "￼"
       },
       {
         "f" : "14.00/0.00",

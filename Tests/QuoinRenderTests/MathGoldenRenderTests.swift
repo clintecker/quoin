@@ -75,8 +75,8 @@ final class MathGoldenRenderTests: XCTestCase {
         .init(name: "big-delimiters", latex: #"\left( \frac{a}{b} \right) \left[ \sum_i x_i \right]"#, expectation: .mustRender),
         .init(name: "angle-norm", latex: #"\left\langle u, v \right\rangle \le \left\lVert u \right\rVert"#, expectation: .mustRender),
         // Advanced — expectation set empirically; promote as coverage grows.
-        .init(name: "accents", latex: #"\hat{x} + \vec{v} + \bar{y} + \dot{z}"#, expectation: .knownUnsupported),
-        .init(name: "binomial", latex: #"\binom{n}{k} = \frac{n!}{k!(n-k)!}"#, expectation: .knownUnsupported),
+        .init(name: "accents", latex: #"\hat{x} + \vec{v} + \bar{y} + \dot{z}"#, expectation: .mustRender),
+        .init(name: "binomial", latex: #"\binom{n}{k} = \frac{n!}{k!(n-k)!}"#, expectation: .mustRender),
         .init(name: "overbrace", latex: #"\overbrace{a + b + c}^{\text{sum}}"#, expectation: .knownUnsupported),
         .init(name: "underset", latex: #"\underset{x \to 0}{\mathrm{argmin}}\; f(x)"#, expectation: .knownUnsupported),
         .init(name: "partial-derivative", latex: #"\frac{\partial^2 u}{\partial x^2}"#, expectation: .mustRender),
@@ -88,6 +88,9 @@ final class MathGoldenRenderTests: XCTestCase {
         .init(name: "unicode-direct", latex: #"∫_0^∞ e^{-x} dx ≤ α + β"#, expectation: .mustRender),
         .init(name: "big-manual", latex: #"\big( x \big) + \bigl[ y \bigr]"#, expectation: .mustRender),
         .init(name: "operators-more", latex: #"\Pr(X) = \operatorname{argmax}_\theta L(\theta)"#, expectation: .mustRender),
+        // Phase 2 — accents & generalized fractions
+        .init(name: "accents-wide", latex: #"\widehat{abc} + \tilde{n} + \ddot{u} + \overline{AB} + \underline{x}"#, expectation: .mustRender),
+        .init(name: "binom-nested", latex: #"\dbinom{n}{k} + \cfrac{1}{1 + \cfrac{1}{x}}"#, expectation: .mustRender),
     ]
 
     private var goldenDirectory: URL {
