@@ -306,6 +306,20 @@ final class ReaderModel {
     func activateBlock(_ id: BlockID?, caretHint: CaretHint? = nil, pendingInsertion: String? = nil) {
         guard id != activeBlockID else { return }
         let previousActiveID = activeBlockID
+        // Fence healing on commit-while-broken (ledger senior #10): a
+        // fenced block committed without its closing fence would swallow
+        // every following block. Close it with an ORDINARY session edit —
+        // undoable, byte-honest — before the projection flips back.
+        if let closing = previousActiveID,
+           let block = document.blocks.first(where: { $0.id == closing }),
+           let slice = document.source.substring(in: block.range),
+           let suffix = FenceHealing.healingSuffix(for: slice, kind: block.kind) {
+            applyAbsolute(
+                SourceEdit(
+                    range: ByteRange(offset: block.range.offset + block.range.length, length: 0),
+                    replacement: suffix),
+                caretUTF8: nil)
+        }
         activeBlockID = id
         // Each editing session holds its own last-good preview; a stale
         // artifact from the previous session must never appear over a
@@ -491,21 +505,54 @@ final class ReaderModel {
         editPipelineTask = Task { [weak self] in
             await previousEditTask?.value
             guard let self else { return }
-            let newDocument = try? await QuoinPerformanceTrace.measure(
-                "model.session.applyEdit",
-                metadata: "range_offset=\(absolute.offset) replacement_bytes=\(replacement.utf8.count)"
-            ) {
-                try await session.applyEdit(edit, baseRevision: baseRevision, publishSnapshot: false)
+            do {
+                let newDocument = try await QuoinPerformanceTrace.measure(
+                    "model.session.applyEdit",
+                    metadata: "range_offset=\(absolute.offset) replacement_bytes=\(replacement.utf8.count)"
+                ) {
+                    try await session.applyEdit(edit, baseRevision: baseRevision, publishSnapshot: false)
+                }
+                guard generation == self.latestEditGeneration else { return }
+                QuoinPerformanceTrace.measure("model.restoreCaret") {
+                    self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8, spliceHint: spliceHint)
+                }
+                self.scheduleH1Rename(for: newDocument)
+            } catch {
+                await self.recoverFromFailedEdit(error, generation: generation)
             }
-            guard let newDocument else { return }
-            guard generation == self.latestEditGeneration else { return }
-            QuoinPerformanceTrace.measure("model.restoreCaret") {
-                self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8, spliceHint: spliceHint)
-            }
-            self.scheduleH1Rename(for: newDocument)
             if generation == self.latestEditGeneration {
                 self.editPipelineTask = nil
             }
+        }
+    }
+
+    /// A session edit was rejected or failed (ledger, data integrity #8).
+    /// The old behavior wedged typing until the coordinator's 2s watchdog
+    /// fired and then silently DISCARDED the queued keystrokes. Instead:
+    /// adopt the session's current truth and republish the projection with
+    /// a caret echo NOW — the echo unwedges the coordinator immediately,
+    /// and its queued keystrokes replay against the fresh state through
+    /// the ordinary pipeline (they are content + order; each applies at
+    /// the freshly restored caret). Only the rejected edit itself cannot
+    /// be replayed (its range is stale by definition); its loss — and the
+    /// loss of the queue when the active block itself is gone — is
+    /// surfaced as a banner, never swallowed.
+    private func recoverFromFailedEdit(_ error: Error, generation: Int) async {
+        guard let session else { return }
+        let truth = await session.document
+        sessionContentRevision = await session.contentRevision
+        // Superseded submissions stay quiet: the newest one (or its own
+        // recovery) owns the projection and the banner.
+        guard generation == latestEditGeneration else { return }
+        let hadActiveBlock = activeBlockID != nil
+        restoreCaret(in: truth, atUTF8Offset: nil)
+        let replayImpossible = hadActiveBlock && activeBlockID == nil
+        if case SessionError.staleEditBase = error {
+            reportFailure(replayImpossible
+                ? "The document changed underneath your typing — recent keystrokes weren't applied."
+                : "The document changed underneath your typing — the last keystroke wasn't applied.")
+        } else {
+            reportFailure("Couldn't apply the last edit — the view has been refreshed.")
         }
     }
 
@@ -559,19 +606,46 @@ final class ReaderModel {
     }
 
     func undo() {
-        guard let session else { return }
-        Task {
-            if let doc = try? await session.undo() {
-                self.restoreCaret(in: doc, atUTF8Offset: nil)
-            }
-        }
+        performHistoryOperation { try await $0.undo() }
     }
 
     func redo() {
+        performHistoryOperation { try await $0.redo() }
+    }
+
+    /// Undo/redo serialized with the edit pipeline (launch ledger, data
+    /// integrity #7). A ⌘Z issued while a keystroke's round-trip was still
+    /// in flight used to hop onto the session actor in NONDETERMINISTIC
+    /// order — when the undo won, it spliced first and the in-flight
+    /// keystroke then applied at pre-undo offsets, corrupting the source.
+    /// History operations now JOIN the same FIFO pipeline the keystrokes
+    /// flow through, so they run strictly after every edit submitted
+    /// before them. (The session's `contentRevision` bump on undo/redo is
+    /// the backstop: an edit stamped against pre-undo content is rejected
+    /// as `staleEditBase` rather than spliced.)
+    private func performHistoryOperation(
+        _ operation: @escaping @Sendable (DocumentSession) async throws -> QuoinDocument?
+    ) {
         guard let session else { return }
-        Task {
-            if let doc = try? await session.redo() {
-                self.restoreCaret(in: doc, atUTF8Offset: nil)
+        latestEditGeneration += 1
+        let generation = latestEditGeneration
+        let previousEditTask = editPipelineTask
+        editPipelineTask = Task { [weak self] in
+            await previousEditTask?.value
+            guard let self else { return }
+            let newDocument = (try? await operation(session)) ?? nil
+            // Adopt the bumped revision stamp immediately — the ingest of
+            // the published snapshot is asynchronous, and a keystroke typed
+            // in that window must not be stamped (and rejected) as stale.
+            self.sessionContentRevision = await session.contentRevision
+            guard generation == self.latestEditGeneration else { return }
+            if let newDocument {
+                QuoinPerformanceTrace.measure("model.restoreCaret.history") {
+                    self.restoreCaret(in: newDocument, atUTF8Offset: nil)
+                }
+            }
+            if generation == self.latestEditGeneration {
+                self.editPipelineTask = nil
             }
         }
     }

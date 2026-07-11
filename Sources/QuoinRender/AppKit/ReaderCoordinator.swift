@@ -397,17 +397,23 @@ extension MarkdownReaderView {
 
         // MARK: Edit-echo serialization (ledger #11)
 
-        /// A keystroke that arrived while an edit round-trip was still
-        /// un-acked. Its POSITION cannot be trusted (the projection under
-        /// the caret is about to move), but its CONTENT and ORDER can —
-        /// sequential typing happens at one conceptual caret. Queued
-        /// keystrokes flush one per echo, each computed against the
-        /// freshly restored caret.
-        struct PendingKeystroke {
-            let deleteBackward: Bool
-            let insert: String
+        /// An editor command that arrived while an edit round-trip was
+        /// still un-acked. Its POSITION cannot be trusted (the projection
+        /// under the caret is about to move), but its CONTENT and ORDER
+        /// can — sequential input happens at one conceptual caret/selection.
+        /// Queued commands flush one edit per echo, each computed against
+        /// the freshly restored selection. Format commands and smart paste
+        /// queue here too (ledger #9): they compute ranges from the live
+        /// selection exactly like keystrokes do, and ⌘B one frame after a
+        /// fast keystroke used to wrap a stale range.
+        enum PendingEditorCommand {
+            case keystroke(deleteBackward: Bool, insert: String)
+            case format(FormatCommand)
+            /// The pasteboard string captured at paste time — the
+            /// pasteboard itself could change before the flush.
+            case smartPaste(String)
         }
-        private var pendingKeystrokes: [PendingKeystroke] = []
+        private var pendingCommands: [PendingEditorCommand] = []
         /// True from sending an edit until its projection echo restores
         /// the caret. Fast typing used to compute the NEXT keystroke's
         /// range against the stale projection — characters landed at old
@@ -415,38 +421,73 @@ extension MarkdownReaderView {
         /// "edits swallowed in the source, persisted forever in the
         /// chart" — the chart rendered the true, scrambled document).
         private var awaitingEditEcho = false
-        private var awaitingEditEchoSince: TimeInterval = 0
+        /// Internal (not private) so the watchdog tests can age it past
+        /// the deadline without a real 2-second wait.
+        var awaitingEditEchoSince: TimeInterval = 0
+        /// How long a sent edit may go un-acked before the gate assumes
+        /// the echo was lost and replays the queue (ledger #8).
+        static let editEchoWatchdogInterval: TimeInterval = 2
+
+        private var editEchoWatchdogExpired: Bool {
+            ProcessInfo.processInfo.systemUptime - awaitingEditEchoSince
+                > Self.editEchoWatchdogInterval
+        }
 
         private func beginAwaitingEditEcho() {
             awaitingEditEcho = true
             awaitingEditEchoSince = ProcessInfo.processInfo.systemUptime
         }
 
-        /// The projection echo landed (caret restored). Flush ONE queued
-        /// keystroke — it re-enters the ordinary pipeline at the fresh
-        /// caret, and its own echo flushes the next.
+        /// The projection echo landed (caret restored) — release the
+        /// queue. Also the failure path's re-entry point: a rejected
+        /// session edit republishes the fresh truth as an echo, and the
+        /// queued commands REPLAY against it here (ledger #8) — they are
+        /// content + order, applied at the freshly restored caret, so no
+        /// stale offset ever splices.
         func noteEditEchoApplied(in textView: NSTextView) {
             awaitingEditEcho = false
-            guard !pendingKeystrokes.isEmpty else { return }
-            let next = pendingKeystrokes.removeFirst()
-            let caret = textView.selectedRange().location
-            if next.deleteBackward {
-                guard caret > 0 else { return }
-                _ = self.textView(
-                    textView,
-                    shouldChangeTextIn: NSRange(location: caret - 1, length: 1),
-                    replacementString: "")
-            } else {
-                _ = self.textView(
-                    textView,
-                    shouldChangeTextIn: NSRange(location: caret, length: 0),
-                    replacementString: next.insert)
+            flushPendingCommands(in: textView)
+        }
+
+        /// Flushes queued commands, in order, until one sends an edit
+        /// (re-arming the echo gate) or the queue drains. Each command
+        /// re-enters its ordinary pipeline at the CURRENT caret/selection.
+        private func flushPendingCommands(in textView: NSTextView) {
+            while !awaitingEditEcho, !pendingCommands.isEmpty {
+                let next = pendingCommands.removeFirst()
+                switch next {
+                case .keystroke(let deleteBackward, let insert):
+                    let caret = textView.selectedRange().location
+                    if deleteBackward {
+                        guard caret > 0 else { continue }
+                        _ = self.textView(
+                            textView,
+                            shouldChangeTextIn: NSRange(location: caret - 1, length: 1),
+                            replacementString: "")
+                    } else {
+                        _ = self.textView(
+                            textView,
+                            shouldChangeTextIn: NSRange(location: caret, length: 0),
+                            replacementString: insert)
+                    }
+                case .format(let command):
+                    applyFormat(command, in: textView)
+                case .smartPaste(let pasted):
+                    if !applySmartPaste(pasted, in: textView) {
+                        // Not a smart shape against the fresh selection —
+                        // paste means "insert the text" at minimum.
+                        _ = self.textView(
+                            textView,
+                            shouldChangeTextIn: textView.selectedRange(),
+                            replacementString: pasted)
+                    }
+                }
             }
         }
 
         /// Activation changes invalidate queued positions entirely.
         func clearPendingKeystrokes() {
-            pendingKeystrokes.removeAll()
+            pendingCommands.removeAll()
             awaitingEditEcho = false
         }
 
@@ -462,20 +503,49 @@ extension MarkdownReaderView {
             // derived from it) is about to move. Queue simple typing
             // shapes instead of applying them against stale coordinates.
             if awaitingEditEcho, parent.rendered.activeEditableRange != nil {
-                // Watchdog: a lost echo must never wedge typing.
-                if ProcessInfo.processInfo.systemUptime - awaitingEditEchoSince > 2 {
-                    clearPendingKeystrokes()
-                } else if affectedCharRange.length == 0,
-                          let replacementString, !replacementString.isEmpty {
-                    pendingKeystrokes.append(.init(deleteBackward: false, insert: replacementString))
+                let simpleInsert = affectedCharRange.length == 0
+                    && replacementString?.isEmpty == false
+                let simpleBackspace = affectedCharRange.length == 1
+                    && (replacementString ?? "").isEmpty
+                if editEchoWatchdogExpired {
+                    // Watchdog: a lost echo must never wedge typing — and
+                    // it must never DISCARD what was typed either (ledger
+                    // #8). Unwedge and REPLAY: queued keystrokes flush at
+                    // the current caret through the normal path, with the
+                    // current keystroke joining the queue in order.
+                    awaitingEditEcho = false
+                    if simpleInsert {
+                        pendingCommands.append(
+                            .keystroke(deleteBackward: false, insert: replacementString ?? ""))
+                        flushPendingCommands(in: textView)
+                        return false
+                    } else if simpleBackspace {
+                        pendingCommands.append(.keystroke(deleteBackward: true, insert: ""))
+                        flushPendingCommands(in: textView)
+                        return false
+                    } else if !pendingCommands.isEmpty {
+                        // A complex edit (drag, cut of a range) has no
+                        // defined caret to replay at. Replay the queued
+                        // typing, refuse the complex edit audibly — never
+                        // silently.
+                        flushPendingCommands(in: textView)
+                        NSSound.beep()
+                        return false
+                    }
+                    // No queue and a complex edit: fall through and apply
+                    // it against the current state (the echo is lost; the
+                    // projection is the best truth available).
+                } else if simpleInsert {
+                    pendingCommands.append(
+                        .keystroke(deleteBackward: false, insert: replacementString ?? ""))
                     return false
-                } else if affectedCharRange.length == 1, (replacementString ?? "").isEmpty {
-                    pendingKeystrokes.append(.init(deleteBackward: true, insert: ""))
+                } else if simpleBackspace {
+                    pendingCommands.append(.keystroke(deleteBackward: true, insert: ""))
                     return false
                 } else {
                     // A complex edit mid-flight (drag, cut of a range):
                     // rare — drop the queue rather than misorder it.
-                    pendingKeystrokes.removeAll()
+                    pendingCommands.removeAll()
                 }
             }
 
@@ -649,6 +719,13 @@ extension MarkdownReaderView {
                   let active = parent.rendered.activeEditableRange,
                   let sourceText = parent.rendered.activeSourceText
             else { return }
+            // ⌘B one frame after a fast keystroke used to wrap a STALE
+            // range (ledger #9): while an edit round-trip is un-acked the
+            // selection can't be trusted — join the queue like typing does.
+            if awaitingEditEcho {
+                pendingCommands.append(.format(command))
+                return
+            }
             var selection = textView.selectedRange()
             guard selection.location >= active.location,
                   selection.location + selection.length <= active.location + active.length
@@ -680,6 +757,9 @@ extension MarkdownReaderView {
                 utf16Offset: change.selectionOffset + change.selectionLength
             )
             onEdit(byteRange, change.replacement, caretDelta)
+            // A format edit's round-trip moves the projection exactly like
+            // a keystroke's — subsequent input must queue behind it.
+            beginAwaitingEditEcho()
         }
 
         /// Set when a deactivation should land the caret at the rendered
@@ -1141,10 +1221,27 @@ extension MarkdownReaderView {
         /// pasted at the caret become a table. Anything else falls through
         /// to the ordinary paste pipeline.
         func handleSmartPaste() -> Bool {
-            guard let textView, let onEdit = parent.onEditIntent,
-                  let active = parent.rendered.activeEditableRange,
-                  let sourceText = parent.rendered.activeSourceText,
+            guard let textView,
+                  parent.rendered.activeEditableRange != nil,
                   let pasted = NSPasteboard.general.string(forType: .string)
+            else { return false }
+            // Mid-flight the selection can't be trusted (ledger #9): queue
+            // the CAPTURED string (the pasteboard may change before the
+            // flush) and decide smart-vs-plain against the fresh selection.
+            if awaitingEditEcho {
+                pendingCommands.append(.smartPaste(pasted))
+                return true
+            }
+            return applySmartPaste(pasted, in: textView)
+        }
+
+        /// The smart-paste decision against the CURRENT selection: URL over
+        /// a selection becomes a link; tabular text at a caret becomes a
+        /// markdown table. Returns false when neither applies (plain paste).
+        private func applySmartPaste(_ pasted: String, in textView: NSTextView) -> Bool {
+            guard let onEdit = parent.onEditIntent,
+                  let active = parent.rendered.activeEditableRange,
+                  let sourceText = parent.rendered.activeSourceText
             else { return false }
             let selection = textView.selectedRange()
             guard selection.location >= active.location,
@@ -1164,6 +1261,7 @@ extension MarkdownReaderView {
                     .substring(with: NSRange(location: relStart, length: selection.length))
                 let replacement = "[\(selected)](\(trimmed))"
                 onEdit(byteRange, replacement, replacement.utf8.count)
+                beginAwaitingEditEcho()
                 return true
             }
 
@@ -1174,6 +1272,7 @@ extension MarkdownReaderView {
                     return false
                 }
                 onEdit(byteRange, table, table.utf8.count)
+                beginAwaitingEditEcho()
                 return true
             }
             return false

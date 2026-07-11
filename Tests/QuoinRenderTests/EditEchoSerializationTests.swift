@@ -121,6 +121,51 @@ final class EditEchoSerializationTests: XCTestCase {
         XCTAssertEqual(sent()[1].text, "", "the queued backspace deletes at the fresh caret")
     }
 
+    func testWatchdogExpiryReplaysQueuedKeystrokesInsteadOfDiscarding() throws {
+        // Ledger #8: a lost echo used to wedge typing for 2s and then the
+        // watchdog DISCARDED the queue silently. It must replay instead:
+        // the queued keystrokes are content + order, and they apply at the
+        // current caret through the ordinary pipeline.
+        let (coordinator, textView, sent) = try makeHarness()
+        let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)
+        let caret = active.location + 12
+        textView.setSelectedRange(NSRange(location: caret, length: 0))
+
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "a")
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "b")
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "c")
+        XCTAssertEqual(sent().count, 1)
+
+        // The echo never arrives; the watchdog deadline passes; the user
+        // keeps typing.
+        coordinator.awaitingEditEchoSince -=
+            MarkdownReaderView.Coordinator.editEchoWatchdogInterval + 1
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "d")
+
+        // Unwedged: "b" flushed at the current caret (an edit, re-arming
+        // the gate); "c" and "d" remain queued in order behind it.
+        XCTAssertEqual(sent().count, 2, "the watchdog replays, it does not discard")
+        XCTAssertEqual(sent()[1].text, "b")
+
+        // Subsequent echoes drain the rest in order — nothing was lost.
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 3)
+        XCTAssertEqual(sent()[2].text, "c")
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 4)
+        XCTAssertEqual(sent()[3].text, "d")
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 4, "queue drained")
+    }
+
     func testActivationChangeDropsTheQueue() throws {
         let (coordinator, textView, sent) = try makeHarness()
         let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)
@@ -134,6 +179,69 @@ final class EditEchoSerializationTests: XCTestCase {
         coordinator.clearPendingKeystrokes()
         coordinator.noteEditEchoApplied(in: textView)
         XCTAssertEqual(sent().count, 1, "a flip invalidates queued positions entirely")
+    }
+
+    // Ledger #9 — format commands and smart paste used to BYPASS the echo
+    // gate: ⌘B one frame after a fast keystroke computed its wrap range
+    // against the stale projection. They must queue like keystrokes and
+    // apply against the freshly restored selection.
+
+    func testFormatCommandQueuesMidFlightAndAppliesAtFreshSelection() throws {
+        let (coordinator, textView, sent) = try makeHarness()
+        let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)
+
+        // Open the flight window with a keystroke.
+        textView.setSelectedRange(NSRange(location: active.location + 12, length: 0))
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: active.location + 12, length: 0),
+            replacementString: "a")
+        XCTAssertEqual(sent().count, 1)
+
+        // ⌘B mid-flight: must NOT wrap a stale range.
+        coordinator.applyFormat(.bold, in: textView)
+        XCTAssertEqual(sent().count, 1, "format never applies against stale coordinates")
+
+        // Echo restores the selection over "TD"; the queued bold flushes
+        // against the FRESH selection.
+        let source = try XCTUnwrap(coordinator.parent.rendered.activeSourceText)
+        let word = (source as NSString).range(of: "TD")
+        textView.setSelectedRange(NSRange(location: active.location + word.location, length: word.length))
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 2)
+        XCTAssertEqual(sent()[1].text, "**TD**")
+
+        // The format edit re-armed the gate: the next keystroke queues.
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: active.location + 12, length: 0),
+            replacementString: "z")
+        XCTAssertEqual(sent().count, 2, "format edits arm the echo gate like keystrokes")
+    }
+
+    func testSmartPasteQueuesMidFlightAndLinksAtFreshSelection() throws {
+        let (coordinator, textView, sent) = try makeHarness()
+        let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("https://example.com/x", forType: .string)
+
+        // Open the flight window.
+        textView.setSelectedRange(NSRange(location: active.location + 12, length: 0))
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: active.location + 12, length: 0),
+            replacementString: "a")
+        XCTAssertEqual(sent().count, 1)
+
+        // Paste mid-flight: handled (queued), nothing sent yet.
+        XCTAssertTrue(coordinator.handleSmartPaste())
+        XCTAssertEqual(sent().count, 1, "paste never applies against stale coordinates")
+
+        // Echo restores a selection over "TD" → URL-over-selection links it.
+        let source = try XCTUnwrap(coordinator.parent.rendered.activeSourceText)
+        let word = (source as NSString).range(of: "TD")
+        textView.setSelectedRange(NSRange(location: active.location + word.location, length: word.length))
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 2)
+        XCTAssertEqual(sent()[1].text, "[TD](https://example.com/x)")
     }
 }
 #endif
