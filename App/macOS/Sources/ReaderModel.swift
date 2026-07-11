@@ -306,6 +306,20 @@ final class ReaderModel {
     func activateBlock(_ id: BlockID?, caretHint: CaretHint? = nil, pendingInsertion: String? = nil) {
         guard id != activeBlockID else { return }
         let previousActiveID = activeBlockID
+        // Fence healing on commit-while-broken (ledger senior #10): a
+        // fenced block committed without its closing fence would swallow
+        // every following block. Close it with an ORDINARY session edit —
+        // undoable, byte-honest — before the projection flips back.
+        if let closing = previousActiveID,
+           let block = document.blocks.first(where: { $0.id == closing }),
+           let slice = document.source.substring(in: block.range),
+           let suffix = FenceHealing.healingSuffix(for: slice, kind: block.kind) {
+            applyAbsolute(
+                SourceEdit(
+                    range: ByteRange(offset: block.range.offset + block.range.length, length: 0),
+                    replacement: suffix),
+                caretUTF8: nil)
+        }
         activeBlockID = id
         // Each editing session holds its own last-good preview; a stale
         // artifact from the previous session must never appear over a
