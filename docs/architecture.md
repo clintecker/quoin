@@ -174,7 +174,13 @@ display-style big operators, radicals with degree indices, fences scaled to
 body height, grids with per-column widths and per-row baselines,
 hand-stroked braces/arrows, and a `\color` `inkOverride` threaded through a
 sub-typesetter. `MathImageRenderer` rasterises the box into an
-`NSTextAttachment` at theme size.
+`NSTextAttachment` at theme size, cached by content + a
+`MathTheme.fingerprint`. The renderer depends on `MathTheme` (ink +
+appearance), NOT Quoin's `Theme` — the same seam pattern as MermaidKit's
+`DiagramTheme`, and the reason the math engine is a lift-and-shift away
+from being its own package (see `docs/math-extraction.md`; sources are
+pre-grouped into `Sources/QuoinCore/Math/` → MathLayout and
+`Sources/QuoinRender/Math/` → MathRender).
 
 ## Diagram engine
 
