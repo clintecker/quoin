@@ -50,10 +50,11 @@ the live text storage. A keystroke re-renders one block, TextKit 2 re-lays-out
 one region, and the viewport never jumps.
 
 **Degrade, never break.** Unsupported LaTeX constructs and Mermaid types render
-as a tidy labelled source card with a copy button — degradation looks
-intentional, not broken. Pathological input (10k-deep nesting, unclosed
-everything) parses to *something* without crashing; the torture suite keeps it
-that way.
+as a tidy labelled source card with a copy button — and the caption *names the
+command* that isn't typeset yet (`math · \tag isn't natively typeset yet`), so
+degradation is legible, not a shrug. Pathological input (10k-deep nesting,
+unclosed everything) parses to *something* without crashing; the torture suite
+keeps it that way.
 
 ![Blocks, callouts, and tables](docs/images/gallery-blocks.png)
 
@@ -89,8 +90,16 @@ that way.
 | `matrix` `pmatrix` `bmatrix` `Bmatrix` `vmatrix` `Vmatrix` | ✅ |
 | `cases` (piecewise) | ✅ |
 | `aligned` `align` `alignedat` `split` `gather` | ✅ |
-| `\text{}` `\mathbb{}` `\mathbf{}`, upright function names | ✅ |
-| Accents (`\vec` `\hat`), `\hline`, `array` column rules | 🟡 source-card fallback |
+| `\text{}` `\mathbf{}`, upright function names | ✅ |
+| Math alphabets `\mathbb{}` `\mathcal{}` `\mathscr{}` `\mathfrak{}` `\mathsf{}` `\mathtt{}` | ✅ Unicode codepoints |
+| Accents `\hat \vec \bar \dot \ddot \tilde` `\widehat`, `\overline` `\underline` | ✅ |
+| `\binom` `\dbinom` `\cfrac`, `\overset` `\underset` `\stackrel` | ✅ |
+| `\overbrace` `\underbrace`, `\xrightarrow` `\xleftarrow`, `\substack` | ✅ |
+| `\boxed`, `\phantom` family, `\color{}` `\textcolor{}` (named + `#hex`) | ✅ |
+| Document-scoped macros: `\newcommand` `\renewcommand` `\def` | ✅ |
+| Directly-typed Unicode math (`∫ ∑ ≤ α` — classed like their commands) | ✅ |
+| `array` with `\hline` (grid renders; rules/column-spec not yet drawn) | 🟡 |
+| `\tag`, equation numbering, `\DeclareMathOperator`, mhchem | 🟡 named-source-card fallback |
 
 ### Diagrams (Mermaid)
 

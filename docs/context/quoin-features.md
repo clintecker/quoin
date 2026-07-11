@@ -80,12 +80,31 @@ Delimiters `$…$`, `$$…$$`, `\(…\)`, `\[…\]`. Greek/operators/relations/
 arrows, fractions, `\sqrt[n]{}`, sub/superscripts, big operators with
 stacked limits (`\sum` `\int` `\prod`), `\left…\right` auto-sized fences,
 all six matrix environments, `cases`, `aligned`/`align`/`gather`/`split`,
-`\text{}` `\mathbb{}` `\mathbf{}`. Verified by a golden-image harness:
-25 fixtures rendered to 2× PNGs and diffed against reference renders in
-CI, with a coverage ledger that FAILS the build if a known-unsupported
-construct starts rendering (so the docs can never overstate). Known gaps
-(render as tidy source cards): accents (`\vec`/`\hat`), `\binom`,
-`\overbrace`/`\underbrace`, `\underset`/`\overset`, `\substack`.
+`\text{}` `\mathbf{}`. Plus a deep everyday-KaTeX layer:
+
+- **Math alphabets** to real Unicode glyphs: `\mathbb` `\mathcal` `\mathscr`
+  `\mathfrak` `\mathsf` `\mathtt` `\boldsymbol` (ℝ 𝒜 𝔤 𝖷 𝚡).
+- **Accents**: `\hat \vec \bar \dot \ddot \tilde \check \breve \acute`,
+  stretchy `\widehat`/`\widetilde`, and `\overline`/`\underline` (accents
+  hug the glyph's ink top, not the font ascent).
+- **Fractions & stacks**: `\binom` `\dbinom` `\cfrac`, `\overset`
+  `\underset` `\stackrel`, `\overbrace`/`\underbrace` with labels,
+  `\substack`.
+- **Stretchy arrows** `\xrightarrow`/`\xleftarrow` with over/under labels.
+- **Decorations**: `\boxed`, `\phantom`/`\hphantom`/`\vphantom`,
+  `\color`/`\textcolor` (named palette + `#hex`).
+- **Document-scoped macros**: `\newcommand`/`\renewcommand`/`\def` are
+  collected across the whole document and expanded everywhere — define a
+  shorthand once, use it in any equation (even before its definition).
+- **Directly-typed Unicode** (`∫ ∑ ≤ α`) is classed like its `\command`
+  spelling, so a raw `∫` gets stacked limits and correct spacing.
+
+Verified by a golden-image harness: ~35 fixtures rendered to 2× PNGs and
+diffed against reference renders in CI, with a coverage ledger that FAILS
+the build if a known-unsupported construct starts rendering (so the docs
+can never overstate). When something isn't typeset yet (`\tag`, equation
+numbering, `\DeclareMathOperator`, mhchem, array column rules), it
+degrades to a source card whose caption NAMES the command.
 
 ## Diagrams
 
@@ -205,7 +224,10 @@ icon, Sparkle update wiring, deep-perf items, visual token refresh).
 - macOS-only editor today (iOS reader target exists, unshipped).
 - No sync/collaboration — files are files; use your own sync.
 - Raw HTML doesn't execute (by design); remote images placeholder-only.
-- Math gaps listed above; Mermaid venn overlap layout + parts of C4 are
-  engine gaps (tracked in MermaidKit).
+- Remaining math gaps (named-source-card fallback): `\tag`/equation
+  numbering, `\DeclareMathOperator`, mhchem/physics packages, array
+  column rules + `\hline` drawing (the grid renders, the rules don't).
+  Mermaid venn overlap layout + parts of C4 are engine gaps (tracked in
+  MermaidKit).
 - Switching tabs currently resets scroll/caret position (on the ledger).
 - No plugin system; no Vim mode.

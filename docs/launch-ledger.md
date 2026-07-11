@@ -202,3 +202,13 @@ top-down; nothing ships while a BLOCKER is open.*
   bar. (Delight/confusion analysis.)
 - Launch gates from existing ledgers: fence healing (above), venn/C4
   MermaidKit engine session (#9/#10 rendering ledger).
+- [SHIPPED 2026-07-11] Math coverage expansion (7 phases): named-command
+  fallback captions; Unicode math alphabets (\mathbb/\mathcal/\mathfrak/…)
+  + direct-typed Unicode classing; accents + \binom/\cfrac; \overset/
+  \underset/\overbrace/\underbrace/\xrightarrow/\substack; \boxed/
+  \phantom/\color; document-scoped \newcommand/\def macros; \hline no
+  longer degrades arrays. ~35 golden fixtures (promotion ratchet enforces
+  honesty), 60+ new parser/macro tests. Remaining named-fallback gaps:
+  \tag/equation numbering, \DeclareMathOperator, array rule DRAWING +
+  column-spec alignment, mhchem. A real OpenType MATH font (STIX) is the
+  future upgrade — all parser work carries over.

@@ -72,6 +72,33 @@ Fractions, roots, sums, integrals, limits, Greek, matrices, `cases`,
 `aligned`, and more — click **‹/› edit** on the equation above to edit
 its LaTeX with a live preview beside your cursor.
 
+Accents, binomials, braces, and stretchy arrows all typeset natively:
+
+$$
+\hat{x} + \vec{v}, \quad \binom{n}{k}, \quad
+\overbrace{a + b + c}^{\text{sum}}, \quad
+A \xrightarrow{f} B
+$$
+
+The math alphabets — `\mathbb{R}`, `\mathcal{L}`, `\mathfrak{g}` — map to
+real Unicode glyphs, and you can recolor with `\color`:
+
+$$
+\mathbb{R} \subset \mathbb{C}, \quad \boxed{E = mc^2}, \quad
+\color{#3478f6}{\nabla \cdot \mathbf{F}}
+$$
+
+Define your own shorthands once with `\newcommand` and use them anywhere
+in the document — the definitions apply across every equation:
+
+$$
+\newcommand{\abs}[1]{\left|#1\right|}
+\abs{x} + \abs{y} \ge \abs{x + y}
+$$
+
+If a construct isn't typeset yet, the equation degrades to a tidy source
+card whose caption names the command — nothing ever silently breaks.
+
 ## Diagrams
 
 Mermaid diagrams render natively — no web engine involved:

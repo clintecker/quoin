@@ -152,15 +152,29 @@ real inter-atom spacing. Environments (`\begin{…}`) become `.matrix` grids
 with per-environment alignment (centered / cases / aligned-at-`&`). Unknown
 commands become `.unsupported` leaves — the parse never fails, and
 `isFullySupported` gates native rendering vs. the styled source-card
-fallback. A linear pre-scan bounds brace/environment nesting so pathological
-input degrades instead of overflowing the parse stack.
+fallback (whose caption is populated by `unsupportedCommands(in:)`, which
+walks the tree collecting the offending `\command` names). A linear
+pre-scan bounds brace/environment nesting so pathological input degrades
+instead of overflowing the parse stack. The node set covers accents
+(`.accent`), generalized fractions (`.genfrac` — `\binom`), over/under
+constructs (`.overUnder` — braces, `\overset`, stretchy `\xrightarrow`),
+box/space decorations (`.decorated`), and recoloring (`.styled`);
+`MathAlphabet` maps `\mathbb`/`\mathcal`/`\mathfrak`/… to Unicode
+Mathematical-Alphanumeric codepoints. `MathMacros` is a pre-tokenize
+string pass: `MarkdownConverter` collects `\newcommand`/`\def` from every
+math segment in the document up front (so uses resolve order-independently)
+and expands each equation's latex before it's stored — the source range is
+untouched, so byte-lossless round-trip and syntax reveal still see the
+literal source.
 
 `MathTypesetter` (QuoinRender) lays each node out as a `MathBox`
-(width/ascent/descent + a draw closure in y-up baseline coordinates):
-fractions on the math axis, stacked limits for display-style big operators,
-radicals with degree indices, fences scaled to body height, grids with
-per-column widths and per-row baselines. `MathImageRenderer` rasterises the
-box into an `NSTextAttachment` at theme size.
+(width/ascent/descent + `inkAscent` for accent hugging + a draw closure in
+y-up baseline coordinates): fractions on the math axis, stacked limits for
+display-style big operators, radicals with degree indices, fences scaled to
+body height, grids with per-column widths and per-row baselines,
+hand-stroked braces/arrows, and a `\color` `inkOverride` threaded through a
+sub-typesetter. `MathImageRenderer` rasterises the box into an
+`NSTextAttachment` at theme size.
 
 ## Diagram engine
 
