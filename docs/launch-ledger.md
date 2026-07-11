@@ -45,13 +45,16 @@ top-down; nothing ships while a BLOCKER is open.*
 
 ## HIGH — data integrity & correctness (senior review)
 
-- [OPEN] Undo/redo stacks survive external reloads — ⌘Z after a disk change
-  splices stale bytes at old offsets, then autosaves the corruption. Fix:
-  clear/rebase stacks on any non-edit adoption. `DocumentSession` #3.
-- [OPEN] Conflict banner doesn't stop subsequent autosaves — continued
-  typing clobbers the disk version while the user "decides". #5.
-- [OPEN] External rename/move forks the document — watcher polls dead path
-  at 200ms forever; next autosave resurrects the old filename. #6.
+- [FIXED] Undo/redo stacks cleared on any non-edit adoption (external
+  reload, take-disk, wholesale apply, toggle re-anchor) via
+  `DocumentSession.adoptExternal`. #3.
+- [FIXED] Conflict latches `hasUnresolvedConflict`: autosave suspended and
+  `saveNow` throws `conflictUnresolved` until the user picks a side (even
+  the ⌘Q flush can't clobber). #5.
+- [FIXED] External rename followed via F_GETPATH on the live inode
+  (`FileWatcher.onRelocate`); true vanish detaches the session — no write
+  can resurrect the dead path; dirty sessions get the sticky banner;
+  restored files re-attach through `reloadFromDisk`. #6.
 - [OPEN] Undo/redo not serialized with the edit pipeline (echo gate). #7.
 - [OPEN] Session edit failure wedges typing 2s then DISCARDS the queued
   keystrokes; error swallowed. Fix: unwedge + replay + banner. #8.
@@ -66,9 +69,12 @@ top-down; nothing ships while a BLOCKER is open.*
   multi-window makes it trivial) — two autosavers ping-pong content. #12.
 - [OPEN] First-H1 rename tears down the live editor mid-typing
   (`.id(activeTab)` recreation). #13.
-- [OPEN] Clean external reload during an in-flight edit applies stale
-  offsets; stamp edits with their sourceHash and reject mismatches. #14.
-- [OPEN] Sole-block Delete Block can erase trailing non-rendered bytes. #15.
+- [FIXED] Edits stamped with `contentRevision` (non-edit adoption counter);
+  `applyEdit` rejects stale bases (`staleEditBase`); ReaderModel mirrors
+  via `revisionedSnapshots()`. iOS still passes nil bases (follow-up). #14.
+- [FIXED] Sole-block Delete Block consumes only the block + its own line
+  terminator; trailing blank lines/whitespace/reference definitions
+  survive. #15.
 
 ## HIGH — platform/UI (macOS audit)
 
