@@ -398,21 +398,29 @@ struct QuickOpenPanel: View {
 
 // MARK: - Tab bar
 
+/// One open document. Identity is STABLE across renames — the editor is
+/// keyed by `id`, so a first-H1 rename mutates `url` without tearing the
+/// live session down (ledger senior #13).
+struct DocumentTab: Identifiable, Hashable {
+    let id = UUID()
+    var url: URL
+}
+
 /// Custom tab strip per the handoff: hidden with one document, active tab
 /// emphasized, ⌘1–9 handled by the window.
 struct DocumentTabBar: View {
-    let tabs: [URL]
-    @Binding var activeTab: URL?
-    let onClose: (URL) -> Void
+    let tabs: [DocumentTab]
+    @Binding var activeTabID: DocumentTab.ID?
+    let onClose: (DocumentTab) -> Void
 
-    @State private var hoveredTab: URL?
+    @State private var hoveredTab: DocumentTab.ID?
 
     var body: some View {
         if tabs.count > 1 {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 1) {
-                    ForEach(tabs, id: \.self) { url in
-                        tab(url)
+                    ForEach(tabs) { tab in
+                        tabView(tab)
                     }
                 }
             }
@@ -421,18 +429,19 @@ struct DocumentTabBar: View {
         }
     }
 
-    private func tab(_ url: URL) -> some View {
-        let isActive = url == activeTab
-        let isHovered = url == hoveredTab
+    private func tabView(_ tab: DocumentTab) -> some View {
+        let isActive = tab.id == activeTabID
+        let isHovered = tab.id == hoveredTab
+        let name = tab.url.deletingPathExtension().lastPathComponent
         return HStack(spacing: 6) {
-            Text(url.deletingPathExtension().lastPathComponent)
+            Text(name)
                 .font(.system(size: 12, weight: isActive ? .medium : .regular))
                 .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.5))
                 .lineLimit(1)
             // Close affordance appears on hover (handoff: the unsaved dot
             // swaps to ✕ on hover; ✕ stays hidden otherwise).
             Button {
-                onClose(url)
+                onClose(tab)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
@@ -447,12 +456,12 @@ struct DocumentTabBar: View {
         .frame(minWidth: 120)
         .background(isActive ? Color(nsColor: .textBackgroundColor) : Color.clear)
         .contentShape(Rectangle())
-        .onTapGesture { activeTab = url }
+        .onTapGesture { activeTabID = tab.id }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(url.deletingPathExtension().lastPathComponent) tab")
+        .accessibilityLabel("\(name) tab")
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
         .onHover { inside in
-            hoveredTab = inside ? url : (hoveredTab == url ? nil : hoveredTab)
+            hoveredTab = inside ? tab.id : (hoveredTab == tab.id ? nil : hoveredTab)
         }
     }
 }

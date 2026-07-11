@@ -8,11 +8,15 @@ struct MainWindow: View {
     @State private var library = LibraryModel()
 
     @State private var sidebarSelection: URL?
-    @State private var openTabs: [URL] = []
-    @State private var activeTab: URL?
+    @State private var openTabs: [DocumentTab] = []
+    @State private var activeTabID: DocumentTab.ID?
     /// Workspace memory (UI #4): open tabs survive relaunch. First line
     /// is the active tab's path, the rest are the tab order.
     @SceneStorage("QuoinOpenTabs") private var persistedTabs = ""
+
+    private var activeTab: DocumentTab? {
+        openTabs.first { $0.id == activeTabID }
+    }
     @State private var isQuickOpenVisible = false
     @State private var isLibrarySearchVisible = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -51,20 +55,21 @@ struct MainWindow: View {
                 if !library.hasLibrary {
                     chooseLibraryPrompt
                 } else {
-                    DocumentTabBar(tabs: openTabs, activeTab: $activeTab) { url in
-                        close(url)
+                    DocumentTabBar(tabs: openTabs, activeTabID: $activeTabID) { tab in
+                        close(tab)
                     }
-                    if let activeTab {
-                        // Keyed by URL: each document gets its own model/session.
-                        ReaderScreen(fileURL: activeTab, initialText: "", onFileRenamed: { newURL in
-                            if let index = openTabs.firstIndex(of: activeTab) {
-                                openTabs[index] = newURL
+                    if let tab = activeTab {
+                        // Keyed by the tab's STABLE identity, not the URL —
+                        // a first-H1 rename used to tear down the live
+                        // editor mid-typing (ledger senior #13).
+                        ReaderScreen(fileURL: tab.url, initialText: "", onFileRenamed: { newURL in
+                            if let index = openTabs.firstIndex(where: { $0.id == tab.id }) {
+                                openTabs[index].url = newURL
                             }
-                            self.activeTab = newURL
                             sidebarSelection = newURL
                             library.rescan()
                         })
-                        .id(activeTab)
+                        .id(tab.id)
                     } else {
                         emptyState
                     }
@@ -103,8 +108,8 @@ struct MainWindow: View {
         }
         // File ▸ Close Tab (⌘W).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.closeTabNotification)) { _ in
-            guard isKeyWindow, let activeTab else { return }
-            close(activeTab)
+            guard isKeyWindow, let tab = activeTab else { return }
+            close(tab)
         }
         // File ▸ Open… (⌘O): native panel, markdown files only.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openFilePanelNotification)) { _ in
@@ -134,10 +139,9 @@ struct MainWindow: View {
         // not key-gated) — a live session would autosave into the Trash.
         .onReceive(NotificationCenter.default.publisher(for: LibraryModel.documentTrashedNotification)) { note in
             if let url = note.userInfo?["url"] as? URL {
-                close(url)
-                openTabs.removeAll { $0.path.hasPrefix(url.path + "/") }
-                if let activeTab, !openTabs.contains(activeTab) {
-                    self.activeTab = openTabs.last
+                openTabs.removeAll { $0.url == url || $0.url.path.hasPrefix(url.path + "/") }
+                if activeTab == nil {
+                    activeTabID = openTabs.last?.id
                 }
             }
         }
@@ -158,12 +162,12 @@ struct MainWindow: View {
             applyShotState()
         }
         .onChange(of: openTabs) { persistTabs() }
-        .onChange(of: activeTab) { persistTabs() }
+        .onChange(of: activeTabID) { persistTabs() }
         // Sidebar keyboard selection (↑/↓ + the List's type-select) opens
         // documents, not just mouse clicks (UI #23). open() re-sets the
         // selection to the same URL, so this settles after one pass.
         .onChange(of: sidebarSelection) { _, url in
-            if let url, url.pathExtension.lowercased() == "md", activeTab != url {
+            if let url, url.pathExtension.lowercased() == "md", activeTab?.url != url {
                 open(url)
             }
         }
@@ -172,7 +176,7 @@ struct MainWindow: View {
     // MARK: - Workspace persistence (UI #4)
 
     private func persistTabs() {
-        persistedTabs = ([activeTab?.path ?? ""] + openTabs.map(\.path)).joined(separator: "\n")
+        persistedTabs = ([activeTab?.url.path ?? ""] + openTabs.map(\.url.path)).joined(separator: "\n")
     }
 
     /// Restores tabs from the last session. Only files reachable through
@@ -185,14 +189,15 @@ struct MainWindow: View {
         guard lines.count > 1 else { return }
         let restored = lines.dropFirst()
             .filter { $0.hasPrefix(rootPath + "/") && FileManager.default.fileExists(atPath: $0) }
-            .map { URL(fileURLWithPath: $0) }
+            .map { DocumentTab(url: URL(fileURLWithPath: $0)) }
         guard !restored.isEmpty else { return }
         openTabs = restored
-        let active = URL(fileURLWithPath: lines[0])
-        activeTab = restored.contains(active) ? active : restored.last
-        if let activeTab {
-            sidebarSelection = activeTab
-            library.reveal(url: activeTab)
+        let activePath = lines[0]
+        let active = restored.first { $0.url.path == activePath } ?? restored.last
+        activeTabID = active?.id
+        if let active {
+            sidebarSelection = active.url
+            library.reveal(url: active.url)
         }
     }
 
@@ -230,10 +235,13 @@ struct MainWindow: View {
     // MARK: - Tabs
 
     private func open(_ url: URL) {
-        if !openTabs.contains(url) {
-            openTabs.append(url)
+        if let existing = openTabs.first(where: { $0.url == url }) {
+            activeTabID = existing.id
+        } else {
+            let tab = DocumentTab(url: url)
+            openTabs.append(tab)
+            activeTabID = tab.id
         }
-        activeTab = url
         sidebarSelection = url
         // Reveal in the tree: expand ancestor folders so the selection is
         // visible when the doc was opened via quick open or Finder.
@@ -244,10 +252,10 @@ struct MainWindow: View {
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
     }
 
-    private func close(_ url: URL) {
-        openTabs.removeAll { $0 == url }
-        if activeTab == url {
-            activeTab = openTabs.last
+    private func close(_ tab: DocumentTab) {
+        openTabs.removeAll { $0.id == tab.id }
+        if activeTabID == tab.id {
+            activeTabID = openTabs.last?.id
         }
     }
 
@@ -272,14 +280,14 @@ struct MainWindow: View {
         Group {
             // ⌘Z undoes sidebar file moves when no document is open;
             // with a document open, its edit-undo owns the shortcut.
-            if activeTab == nil {
+            if activeTabID == nil {
                 Button("") { library.undoLastMove() }
                     .keyboardShortcut("z", modifiers: .command)
             }
             ForEach(1..<10) { index in
                 Button("") {
                     if openTabs.indices.contains(index - 1) {
-                        activeTab = openTabs[index - 1]
+                        activeTabID = openTabs[index - 1].id
                     }
                 }
                 .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)

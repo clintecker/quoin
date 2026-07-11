@@ -47,8 +47,12 @@ struct AboutView: View {
                 .frame(width: 260)
 
             VStack(spacing: 4) {
-                Link("MermaidKit on GitHub", destination: URL(string: "https://github.com/clintecker/MermaidKit")!)
-                    .font(.system(size: 11))
+                HStack(spacing: 14) {
+                    Link("MermaidKit on GitHub", destination: URL(string: "https://github.com/clintecker/MermaidKit")!)
+                    Button("Acknowledgements") { isAcknowledgementsVisible = true }
+                        .buttonStyle(.link)
+                }
+                .font(.system(size: 11))
                 Text("© 2026 Clint Ecker")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.tertiary)
@@ -59,6 +63,37 @@ struct AboutView: View {
         .padding(.bottom, 20)
         .frame(width: 360)
         .fixedSize()
+        // Apache 2.0 requires shipping the attribution (launch ledger L11).
+        .sheet(isPresented: $isAcknowledgementsVisible) {
+            VStack(spacing: 0) {
+                ScrollView {
+                    Text(acknowledgementsText)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                }
+                Divider()
+                HStack {
+                    Spacer()
+                    Button("Done") { isAcknowledgementsVisible = false }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .padding(10)
+            }
+            .frame(width: 480, height: 420)
+        }
+    }
+
+    @State private var isAcknowledgementsVisible = false
+
+    private var acknowledgementsText: String {
+        let url = Bundle.main.url(forResource: "Acknowledgements", withExtension: "md")
+            ?? Bundle.main.url(forResource: "Acknowledgements", withExtension: "md", subdirectory: "Resources")
+        guard let url, let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return "swift-markdown © Apple Inc., Apache License 2.0 — https://github.com/swiftlang/swift-markdown\nMermaidKit © 2026 Clint Ecker — https://github.com/clintecker/MermaidKit"
+        }
+        return text
     }
 
     private func engineRow(_ label: String, _ detail: String) -> some View {
