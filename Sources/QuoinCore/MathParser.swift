@@ -546,6 +546,15 @@ public enum MathParser {
             }
             if case .command("\\") = token { tokens.removeFirst(); endRow(); continue }
             if case .character("&") = token { tokens.removeFirst(); endCell(); continue }
+            // Row rules: consume rather than let them degrade the whole grid
+            // (\hline used to become an .unsupported leaf inside a cell,
+            // flipping the entire array to a source card). \cline{a-b} also
+            // carries a brace argument to drop.
+            if case .command(let c) = token, c == "hline" || c == "hdashline" || c == "cline" {
+                tokens.removeFirst()
+                if c == "cline" { _ = readBraceName(&tokens) }
+                continue
+            }
             if let atom = parseAtomWithScripts(&tokens) {
                 cell.append(atom)
             } else if tokens.first != nil {

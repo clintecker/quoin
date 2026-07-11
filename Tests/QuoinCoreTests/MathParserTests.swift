@@ -383,6 +383,23 @@ final class MathParserTests: XCTestCase {
             MathParser.parse("\\boxed{\\color{red}{a} + \\phantom{b}}")))
     }
 
+    // MARK: - Arrays with rules (Phase 4)
+
+    func testHlineNoLongerDegradesArray() {
+        // \hline used to become an .unsupported leaf, flipping the whole
+        // array to a source card. Now it's consumed; the grid survives.
+        let node = MathParser.parse("\\begin{array}{cc} a & b \\\\ \\hline c & d \\end{array}")
+        XCTAssertTrue(MathParser.isFullySupported(node))
+        guard case .matrix(let rows, _, _, _) = node else { return XCTFail("expected matrix") }
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].count, 2)
+    }
+
+    func testClineArgumentConsumed() {
+        let node = MathParser.parse("\\begin{array}{cc} a & b \\\\ \\cline{1-2} c & d \\end{array}")
+        XCTAssertTrue(MathParser.isFullySupported(node))
+    }
+
     /// Convenience: the single mapped glyph of a one-atom expression.
     private func glyph(_ latex: String) -> String? {
         if case .symbol(let g, _, _) = MathParser.parse(latex) { return g }

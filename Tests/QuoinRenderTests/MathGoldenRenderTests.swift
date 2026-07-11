@@ -98,6 +98,8 @@ final class MathGoldenRenderTests: XCTestCase {
         // Phase 5 — boxed, phantom, color
         .init(name: "boxed", latex: #"\boxed{E = mc^2}"#, expectation: .mustRender),
         .init(name: "colored", latex: #"\color{#cc2222}{x} + \textcolor{#2244cc}{y} = \color{#00aa88}{z}"#, expectation: .mustRender),
+        // Phase 4 — arrays with \hline no longer degrade (content survives)
+        .init(name: "array-hline", latex: #"\begin{array}{cc} a & b \\ \hline c & d \end{array}"#, expectation: .mustRender),
     ]
 
     private var goldenDirectory: URL {
