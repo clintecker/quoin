@@ -55,14 +55,19 @@ top-down; nothing ships while a BLOCKER is open.*
   (`FileWatcher.onRelocate`); true vanish detaches the session — no write
   can resurrect the dead path; dirty sessions get the sticky banner;
   restored files re-attach through `reloadFromDisk`. #6.
-- [OPEN] Undo/redo not serialized with the edit pipeline (echo gate). #7.
-- [OPEN] Session edit failure wedges typing 2s then DISCARDS the queued
-  keystrokes; error swallowed. Fix: unwedge + replay + banner. #8.
-- [OPEN] Format commands + smart paste bypass the edit-echo gate — ⌘B
-  right after a keystroke can wrap a stale range. #9.
-- [OPEN] Fence healing on commit-while-broken (also embed brief tranche-2
-  #1): deleting a closing fence swallows following blocks; commit keeps it.
-  Scoped: bytes are honest, ⌘Z restores — panic risk, not byte loss. #10.
+- [FIXED] Undo/redo join the FIFO edit pipeline; a history splice bumps
+  contentRevision so any in-flight edit stamped pre-undo is rejected
+  (staleEditBase), never spliced at stale offsets. #7.
+- [FIXED] Edit failure now unwedges immediately and REPLAYS the queued
+  keystrokes against the fresh truth (recoverFromFailedEdit republishes a
+  caret echo); the watchdog replays instead of discarding; failures
+  surface as banners, never swallowed. #8.
+- [FIXED] Format commands + smart paste join the echo queue
+  (PendingEditorCommand): they queue mid-flight, flush against the fresh
+  selection, and arm the gate like keystrokes. #9.
+- [FIXED] Fence healing on commit-while-broken: FenceHealing appends the
+  matching closing fence (```/~~~/$$, opener length + indent) as an
+  undoable session edit on deactivation; indented code never heals. #10.
 - [FIXED] Dead security-scope bookmark now explains itself: the first-run
   prompt shows what happened (moved/renamed/deleted, documents untouched)
   and how to reconnect (`bookmarkRestoreFailure`). #11.
