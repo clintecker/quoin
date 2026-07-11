@@ -34,14 +34,14 @@ top-down; nothing ships while a BLOCKER is open.*
   stays broadcast — a dead tab must close everywhere.)
 - **[OPEN] App icon does not exist** — generic AppKit icon today; no
   .xcassets anywhere. Commission now (lead time). (PM L6)
-- **[DECIDED 2026-07-10: DIRECT distribution]** — consequences now on the
-  ledger: (a) Sparkle 2.x for updates — a real third-party dependency
-  requiring the written TRD justification per policy, plus an appcast
-  host; (b) Developer ID signing + notarization pipeline (hardened
-  runtime already on; needs an archive/notarize script in scripts/);
-  (c) privacy copy amended to "no network except the update check, which
-  you can disable"; (d) pricing/licensing mechanics are ours to build.
-  (PM L9/L10)
+- **[DECIDED 2026-07-10: DIRECT distribution]** — consequences: (a) Sparkle
+  2.x for updates — written justification SHIPPED
+  (docs/dependency-justifications.md); wiring blocked on appcast host +
+  EdDSA keys (Clint); (b) notarization pipeline SHIPPED
+  (scripts/notarize.sh: archive → Developer ID sign → notarize → staple →
+  Gatekeeper-verify) — needs Clint's signing identity + stored notary
+  credentials to run; (c) privacy copy amendment pending Sparkle wiring;
+  (d) pricing/licensing mechanics are ours to build. (PM L9/L10)
 
 ## HIGH — data integrity & correctness (senior review)
 
@@ -63,8 +63,9 @@ top-down; nothing ships while a BLOCKER is open.*
 - [OPEN] Fence healing on commit-while-broken (also embed brief tranche-2
   #1): deleting a closing fence swallows following blocks; commit keeps it.
   Scoped: bytes are honest, ⌘Z restores — panic risk, not byte loss. #10.
-- [OPEN] Dead security-scope bookmark degrades to invisible global failure;
-  library loss shows the first-run prompt with no explanation. #11.
+- [FIXED] Dead security-scope bookmark now explains itself: the first-run
+  prompt shows what happened (moved/renamed/deleted, documents untouched)
+  and how to reconnect (`bookmarkRestoreFailure`). #11.
 - [OPEN] Same file can open as two live sessions (URL-equality keying;
   multi-window makes it trivial) — two autosavers ping-pong content. #12.
 - [FIXED] First-H1 rename no longer tears down the live editor: tabs are

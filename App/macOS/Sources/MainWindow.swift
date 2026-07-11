@@ -335,6 +335,21 @@ struct MainWindow: View {
 
     private var chooseLibraryPrompt: some View {
         VStack(spacing: 10) {
+            // A vanished library must never masquerade as a fresh install
+            // (ledger senior #11) — say what happened and how to recover.
+            if let failure = library.bookmarkRestoreFailure {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(failure)
+                        .font(.system(size: 11.5))
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(10)
+                .frame(maxWidth: 420)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .padding(.bottom, 8)
+            }
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 36))
                 .foregroundStyle(.primary.opacity(0.35))

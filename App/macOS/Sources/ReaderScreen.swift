@@ -136,6 +136,17 @@ struct ReaderScreen: View {
                 .padding(.top, 10)
                 .padding(.trailing, 16)
             }
+            // Reading progress hairline (idea #12) sits on the EDITOR's
+            // top edge — on the window edge it overlapped the find bar.
+            .overlay(alignment: .top) {
+                GeometryReader { proxy in
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.35))
+                        .frame(width: proxy.size.width * scrollProgress, height: 2)
+                }
+                .frame(height: 2)
+                .allowsHitTesting(false)
+            }
             if showStatusBar {
                 statusBar
             }
@@ -163,17 +174,6 @@ struct ReaderScreen: View {
         .environment(\.outlineSectionPreview, { headingID in
             sectionPreview(for: headingID)
         })
-        // Reading progress hairline (idea #12): a quiet accent line along
-        // the editor's top edge, width = scroll fraction.
-        .overlay(alignment: .top) {
-            GeometryReader { proxy in
-                Rectangle()
-                    .fill(Color.accentColor.opacity(0.35))
-                    .frame(width: proxy.size.width * scrollProgress, height: 2)
-            }
-            .frame(height: 2)
-            .allowsHitTesting(false)
-        }
     }
 
     private func windowChrome(_ content: some View) -> some View {

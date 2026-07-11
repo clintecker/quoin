@@ -83,6 +83,11 @@ final class LibraryModel {
         }
     }
 
+    /// Why the saved library didn't come back (bookmark dead, folder
+    /// gone) — shown by the first-run prompt so a vanished library never
+    /// looks like a fresh install (ledger senior #11).
+    private(set) var bookmarkRestoreFailure: String?
+
     private func restoreBookmark() {
         guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return }
         var stale = false
@@ -91,7 +96,14 @@ final class LibraryModel {
             options: .withSecurityScope,
             relativeTo: nil,
             bookmarkDataIsStale: &stale
-        ) else { return }
+        ) else {
+            bookmarkRestoreFailure = "Quoin lost access to your library folder — it may have been moved, renamed, or deleted. Choose it again to reconnect; your documents are untouched on disk."
+            return
+        }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            bookmarkRestoreFailure = "Your library folder (\(url.lastPathComponent)) is no longer at \(url.deletingLastPathComponent().path). If you moved it, choose its new location — your documents are untouched."
+            return
+        }
         adopt(rootURL: url)
         if stale, let refreshed = try? url.bookmarkData(
             options: .withSecurityScope,
@@ -103,6 +115,7 @@ final class LibraryModel {
     }
 
     private func adopt(rootURL url: URL) {
+        bookmarkRestoreFailure = nil
         librarySearchTask?.cancel()
         quickOpenTask?.cancel()
         librarySearchResults = []
