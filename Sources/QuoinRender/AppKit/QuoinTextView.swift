@@ -110,9 +110,25 @@ final class QuoinTextView: NSTextView {
     }
 
     /// The drawn editing frame's box (text-view coordinates), reported
-    /// each draw pass — nil when no block is open. The side-by-side
-    /// preview panel positions itself against it.
+    /// when it CHANGES — nil when no block is open. The side-by-side
+    /// preview panel positions itself against it. Deduped (ledger perf
+    /// #10): every drawBackground pass used to fire an async dispatch;
+    /// now one fires only when the rect actually differs from the last
+    /// report. Panel-content changes with an unchanged frame are covered
+    /// by the coordinator's projection-change refresh.
     var onEditingFrameGeometry: ((CGRect?) -> Void)?
+    /// Outer nil = nothing reported yet; `.some(nil)` = reported "no
+    /// open block".
+    private var lastReportedEditingFrame: CGRect??
+
+    private func reportEditingFrameGeometry(_ rect: CGRect?) {
+        guard onEditingFrameGeometry != nil, lastReportedEditingFrame != .some(rect) else { return }
+        lastReportedEditingFrame = .some(rect)
+        // Mutating the view hierarchy mid-draw is illegal — next turn.
+        DispatchQueue.main.async { [weak self] in
+            self?.onEditingFrameGeometry?(rect)
+        }
+    }
 
     /// Ambient paused status: while the live preview is paused (admitted),
     /// the editing frame's stroke turns this color instead of the accent.
@@ -265,11 +281,7 @@ final class QuoinTextView: NSTextView {
             return false
         }) {
             doneChipRect = nil
-            if onEditingFrameGeometry != nil {
-                DispatchQueue.main.async { [weak self] in
-                    self?.onEditingFrameGeometry?(nil)
-                }
-            }
+            reportEditingFrameGeometry(nil)
         }
         guard !decorationRuns.isEmpty,
               let layoutManager = textLayoutManager,
@@ -436,13 +448,8 @@ final class QuoinTextView: NSTextView {
             context.fillPath()
             label.draw(at: CGPoint(x: chip.minX + 6, y: chip.minY + 2))
             doneChipRect = chip
-            // Side-by-side preview panel tracks this frame (mutating the
-            // view hierarchy mid-draw is illegal — next turn).
-            if onEditingFrameGeometry != nil {
-                DispatchQueue.main.async { [weak self] in
-                    self?.onEditingFrameGeometry?(rect)
-                }
-            }
+            // Side-by-side preview panel tracks this frame.
+            reportEditingFrameGeometry(rect)
 
         case .tableRules(let width, let header, let body):
             let lineWidth = min(width + 24, box.width)

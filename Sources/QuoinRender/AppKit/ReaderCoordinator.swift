@@ -19,7 +19,21 @@ extension MarkdownReaderView {
         /// updateNSView runs on every SwiftUI pass; this is what stops a
         /// patch-bearing projection from re-applying its patches.
         var appliedRevision = -1
-        var blockRanges: [BlockID: NSRange] = [:]
+        var blockRanges: [BlockID: NSRange] = [:] {
+            didSet { blockRangeIndex = nil }
+        }
+        /// Sorted-ranges index over `blockRanges` (ledger perf #11): built
+        /// lazily once per projection, binary-searched per query.
+        /// `blockID(atCharIndex:)` and `topVisibleBlockID` were O(blocks)
+        /// linear scans on every caret move and scroll tick — the scroll
+        /// path even allocated a description string per key per query.
+        private var blockRangeIndex: BlockRangeIndex?
+        private var rangeIndex: BlockRangeIndex {
+            if let blockRangeIndex { return blockRangeIndex }
+            let built = BlockRangeIndex(blockRanges)
+            blockRangeIndex = built
+            return built
+        }
         /// The active block id as of the last applied update — what lets a
         /// re-render recognize an activate/deactivate FLIP (chart ↔ source)
         /// and pin the flipped block on screen across the height change.
@@ -138,22 +152,46 @@ extension MarkdownReaderView {
         /// union range of the synced runs, or a zero range when nothing
         /// differed — non-nil either way, so callers don't re-anchor scroll
         /// for what is at most an attribute repaint.
+        ///
+        /// The walk deliberately covers the WHOLE document (ledger perf
+        /// #8). LEDGER: bounding it to (changed range ∪ active-block range)
+        /// was evaluated and rejected as unsound — attribute diffs occur
+        /// outside both: a re-rendered diagram is the same single U+FFFC
+        /// character carrying a NEW attachment, string-invisible to the
+        /// splice diff and outside any active block
+        /// (ActivationNeighborIntegrityTests.testSpliceCarriesReplaced-
+        /// AttachmentsAcross pins exactly that shipped bug). Instead the
+        /// walk goes through the toll-free-bridged CF API: per-run Swift
+        /// dictionary bridging was ~90% of the cost (measured ~110ms →
+        /// ~11ms for a 66k-char document, identical diff detection);
+        /// dictionaries bridge only for the rare runs that actually differ.
         private static func syncAttributesWhereDifferent(
             in storage: NSTextStorage, to newAttr: NSAttributedString
         ) -> NSRange {
             var synced: NSRange?
             var location = 0
+            let length = newAttr.length
+            let oldCF = storage as CFAttributedString
+            let newCF = newAttr as CFAttributedString
             storage.beginEditing()
-            while location < newAttr.length {
-                var newRunRange = NSRange()
-                let newAttrs = newAttr.attributes(at: location, effectiveRange: &newRunRange)
-                var oldRunRange = NSRange()
-                let oldAttrs = storage.attributes(at: location, effectiveRange: &oldRunRange)
+            while location < length {
+                var newRunRange = CFRange()
+                var oldRunRange = CFRange()
+                let newDict = CFAttributedStringGetAttributes(newCF, location, &newRunRange)
+                let oldDict = CFAttributedStringGetAttributes(oldCF, location, &oldRunRange)
                 // Compare over the shared extent of the two runs.
-                let step = min(NSMaxRange(newRunRange), NSMaxRange(oldRunRange)) - location
-                if !(newAttrs as NSDictionary).isEqual(to: oldAttrs) {
+                let step = min(newRunRange.location + newRunRange.length,
+                               oldRunRange.location + oldRunRange.length) - location
+                let differs: Bool
+                if let newDict, let oldDict {
+                    differs = !CFEqual(newDict, oldDict)
+                } else {
+                    differs = (newDict == nil) != (oldDict == nil)
+                }
+                if differs {
                     let range = NSRange(location: location, length: step)
-                    storage.setAttributes(newAttrs, range: range)
+                    let newAttrs = (newDict as NSDictionary?) as? [NSAttributedString.Key: Any]
+                    storage.setAttributes(newAttrs ?? [:], range: range)
                     synced = synced.map { NSUnionRange($0, range) } ?? range
                 }
                 location += max(step, 1)
@@ -285,6 +323,10 @@ extension MarkdownReaderView {
 
         func reportTopBlock() {
             guard let textView else { return }
+            // Focus dimming is viewport-culled; scrolling paints the newly
+            // exposed blocks (no-op while the viewport stays inside the
+            // already-painted extent).
+            extendFocusDimmingIntoViewport(in: textView)
             // Reading progress (idea #12): scroll fraction of the document.
             if let onScrollProgress = parent.onScrollProgress,
                let clip = textView.enclosingScrollView?.contentView {
@@ -722,11 +764,27 @@ extension MarkdownReaderView {
         /// passes from re-painting rendering attributes.
         private var focusDimmedForBlock: BlockID?
         private var focusDimmingActive = false
+        /// Character extents the dim pass has painted so far (merged,
+        /// sorted): dimming is viewport-culled (ledger perf #4), so the
+        /// painted region grows as the user scrolls instead of repainting
+        /// O(blocks) on every caret move.
+        private var focusPaintedRanges: [NSRange] = []
+        /// The caret sentence last soft-dimmed (sentence scope), nil when
+        /// scope is off — the dedupe key that used to be missing: sentence
+        /// mode repainted the whole document on EVERY caret blink even
+        /// when the sentence hadn't changed.
+        private var focusAppliedSentence: NSRange?
+        /// Overscan around the viewport so ordinary scrolling stays ahead
+        /// of the lazily painted dim region (same generosity as the
+        /// decoration cull in QuoinTextView).
+        private static let focusDimSlack = 4096
 
         /// Focus mode: every block except the caret's recedes to 30% ink.
         /// Rendering attributes only (TextKit 2 overlay) — glyphs keep
         /// their layout exactly; nothing reflows, nothing re-renders, and
-        /// the projection's real attributes are untouched.
+        /// the projection's real attributes are untouched. The paint is
+        /// culled to the viewport (plus overscan); scrolling extends it
+        /// through `extendFocusDimmingIntoViewport`.
         func applyFocusDimming(in textView: NSTextView, theme: Theme) {
             guard let layoutManager = textView.textLayoutManager,
                   let contentStorage = textView.textContentStorage,
@@ -736,33 +794,16 @@ extension MarkdownReaderView {
             let caret = textView.selectedRange().location
             let currentBlock = enabled ? blockID(atCharIndex: min(caret, max(0, storage.length - 1))) : nil
 
-            // Sentence scope re-dims on every caret move within the block.
+            // Sentence scope: resolve the caret's sentence first — it is
+            // the dedupe key. Block-local cost, not document-scale.
             let sentenceScope = parent.focusSentenceScope
-            guard enabled != focusDimmingActive
-                    || currentBlock != focusDimmedForBlock
-                    || appliedRevision != focusAppliedRevision
-                    || sentenceScope
-            else { return }
-            focusDimmingActive = enabled
-            focusDimmedForBlock = currentBlock
-            focusAppliedRevision = appliedRevision
-
-            layoutManager.removeRenderingAttribute(
-                .foregroundColor, for: contentStorage.documentRange)
-            guard enabled else { return }
-            let dimmed = theme.ink.withAlphaComponent(0.3)
-            for (id, range) in blockRanges where id != currentBlock {
-                guard let textRange = nsTextRange(range, in: contentStorage) else { continue }
-                layoutManager.addRenderingAttribute(
-                    .foregroundColor, value: dimmed, for: textRange)
-            }
-            // Sentence granularity (idea #2, iA-Writer-style): inside the
-            // current block, everything but the caret's SENTENCE recedes
-            // too — same rendering-attribute engine, softer dim.
-            if sentenceScope, let currentBlock, let blockRange = blockRanges[currentBlock],
+            var sentence: NSRange?
+            var sentenceBlockRange: NSRange?
+            if enabled, sentenceScope, let currentBlock,
+               let blockRange = blockRanges[currentBlock],
                NSMaxRange(blockRange) <= storage.length {
+                sentenceBlockRange = blockRange
                 let text = storage.string as NSString
-                var sentence: NSRange?
                 text.enumerateSubstrings(
                     in: blockRange, options: [.bySentences, .substringNotRequired]
                 ) { _, range, _, stop in
@@ -771,22 +812,155 @@ extension MarkdownReaderView {
                         stop.pointee = true
                     }
                 }
-                if let sentence {
-                    let softDim = theme.ink.withAlphaComponent(0.4)
-                    let before = NSRange(location: blockRange.location,
-                                         length: sentence.location - blockRange.location)
-                    let after = NSRange(location: NSMaxRange(sentence),
-                                        length: NSMaxRange(blockRange) - NSMaxRange(sentence))
-                    for part in [before, after] where part.length > 0 {
-                        if let textRange = nsTextRange(part, in: contentStorage) {
-                            layoutManager.addRenderingAttribute(
-                                .foregroundColor, value: softDim, for: textRange)
-                        }
-                    }
-                }
+            }
+
+            let stateUnchanged = enabled == focusDimmingActive
+                && currentBlock == focusDimmedForBlock
+                && appliedRevision == focusAppliedRevision
+            guard !stateUnchanged || sentence != focusAppliedSentence else { return }
+
+            // Sentence-only caret move: the block dims are already right —
+            // repaint just the current block's soft dims, nothing else.
+            if stateUnchanged, enabled, let blockRange = sentenceBlockRange ?? currentBlock.flatMap({ blockRanges[$0] }),
+               NSMaxRange(blockRange) <= storage.length,
+               let blockTextRange = nsTextRange(blockRange, in: contentStorage) {
+                layoutManager.removeRenderingAttribute(.foregroundColor, for: blockTextRange)
+                focusAppliedSentence = sentence
+                applySentenceSoftDim(sentence, blockRange: blockRange, theme: theme,
+                                     layoutManager: layoutManager, contentStorage: contentStorage)
+                return
+            }
+
+            focusDimmingActive = enabled
+            focusDimmedForBlock = currentBlock
+            focusAppliedRevision = appliedRevision
+            focusAppliedSentence = sentence
+            focusPaintedRanges = []
+
+            layoutManager.removeRenderingAttribute(
+                .foregroundColor, for: contentStorage.documentRange)
+            guard enabled else { return }
+            let paintRange = focusViewportPaintRange(
+                in: textView, layoutManager: layoutManager,
+                contentStorage: contentStorage, storageLength: storage.length)
+            paintFocusDim(in: paintRange, sparing: currentBlock, theme: theme,
+                          layoutManager: layoutManager, contentStorage: contentStorage)
+            focusPaintedRanges = [paintRange]
+            // Sentence granularity (idea #2, iA-Writer-style): inside the
+            // current block, everything but the caret's SENTENCE recedes
+            // too — same rendering-attribute engine, softer dim.
+            if let sentence, let blockRange = sentenceBlockRange {
+                applySentenceSoftDim(sentence, blockRange: blockRange, theme: theme,
+                                     layoutManager: layoutManager, contentStorage: contentStorage)
             }
         }
         private var focusAppliedRevision = -2
+
+        /// The viewport's character extent plus overscan — the region the
+        /// dim pass paints eagerly; everything else is painted on scroll.
+        private func focusViewportPaintRange(
+            in textView: NSTextView, layoutManager: NSTextLayoutManager,
+            contentStorage: NSTextContentStorage, storageLength: Int
+        ) -> NSRange {
+            guard let viewport = layoutManager.textViewportLayoutController.viewportRange else {
+                return NSRange(location: 0, length: storageLength)
+            }
+            let start = contentStorage.offset(from: contentStorage.documentRange.location,
+                                              to: viewport.location)
+            let end = contentStorage.offset(from: contentStorage.documentRange.location,
+                                            to: viewport.endLocation)
+            let lower = max(0, start - Self.focusDimSlack)
+            let upper = min(storageLength, end + Self.focusDimSlack)
+            return NSRange(location: lower, length: max(0, upper - lower))
+        }
+
+        /// Adds the 30% dim to every block intersecting `range` except the
+        /// caret's — binary-searched via the block-range index, so the
+        /// cost is O(visible blocks), never O(document blocks).
+        private func paintFocusDim(
+            in range: NSRange, sparing currentBlock: BlockID?, theme: Theme,
+            layoutManager: NSTextLayoutManager, contentStorage: NSTextContentStorage
+        ) {
+            let dimmed = theme.ink.withAlphaComponent(0.3)
+            forEachBlockRange(intersecting: range) { id, blockRange in
+                guard id != currentBlock,
+                      let textRange = nsTextRange(blockRange, in: contentStorage) else { return }
+                layoutManager.addRenderingAttribute(
+                    .foregroundColor, value: dimmed, for: textRange)
+            }
+        }
+
+        private func applySentenceSoftDim(
+            _ sentence: NSRange?, blockRange: NSRange, theme: Theme,
+            layoutManager: NSTextLayoutManager, contentStorage: NSTextContentStorage
+        ) {
+            guard let sentence else { return }
+            let softDim = theme.ink.withAlphaComponent(0.4)
+            let before = NSRange(location: blockRange.location,
+                                 length: sentence.location - blockRange.location)
+            let after = NSRange(location: NSMaxRange(sentence),
+                                length: NSMaxRange(blockRange) - NSMaxRange(sentence))
+            for part in [before, after] where part.length > 0 {
+                if let textRange = nsTextRange(part, in: contentStorage) {
+                    layoutManager.addRenderingAttribute(
+                        .foregroundColor, value: softDim, for: textRange)
+                }
+            }
+        }
+
+        /// Scroll hook for the viewport-culled dim: paints only the blocks
+        /// in the newly exposed extent (nothing already painted is
+        /// touched); a no-op whenever the viewport is inside the painted
+        /// region. Called from the scroll observer.
+        func extendFocusDimmingIntoViewport(in textView: NSTextView) {
+            guard focusDimmingActive,
+                  let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let storage = contentStorage.textStorage, storage.length > 0
+            else { return }
+            let target = focusViewportPaintRange(
+                in: textView, layoutManager: layoutManager,
+                contentStorage: contentStorage, storageLength: storage.length)
+            // Subtract the already-painted extents from the target.
+            var gaps: [NSRange] = [target]
+            for painted in focusPaintedRanges {
+                gaps = gaps.flatMap { gap -> [NSRange] in
+                    let overlap = NSIntersectionRange(gap, painted)
+                    guard overlap.length > 0 else { return [gap] }
+                    var pieces: [NSRange] = []
+                    if overlap.location > gap.location {
+                        pieces.append(NSRange(location: gap.location,
+                                              length: overlap.location - gap.location))
+                    }
+                    if NSMaxRange(overlap) < NSMaxRange(gap) {
+                        pieces.append(NSRange(location: NSMaxRange(overlap),
+                                              length: NSMaxRange(gap) - NSMaxRange(overlap)))
+                    }
+                    return pieces
+                }
+            }
+            guard !gaps.isEmpty else { return }
+            let theme = parent.theme
+            for gap in gaps where gap.length > 0 {
+                paintFocusDim(in: gap, sparing: focusDimmedForBlock, theme: theme,
+                              layoutManager: layoutManager, contentStorage: contentStorage)
+            }
+            // Merge the target into the painted set (sorted, coalesced).
+            var merged = focusPaintedRanges
+            merged.append(target)
+            merged.sort { $0.location < $1.location }
+            var coalesced: [NSRange] = []
+            for range in merged {
+                if let last = coalesced.last, range.location <= NSMaxRange(last) {
+                    let end = max(NSMaxRange(last), NSMaxRange(range))
+                    coalesced[coalesced.count - 1] = NSRange(
+                        location: last.location, length: end - last.location)
+                } else {
+                    coalesced.append(range)
+                }
+            }
+            focusPaintedRanges = coalesced
+        }
 
         /// Caret moved into a different block while focus mode is on —
         /// called from the selection-change path.
@@ -1023,10 +1197,93 @@ extension MarkdownReaderView {
             // Ranges include their trailing separator, so boundaries can
             // match two blocks; prefer the strictly-containing (earlier) one
             // deterministically by picking the largest containing start.
-            blockRanges
-                .filter { index >= $0.value.location && index < $0.value.location + $0.value.length }
-                .max { $0.value.location < $1.value.location }?
-                .key
+            rangeIndex.blockID(at: index)
+        }
+
+        /// Enumerates the blocks whose ranges intersect `query`, in
+        /// document order — binary-searched, so viewport-scoped passes
+        /// (focus dimming) touch only on-screen blocks.
+        func forEachBlockRange(intersecting query: NSRange, _ body: (BlockID, NSRange) -> Void) {
+            rangeIndex.forEachEntry(intersecting: query, body)
+        }
+
+        /// Sorted-ranges index (ledger perf #11). Entries are sorted by
+        /// location; `prefixMaxEnd` is the non-decreasing running max of
+        /// range ends, which lets containment walks and intersection scans
+        /// stop with binary searches even though neighboring block ranges
+        /// can overlap at their boundaries (trailing separators).
+        struct BlockRangeIndex {
+            private let entries: [(range: NSRange, id: BlockID)]
+            private let prefixMaxEnd: [Int]
+            /// For `topVisibleBlockID`: the storage attribute carries the
+            /// id's STRING form; resolving it used to allocate a
+            /// description per key per scroll tick.
+            let idsByDescription: [String: BlockID]
+
+            init(_ blockRanges: [BlockID: NSRange]) {
+                var sorted = blockRanges.map { (range: $0.value, id: $0.key) }
+                sorted.sort {
+                    if $0.range.location != $1.range.location {
+                        return $0.range.location < $1.range.location
+                    }
+                    if $0.range.length != $1.range.length {
+                        return $0.range.length < $1.range.length
+                    }
+                    // Deterministic order for exact duplicates.
+                    return ($0.id.contentHash, $0.id.occurrence)
+                        < ($1.id.contentHash, $1.id.occurrence)
+                }
+                entries = sorted
+                var runningMax = 0
+                prefixMaxEnd = sorted.map { entry in
+                    runningMax = max(runningMax, NSMaxRange(entry.range))
+                    return runningMax
+                }
+                var byDescription = [String: BlockID](minimumCapacity: sorted.count)
+                for entry in sorted { byDescription[entry.id.description] = entry.id }
+                idsByDescription = byDescription
+            }
+
+            /// Containment query with the historical tie-break: among
+            /// ranges containing `index`, the largest location wins.
+            func blockID(at index: Int) -> BlockID? {
+                // Binary search: first entry with location > index.
+                var lo = 0, hi = entries.count
+                while lo < hi {
+                    let mid = (lo + hi) / 2
+                    if entries[mid].range.location <= index { lo = mid + 1 } else { hi = mid }
+                }
+                // Walk back while a containing range is still possible;
+                // the first hit has the largest location by construction.
+                var i = lo - 1
+                while i >= 0, prefixMaxEnd[i] > index {
+                    let range = entries[i].range
+                    if index >= range.location, index < NSMaxRange(range) {
+                        return entries[i].id
+                    }
+                    i -= 1
+                }
+                return nil
+            }
+
+            func forEachEntry(intersecting query: NSRange, _ body: (BlockID, NSRange) -> Void) {
+                guard !entries.isEmpty else { return }
+                // First candidate: the first entry whose running max end
+                // exceeds the query start (prefixMaxEnd is non-decreasing).
+                var lo = 0, hi = entries.count
+                while lo < hi {
+                    let mid = (lo + hi) / 2
+                    if prefixMaxEnd[mid] <= query.location { lo = mid + 1 } else { hi = mid }
+                }
+                let queryEnd = NSMaxRange(query)
+                var i = lo
+                while i < entries.count, entries[i].range.location < queryEnd {
+                    if NSIntersectionRange(entries[i].range, query).length > 0 {
+                        body(entries[i].id, entries[i].range)
+                    }
+                    i += 1
+                }
+            }
         }
 
         /// True when the character sits in an embed block (code/math/mermaid
@@ -1139,6 +1396,39 @@ extension MarkdownReaderView {
         /// shares the view lifetime.
         var flipTransition: FlipTransitionController?
 
+        /// Pre-splice gate for the flip snapshot (ledger perf #9): most
+        /// prose clicks produce `Plan.none` — the reveal keeps the block's
+        /// vertical skeleton, so |Δh| ≤ 40 — yet the viewport+overscan was
+        /// rasterized BEFORE the plan could say so. The plan's inputs are
+        /// (conservatively) knowable beforehand: document length and
+        /// viewport height exactly; the new block's height estimated by
+        /// measuring its already-rendered fragment. Skipping is safe by
+        /// construction: no capture just means no cosmetic overlay (`run`
+        /// bails on a nil pending capture); the real layout applies
+        /// instantly either way. The margin (16 vs the plan's 40pt
+        /// threshold) absorbs boundingRect-vs-TextKit-2 estimate error;
+        /// anything ambiguous captures exactly as before.
+        func flipCaptureWorthwhile(
+            oldBlockRect: CGRect, flipID: BlockID, rendered: RenderedDocument,
+            viewportHeight: CGFloat, in textView: NSTextView
+        ) -> Bool {
+            // Exact plan inputs: these alone force .none.
+            guard rendered.attributed.length < 200_000, viewportHeight > 0 else { return false }
+            guard let newRange = rendered.blockRanges[flipID],
+                  NSMaxRange(newRange) <= rendered.attributed.length,
+                  newRange.length <= 20_000, // don't burn time estimating giants
+                  let container = textView.textContainer
+            else { return true } // can't estimate — capture, as before
+            let width = container.size.width - 2 * container.lineFragmentPadding
+            guard width > 50 else { return true }
+            let fragment = rendered.attributed.attributedSubstring(from: newRange)
+            let estimated = fragment.boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).height
+            return abs(estimated - oldBlockRect.height) > 16
+        }
+
         /// The side-by-side preview panel (ledger #6b), created lazily and
         /// repositioned from the editing frame's drawn geometry. Its
         /// presentation runs through the choreographer — the raw per-draw
@@ -1158,6 +1448,15 @@ extension MarkdownReaderView {
         private func statusTooltip(for panel: RenderedDocument.PreviewPanel) -> String? {
             panel.statusMessage == nil ? nil
                 : "The source doesn't parse yet. The last valid render stays until it does."
+        }
+
+        /// Re-plans the preview panel against the last known editing-frame
+        /// geometry. Needed because the draw-pass geometry callback is
+        /// deduped by rect (ledger perf #10): a new preview image behind
+        /// an UNCHANGED frame no longer re-fires it, so the projection
+        /// path must re-plan explicitly.
+        func refreshPreviewPanelForProjectionChange() {
+            updatePreviewPanel(editingFrame: lastPanelFrameBox)
         }
 
         /// Shows/hides/positions the preview panel for the current
@@ -1477,32 +1776,115 @@ extension MarkdownReaderView {
             guard offset >= 0, offset < storage.length,
                   let idString = storage.attribute(QuoinAttribute.blockID, at: offset, effectiveRange: nil) as? String
             else { return nil }
-            return blockRanges.first(where: { $0.key.description == idString })?.key
+            return rangeIndex.idsByDescription[idString]
         }
 
         // MARK: Search highlighting
 
+        /// Debounce for the document-wide match scan (ledger perf #5):
+        /// while search is active, EVERY projection change used to rescan
+        /// the whole document synchronously in the same pass (updateNSView
+        /// nils `appliedQuery` on new content), and every find-bar
+        /// keystroke rescanned immediately. Bursts now coalesce into one
+        /// scan shortly after the last change.
+        static let searchDebounceInterval: TimeInterval = 0.12
+        private var pendingSearchScan: DispatchWorkItem?
+        private var pendingSearchKey: PendingSearchKey?
+        private struct PendingSearchKey: Equatable {
+            let query: String
+            let ordinal: Int
+            let revision: Int
+        }
+
         func applySearch(query: String, activeOrdinal: Int) {
-            guard query != appliedQuery || activeOrdinal != appliedOrdinal else { return }
+            guard query != appliedQuery || activeOrdinal != appliedOrdinal else {
+                // Already applied — a still-pending scan can only be for a
+                // stale intermediate query (typed and reverted); drop it.
+                cancelPendingSearchScan()
+                return
+            }
             guard let textView,
                   let layoutManager = textView.textLayoutManager,
-                  let contentStorage = textView.textContentStorage,
-                  let storage = contentStorage.textStorage
+                  let contentStorage = textView.textContentStorage
             else { return }
 
             let trimmed = query.trimmingCharacters(in: .whitespaces)
-            defer {
-                appliedQuery = query
-                appliedOrdinal = activeOrdinal
-                parent.onMatchCount(matchRanges.count)
-            }
+
+            // Clearing (find bar closed / emptied) stays immediate:
+            // lingering highlights read as broken.
             guard !trimmed.isEmpty else {
+                cancelPendingSearchScan()
                 if hasAppliedSearchHighlights {
                     layoutManager.removeRenderingAttribute(.backgroundColor, for: contentStorage.documentRange)
                     hasAppliedSearchHighlights = false
                 }
                 matchRanges = []
+                appliedQuery = query
+                appliedOrdinal = activeOrdinal
+                parent.onMatchCount(0)
                 return
+            }
+
+            // ⌘G cycling: same query over the same content — recolor the
+            // two ordinals and scroll; never rescan the document.
+            if query == appliedQuery, activeOrdinal != appliedOrdinal {
+                let theme = parent.theme
+                if appliedOrdinal >= 0, appliedOrdinal < matchRanges.count,
+                   let textRange = nsTextRange(matchRanges[appliedOrdinal], in: contentStorage) {
+                    layoutManager.addRenderingAttribute(
+                        .backgroundColor,
+                        value: theme.searchHighlight.withAlphaComponent(0.35), for: textRange)
+                }
+                if activeOrdinal >= 0, activeOrdinal < matchRanges.count,
+                   let textRange = nsTextRange(matchRanges[activeOrdinal], in: contentStorage) {
+                    layoutManager.addRenderingAttribute(
+                        .backgroundColor, value: theme.searchHighlight, for: textRange)
+                    textView.scrollRangeToVisible(matchRanges[activeOrdinal])
+                }
+                appliedOrdinal = activeOrdinal
+                parent.onMatchCount(matchRanges.count)
+                return
+            }
+
+            // Query change or content change (appliedQuery is nilled per
+            // projection): debounce the whole-document scan. A repeat call
+            // with the same pending key must NOT push the deadline —
+            // unrelated updateNSView passes would otherwise starve the scan.
+            let key = PendingSearchKey(query: query, ordinal: activeOrdinal, revision: appliedRevision)
+            guard key != pendingSearchKey else { return }
+            cancelPendingSearchScan()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pendingSearchScan = nil
+                self.pendingSearchKey = nil
+                self.performSearchScan(query: query, activeOrdinal: activeOrdinal)
+            }
+            pendingSearchScan = work
+            pendingSearchKey = key
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.searchDebounceInterval, execute: work)
+        }
+
+        private func cancelPendingSearchScan() {
+            pendingSearchScan?.cancel()
+            pendingSearchScan = nil
+            pendingSearchKey = nil
+        }
+
+        /// The document-wide scan + repaint — the old synchronous body of
+        /// `applySearch`, now behind the debounce. Internal for the
+        /// latency budget test.
+        func performSearchScan(query: String, activeOrdinal: Int) {
+            guard let textView,
+                  let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage,
+                  let storage = contentStorage.textStorage
+            else { return }
+            let trimmed = query.trimmingCharacters(in: .whitespaces)
+            defer {
+                appliedQuery = query
+                appliedOrdinal = activeOrdinal
+                parent.onMatchCount(matchRanges.count)
             }
 
             // Clear previous highlights across the whole document, not just
@@ -1516,6 +1898,7 @@ extension MarkdownReaderView {
                 hasAppliedSearchHighlights = false
             }
             matchRanges = []
+            guard !trimmed.isEmpty else { return }
 
             let haystack = storage.string as NSString
             var searchRange = NSRange(location: 0, length: haystack.length)

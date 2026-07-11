@@ -126,23 +126,55 @@ top-down; nothing ships while a BLOCKER is open.*
 - [OPEN] Non-patchable active blocks (LIST/quote/callout/TOC) take 3–4
   stacked O(document) passes per keystroke — the "gets slow on big files"
   configuration. Extend the patch path or budget it in CI. #3.
-- [OPEN] Focus dimming repaints O(blocks) rendering attributes per caret
-  move (sentence mode defeats the dedupe entirely) — viewport-cull. #4.
-- [OPEN] Active search rescans the whole document per keystroke. #5.
+- [FIXED] Focus dimming repaints O(blocks) rendering attributes per caret
+  move (sentence mode defeats the dedupe entirely) — now viewport-culled
+  (binary-searched via BlockRangeIndex, extended lazily on scroll), and
+  sentence mode dedupes on the caret's resolved sentence: an unchanged
+  sentence is a no-op, a sentence move repaints only the current block.
+  `ReaderCoordinator.applyFocusDimming`. Budgeted in RenderPathLatencyTests. #4.
+- [FIXED] Active search rescans the whole document per keystroke — the
+  scan is now debounced (120ms, keyed on query+ordinal+revision so
+  unrelated passes can't starve it), ⌘G cycling recolors the two affected
+  matches without any rescan, and clearing stays immediate.
+  `ReaderCoordinator.applySearch`/`performSearchScan`. #5.
 - [OPEN] Whole-document SHA-256 per keystroke in both fast paths. #6.
 - [OPEN] Eager whole-doc layout per projection below 200k chars. #7.
-- [OPEN] syncAttributesWhereDifferent walks all runs on every fallback
-  splice — bound to changed∪active ranges. #8.
-- [OPEN] Flip capture rasterizes viewport+overscan before knowing the plan
-  is `.none` (most prose clicks) — pre-estimate delta; 1x capture. #9.
-- [OPEN] Panel geometry callback dispatches per draw pass — dedupe. #10.
-- [OPEN] blockID()/topVisibleBlockID are O(blocks) linear scans on
-  caret/scroll paths (string alloc per key in the scroll path!). #11.
+- [FIXED-ALT] syncAttributesWhereDifferent walks all runs on every
+  fallback splice. Bounding to changed∪active was REJECTED as unsound —
+  attribute diffs land outside both (a re-rendered diagram is the same
+  U+FFFC with a new attachment; pinned by ActivationNeighborIntegrity-
+  Tests). Fixed instead by de-bridging the walk (toll-free CF attributes
+  + CFEqual; dictionaries bridge only for runs that differ): ~110ms →
+  ~11ms walk on a 66k-char doc, same diff detection. Budgeted in
+  RenderPathLatencyTests. #8.
+- [FIXED] Flip capture rasterizes viewport+overscan before knowing the plan
+  is `.none` (most prose clicks) — `flipCaptureWorthwhile` now gates the
+  capture pre-splice: exact skips on the plan's hard inputs (≥200k docs,
+  degenerate viewport) plus a conservative height-delta estimate of the
+  new fragment (skip only when confidently ≤ the 40pt threshold; anything
+  ambiguous captures as before — a wrong skip is cosmetic-only by
+  construction). Overscan clamped 600pt → viewport/2 (the max slide
+  delta). Capture stays at backing scale: 1x would blur retina overlays. #9.
+- [FIXED] Panel geometry callback dispatches per draw pass — now deduped:
+  `onEditingFrameGeometry` fires only when the rect actually changed since
+  the last report (nil included); panel-content changes behind an
+  unchanged frame are re-planned explicitly on projection apply
+  (`refreshPreviewPanelForProjectionChange`). `QuoinTextView`. #10.
+- [FIXED] blockID()/topVisibleBlockID are O(blocks) linear scans on
+  caret/scroll paths (string alloc per key in the scroll path!) — now a
+  sorted-ranges `BlockRangeIndex` (built lazily once per projection,
+  binary-searched per query); the scroll path resolves id strings through
+  a prebuilt map. `ReaderCoordinator`. Budgeted in RenderPathLatencyTests. #11.
 - [OPEN] Startup: only the parse half of "<1s to interactive" is budgeted;
   cold diagram rasterization is unmeasured. #13. Memory: AsyncImageStore
   count-limited not cost-limited (~1.5GB worst case). #14.
-- [OPEN] One new RenderPathLatencyTests file enrolling focus/preview/list-
-  typing/search/sync in the 25ms budget convention. #16.
+- [PARTIAL] One new RenderPathLatencyTests file enrolling focus/preview/
+  list-typing/search/sync in the 25ms budget convention. #16. SHIPPED:
+  Tests/QuoinRenderTests/RenderPathLatencyTests.swift enrolls the
+  focus-dim pass (block move + sentence move + no-op dedupe), the
+  attribute-sync splice, blockID/topVisibleBlockID lookups, and pins the
+  search debounce/⌘G-no-rescan behavior. REMAINING: preview and
+  list-typing budgets belong to the #1/#3 architectural pass.
 
 ## PRODUCT (PM track) — see agent report for full specs
 

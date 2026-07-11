@@ -317,7 +317,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
                let flipID = rendered.activeBlockID ?? coordinator.lastActiveBlockID,
                let oldRange = coordinator.blockRanges[flipID],
                let oldRect = coordinator.blockScreenRect(oldRange, in: textView),
-               oldRect.minY < viewport, oldRect.maxY > 0 {
+               oldRect.minY < viewport, oldRect.maxY > 0,
+               coordinator.flipCaptureWorthwhile(
+                   oldBlockRect: oldRect, flipID: flipID, rendered: rendered,
+                   viewportHeight: viewport, in: textView) {
                 flipMotionID = flipID
                 coordinator.flipTransition?.capture(oldBlockRect: oldRect)
             } else {
@@ -423,6 +426,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
             }
             coordinator.suppressSelectionCallback = false
             coordinator.appliedQuery = nil // force re-highlight on new content
+            // The draw-pass geometry callback is deduped by rect (perf
+            // #10); a projection can change the preview panel's CONTENT
+            // behind an unchanged frame, so re-plan it here.
+            coordinator.refreshPreviewPanelForProjectionChange()
             // VoiceOver hears the mode change (never announced by tint
             // alone): entering/leaving source editing.
             if flipPending {
