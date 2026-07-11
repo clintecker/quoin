@@ -415,32 +415,53 @@ extension MarkdownReaderView {
         /// "edits swallowed in the source, persisted forever in the
         /// chart" — the chart rendered the true, scrambled document).
         private var awaitingEditEcho = false
-        private var awaitingEditEchoSince: TimeInterval = 0
+        /// Internal (not private) so the watchdog tests can age it past
+        /// the deadline without a real 2-second wait.
+        var awaitingEditEchoSince: TimeInterval = 0
+        /// How long a sent edit may go un-acked before the gate assumes
+        /// the echo was lost and replays the queue (ledger #8).
+        static let editEchoWatchdogInterval: TimeInterval = 2
+
+        private var editEchoWatchdogExpired: Bool {
+            ProcessInfo.processInfo.systemUptime - awaitingEditEchoSince
+                > Self.editEchoWatchdogInterval
+        }
 
         private func beginAwaitingEditEcho() {
             awaitingEditEcho = true
             awaitingEditEchoSince = ProcessInfo.processInfo.systemUptime
         }
 
-        /// The projection echo landed (caret restored). Flush ONE queued
-        /// keystroke — it re-enters the ordinary pipeline at the fresh
-        /// caret, and its own echo flushes the next.
+        /// The projection echo landed (caret restored) — release the
+        /// queue. Also the failure path's re-entry point: a rejected
+        /// session edit republishes the fresh truth as an echo, and the
+        /// queued keystrokes REPLAY against it here (ledger #8) — they are
+        /// content + order, applied at the freshly restored caret, so no
+        /// stale offset ever splices.
         func noteEditEchoApplied(in textView: NSTextView) {
             awaitingEditEcho = false
-            guard !pendingKeystrokes.isEmpty else { return }
-            let next = pendingKeystrokes.removeFirst()
-            let caret = textView.selectedRange().location
-            if next.deleteBackward {
-                guard caret > 0 else { return }
-                _ = self.textView(
-                    textView,
-                    shouldChangeTextIn: NSRange(location: caret - 1, length: 1),
-                    replacementString: "")
-            } else {
-                _ = self.textView(
-                    textView,
-                    shouldChangeTextIn: NSRange(location: caret, length: 0),
-                    replacementString: next.insert)
+            flushPendingKeystrokes(in: textView)
+        }
+
+        /// Flushes queued keystrokes, in order, until one sends an edit
+        /// (re-arming the echo gate) or the queue drains. Each keystroke
+        /// re-enters the ordinary pipeline at the CURRENT caret.
+        private func flushPendingKeystrokes(in textView: NSTextView) {
+            while !awaitingEditEcho, !pendingKeystrokes.isEmpty {
+                let next = pendingKeystrokes.removeFirst()
+                let caret = textView.selectedRange().location
+                if next.deleteBackward {
+                    guard caret > 0 else { continue }
+                    _ = self.textView(
+                        textView,
+                        shouldChangeTextIn: NSRange(location: caret - 1, length: 1),
+                        replacementString: "")
+                } else {
+                    _ = self.textView(
+                        textView,
+                        shouldChangeTextIn: NSRange(location: caret, length: 0),
+                        replacementString: next.insert)
+                }
             }
         }
 
@@ -462,14 +483,43 @@ extension MarkdownReaderView {
             // derived from it) is about to move. Queue simple typing
             // shapes instead of applying them against stale coordinates.
             if awaitingEditEcho, parent.rendered.activeEditableRange != nil {
-                // Watchdog: a lost echo must never wedge typing.
-                if ProcessInfo.processInfo.systemUptime - awaitingEditEchoSince > 2 {
-                    clearPendingKeystrokes()
-                } else if affectedCharRange.length == 0,
-                          let replacementString, !replacementString.isEmpty {
-                    pendingKeystrokes.append(.init(deleteBackward: false, insert: replacementString))
+                let simpleInsert = affectedCharRange.length == 0
+                    && replacementString?.isEmpty == false
+                let simpleBackspace = affectedCharRange.length == 1
+                    && (replacementString ?? "").isEmpty
+                if editEchoWatchdogExpired {
+                    // Watchdog: a lost echo must never wedge typing — and
+                    // it must never DISCARD what was typed either (ledger
+                    // #8). Unwedge and REPLAY: queued keystrokes flush at
+                    // the current caret through the normal path, with the
+                    // current keystroke joining the queue in order.
+                    awaitingEditEcho = false
+                    if simpleInsert {
+                        pendingKeystrokes.append(
+                            .init(deleteBackward: false, insert: replacementString ?? ""))
+                        flushPendingKeystrokes(in: textView)
+                        return false
+                    } else if simpleBackspace {
+                        pendingKeystrokes.append(.init(deleteBackward: true, insert: ""))
+                        flushPendingKeystrokes(in: textView)
+                        return false
+                    } else if !pendingKeystrokes.isEmpty {
+                        // A complex edit (drag, cut of a range) has no
+                        // defined caret to replay at. Replay the queued
+                        // typing, refuse the complex edit audibly — never
+                        // silently.
+                        flushPendingKeystrokes(in: textView)
+                        NSSound.beep()
+                        return false
+                    }
+                    // No queue and a complex edit: fall through and apply
+                    // it against the current state (the echo is lost; the
+                    // projection is the best truth available).
+                } else if simpleInsert {
+                    pendingKeystrokes.append(
+                        .init(deleteBackward: false, insert: replacementString ?? ""))
                     return false
-                } else if affectedCharRange.length == 1, (replacementString ?? "").isEmpty {
+                } else if simpleBackspace {
                     pendingKeystrokes.append(.init(deleteBackward: true, insert: ""))
                     return false
                 } else {

@@ -121,6 +121,51 @@ final class EditEchoSerializationTests: XCTestCase {
         XCTAssertEqual(sent()[1].text, "", "the queued backspace deletes at the fresh caret")
     }
 
+    func testWatchdogExpiryReplaysQueuedKeystrokesInsteadOfDiscarding() throws {
+        // Ledger #8: a lost echo used to wedge typing for 2s and then the
+        // watchdog DISCARDED the queue silently. It must replay instead:
+        // the queued keystrokes are content + order, and they apply at the
+        // current caret through the ordinary pipeline.
+        let (coordinator, textView, sent) = try makeHarness()
+        let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)
+        let caret = active.location + 12
+        textView.setSelectedRange(NSRange(location: caret, length: 0))
+
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "a")
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "b")
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "c")
+        XCTAssertEqual(sent().count, 1)
+
+        // The echo never arrives; the watchdog deadline passes; the user
+        // keeps typing.
+        coordinator.awaitingEditEchoSince -=
+            MarkdownReaderView.Coordinator.editEchoWatchdogInterval + 1
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: caret, length: 0),
+            replacementString: "d")
+
+        // Unwedged: "b" flushed at the current caret (an edit, re-arming
+        // the gate); "c" and "d" remain queued in order behind it.
+        XCTAssertEqual(sent().count, 2, "the watchdog replays, it does not discard")
+        XCTAssertEqual(sent()[1].text, "b")
+
+        // Subsequent echoes drain the rest in order — nothing was lost.
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 3)
+        XCTAssertEqual(sent()[2].text, "c")
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 4)
+        XCTAssertEqual(sent()[3].text, "d")
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 4, "queue drained")
+    }
+
     func testActivationChangeDropsTheQueue() throws {
         let (coordinator, textView, sent) = try makeHarness()
         let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)

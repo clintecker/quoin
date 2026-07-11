@@ -491,21 +491,54 @@ final class ReaderModel {
         editPipelineTask = Task { [weak self] in
             await previousEditTask?.value
             guard let self else { return }
-            let newDocument = try? await QuoinPerformanceTrace.measure(
-                "model.session.applyEdit",
-                metadata: "range_offset=\(absolute.offset) replacement_bytes=\(replacement.utf8.count)"
-            ) {
-                try await session.applyEdit(edit, baseRevision: baseRevision, publishSnapshot: false)
+            do {
+                let newDocument = try await QuoinPerformanceTrace.measure(
+                    "model.session.applyEdit",
+                    metadata: "range_offset=\(absolute.offset) replacement_bytes=\(replacement.utf8.count)"
+                ) {
+                    try await session.applyEdit(edit, baseRevision: baseRevision, publishSnapshot: false)
+                }
+                guard generation == self.latestEditGeneration else { return }
+                QuoinPerformanceTrace.measure("model.restoreCaret") {
+                    self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8, spliceHint: spliceHint)
+                }
+                self.scheduleH1Rename(for: newDocument)
+            } catch {
+                await self.recoverFromFailedEdit(error, generation: generation)
             }
-            guard let newDocument else { return }
-            guard generation == self.latestEditGeneration else { return }
-            QuoinPerformanceTrace.measure("model.restoreCaret") {
-                self.restoreCaret(in: newDocument, atUTF8Offset: caretUTF8, spliceHint: spliceHint)
-            }
-            self.scheduleH1Rename(for: newDocument)
             if generation == self.latestEditGeneration {
                 self.editPipelineTask = nil
             }
+        }
+    }
+
+    /// A session edit was rejected or failed (ledger, data integrity #8).
+    /// The old behavior wedged typing until the coordinator's 2s watchdog
+    /// fired and then silently DISCARDED the queued keystrokes. Instead:
+    /// adopt the session's current truth and republish the projection with
+    /// a caret echo NOW — the echo unwedges the coordinator immediately,
+    /// and its queued keystrokes replay against the fresh state through
+    /// the ordinary pipeline (they are content + order; each applies at
+    /// the freshly restored caret). Only the rejected edit itself cannot
+    /// be replayed (its range is stale by definition); its loss — and the
+    /// loss of the queue when the active block itself is gone — is
+    /// surfaced as a banner, never swallowed.
+    private func recoverFromFailedEdit(_ error: Error, generation: Int) async {
+        guard let session else { return }
+        let truth = await session.document
+        sessionContentRevision = await session.contentRevision
+        // Superseded submissions stay quiet: the newest one (or its own
+        // recovery) owns the projection and the banner.
+        guard generation == latestEditGeneration else { return }
+        let hadActiveBlock = activeBlockID != nil
+        restoreCaret(in: truth, atUTF8Offset: nil)
+        let replayImpossible = hadActiveBlock && activeBlockID == nil
+        if case SessionError.staleEditBase = error {
+            reportFailure(replayImpossible
+                ? "The document changed underneath your typing — recent keystrokes weren't applied."
+                : "The document changed underneath your typing — the last keystroke wasn't applied.")
+        } else {
+            reportFailure("Couldn't apply the last edit — the view has been refreshed.")
         }
     }
 
