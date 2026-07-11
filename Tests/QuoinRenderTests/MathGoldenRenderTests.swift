@@ -115,7 +115,7 @@ final class MathGoldenRenderTests: XCTestCase {
     /// Deterministic 2× rasterization of the attachment image.
     private func pngData(for latex: String) -> Data? {
         guard let attributed = MathImageRenderer.attachmentString(
-            latex: latex, display: true, theme: Theme(), baseSize: 15),
+            latex: latex, display: true, mathTheme: Theme().mathTheme, baseSize: 15),
               let image = Self.attachmentImage(in: attributed),
               image.size.width > 0, image.size.height > 0
         else { return nil }

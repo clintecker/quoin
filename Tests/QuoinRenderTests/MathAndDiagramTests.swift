@@ -21,7 +21,7 @@ final class MathAndDiagramTests: XCTestCase {
     private var theme: Theme { Theme(prefersDark: false) }
     private let baseSize: CGFloat = 14
 
-    private func typesetter() -> MathTypesetter { MathTypesetter(theme: theme, baseSize: baseSize) }
+    private func typesetter() -> MathTypesetter { MathTypesetter(mathTheme: theme.mathTheme, baseSize: baseSize) }
     private func box(_ latex: String, display: Bool = false) -> MathTypesetter.MathBox {
         typesetter().layout(MathParser.parse(latex), display: display)
     }
@@ -32,7 +32,7 @@ final class MathAndDiagramTests: XCTestCase {
         for latex in ["E = mc^2", "\\frac{a}{b}", "x^2 + y^2", "\\sqrt{2}", "\\sum_{i=1}^{n} i"] {
             XCTAssertTrue(MathParser.isFullySupported(MathParser.parse(latex)), "\(latex) should be supported")
             let attachment = MathImageRenderer.attachmentString(
-                latex: latex, display: false, theme: theme, baseSize: baseSize
+                latex: latex, display: false, mathTheme: theme.mathTheme, baseSize: baseSize
             )
             let string = try XCTUnwrap(attachment, "\(latex): expected a native attachment")
             XCTAssertEqual(string.length, 1, "\(latex): an attachment is one U+FFFC glyph")
@@ -49,7 +49,7 @@ final class MathAndDiagramTests: XCTestCase {
         let latex = "\\weirdcommand{x} + \\notreal"
         XCTAssertFalse(MathParser.isFullySupported(MathParser.parse(latex)))
         XCTAssertNil(MathImageRenderer.attachmentString(
-            latex: latex, display: false, theme: theme, baseSize: baseSize
+            latex: latex, display: false, mathTheme: theme.mathTheme, baseSize: baseSize
         ), "unsupported LaTeX must return nil so the renderer keeps the fallback")
     }
 

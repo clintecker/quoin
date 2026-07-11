@@ -30,18 +30,20 @@ enum MathImageRenderer {
     static func attachmentString(
         latex: String,
         display: Bool,
-        theme: Theme,
+        mathTheme: MathTheme,
         baseSize: CGFloat
     ) -> NSAttributedString? {
         let node = MathParser.parse(latex)
         guard MathParser.isFullySupported(node) else { return nil }
 
-        let key = "\(display ? "D" : "I")|\(theme.prefersDark ? "dark" : "light")|\(baseSize)|\(latex)" as NSString
+        // The fingerprint (resolved ink + appearance) keys the cache, so a
+        // custom ink can never serve the default theme's cached render.
+        let key = "\(display ? "D" : "I")|\(mathTheme.fingerprint)|\(baseSize)|\(latex)" as NSString
         let entry: Entry
         if let cached = cache.object(forKey: key) {
             entry = cached
         } else {
-            let typesetter = MathTypesetter(theme: theme, baseSize: display ? baseSize * 1.15 : baseSize)
+            let typesetter = MathTypesetter(mathTheme: mathTheme, baseSize: display ? baseSize * 1.15 : baseSize)
             let box = typesetter.layout(node, display: display)
             guard box.width > 0, box.height > 0 else { return nil }
 
@@ -54,7 +56,7 @@ enum MathImageRenderer {
             #if canImport(AppKit)
             // Handler-based NSImage with the theme's appearance pinned, so
             // dynamic colors resolve to match the canvas the image sits on.
-            let appearance = NSAppearance(named: theme.prefersDark ? .darkAqua : .aqua)
+            let appearance = NSAppearance(named: mathTheme.prefersDark ? .darkAqua : .aqua)
             let image = NSImage(size: size, flipped: false) { _ in
                 guard let context = NSGraphicsContext.current?.cgContext else { return false }
                 let draw = { box.draw(context, CGPoint(x: padding, y: box.descent + padding)) }

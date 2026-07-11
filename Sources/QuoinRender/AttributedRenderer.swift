@@ -684,7 +684,7 @@ public struct AttributedRenderer {
             MermaidRenderer.attachmentString(source: source, theme: theme.diagramTheme)
         case .mathBlock(let latex):
             MathImageRenderer.attachmentString(
-                latex: latex, display: true, theme: theme, baseSize: theme.bodySize)
+                latex: latex, display: true, mathTheme: theme.mathTheme, baseSize: theme.bodySize)
         default:
             nil
         }
@@ -1314,7 +1314,7 @@ public struct AttributedRenderer {
         // Display math: natively typeset, centered, 16pt above/below per the
         // element spec. Unsupported LaTeX keeps the styled-source fallback.
         if let native = MathImageRenderer.attachmentString(
-            latex: latex, display: true, theme: theme, baseSize: theme.bodySize
+            latex: latex, display: true, mathTheme: theme.mathTheme, baseSize: theme.bodySize
         ) {
             let output = NSMutableAttributedString()
             output.append(editChipLine(spacingBefore: 16))
@@ -1693,7 +1693,7 @@ public struct AttributedRenderer {
             // Natively typeset inline math, baseline-aligned with the text;
             // unsupported LaTeX degrades to marked styled source (PRD rule).
             if let native = MathImageRenderer.attachmentString(
-                latex: latex, display: false, theme: theme, baseSize: theme.bodySize
+                latex: latex, display: false, mathTheme: theme.mathTheme, baseSize: theme.bodySize
             ) {
                 let output = NSMutableAttributedString(attributedString: native)
                 var carried = attributes

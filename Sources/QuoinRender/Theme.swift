@@ -289,5 +289,13 @@ extension Theme {
             prefersDark: prefersDark
         )
     }
+
+    /// Quoin's design system projected onto the math render seam — the two
+    /// values (ink + appearance) the typesetter needs. Mirrors
+    /// `diagramTheme`; when the math engine is extracted into its own
+    /// package this is the adapter the host keeps.
+    public var mathTheme: MathTheme {
+        MathTheme(ink: ink, prefersDark: prefersDark)
+    }
 }
 #endif

@@ -19,21 +19,21 @@ import UIKit
 /// result scales with the reading theme.
 struct MathTypesetter {
 
-    let theme: Theme
+    let mathTheme: MathTheme
     let baseSize: CGFloat
     /// Overrides the drawing color for a `\color`/`\textcolor` subtree. Set
     /// on a sub-typesetter that lays out the recolored base, so the override
     /// is baked into that subtree's draw closures at layout time.
     var inkOverride: PlatformColor?
 
-    init(theme: Theme, baseSize: CGFloat, inkOverride: PlatformColor? = nil) {
-        self.theme = theme
+    init(mathTheme: MathTheme, baseSize: CGFloat, inkOverride: PlatformColor? = nil) {
+        self.mathTheme = mathTheme
         self.baseSize = baseSize
         self.inkOverride = inkOverride
     }
 
     /// The active drawing color (a `\color` override or the theme ink).
-    private var ink: PlatformColor { inkOverride ?? theme.ink }
+    private var ink: PlatformColor { inkOverride ?? mathTheme.ink }
 
     // MARK: - Box model
 
@@ -114,7 +114,7 @@ struct MathTypesetter {
         case .styled(let base, let color):
             // Lay out the subtree with an ink override baked into its draw
             // closures (a sub-typesetter, so nested \color still nests).
-            let tinted = MathTypesetter(theme: theme, baseSize: baseSize,
+            let tinted = MathTypesetter(mathTheme: mathTheme, baseSize: baseSize,
                                         inkOverride: Self.resolveColor(color) ?? ink)
             return tinted.layout(base, size: s, display: display)
 
