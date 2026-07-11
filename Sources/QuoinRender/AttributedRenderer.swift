@@ -1707,7 +1707,10 @@ public struct AttributedRenderer {
             attrs[.foregroundColor] = theme.secondaryTextColor
             attrs[QuoinAttribute.mathSource] = latex
             // Name the culprit on hover — inline has no room for a caption.
+            // NSToolTip is AppKit-only; iOS just shows the dimmed source.
+            #if canImport(AppKit)
             attrs[.toolTip] = Self.mathFallbackCaption(for: latex)
+            #endif
             return NSAttributedString(string: latex, attributes: attrs)
 
         case .highlight(let children, let color):
