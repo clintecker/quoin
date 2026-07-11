@@ -1297,6 +1297,20 @@ public struct AttributedRenderer {
     }
 
     private func renderMathBlockFallback(latex: String) -> NSAttributedString {
+        // A definition-only block (`$$\newcommand{\R}{…}$$`) has no visible
+        // output — show an unobtrusive chip naming the count instead of an
+        // empty box. Definitions apply document-wide (collected at parse).
+        if MathMacros.isDefinitionOnly(latex, table: MathMacroTable()) {
+            let count = MathMacros.collectDefinitions(from: "$$" + latex + "$$").count
+            var attrs = bodyAttributes()
+            attrs[.font] = theme.captionFont()
+            attrs[.foregroundColor] = theme.secondaryTextColor
+            attrs[QuoinAttribute.mathSource] = latex
+            let noun = count == 1 ? "macro" : "macros"
+            return NSAttributedString(
+                string: "  ⋯ \(count) \(noun) defined", attributes: attrs)
+        }
+
         // Display math: natively typeset, centered, 16pt above/below per the
         // element spec. Unsupported LaTeX keeps the styled-source fallback.
         if let native = MathImageRenderer.attachmentString(

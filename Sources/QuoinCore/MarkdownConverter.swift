@@ -44,6 +44,9 @@ public enum MarkdownConverter {
 
         let document = Markdown.Document(parsing: parseInput)
         var builder = Builder(source: source, parseInput: parseInput, baseOffset: baseOffset)
+        // Collect \newcommand/\def from every math segment first, so a
+        // macro used before its definition still resolves (document scope).
+        builder.macroTable = MathMacros.collectDefinitions(from: source)
 
         var blocks: [Block] = []
         if let frontMatterYAML {
@@ -488,6 +491,17 @@ public enum MarkdownConverter {
         var proseBuffer = ""
         var footnoteOrdinals: [String: Int] = [:]
         var footnoteDefinitions: [String: [Block]] = [:]
+        /// Document-scoped math macros (`\newcommand`/`\def`), collected
+        /// from the whole source before block conversion so a use resolves
+        /// regardless of whether its definition came earlier or later.
+        var macroTable = MathMacroTable()
+
+        /// Expands math latex with the document's macros. A definition-ONLY
+        /// block keeps its raw source so the renderer can show a "macros
+        /// defined" chip instead of an empty box; everything else expands.
+        func expandMathBlock(_ raw: String) -> String {
+            MathMacros.isDefinitionOnly(raw, table: macroTable) ? raw : MathMacros.expand(raw, with: macroTable)
+        }
 
         init(source: String, parseInput: String, baseOffset: Int) {
             self.source = source
@@ -627,7 +641,7 @@ public enum MarkdownConverter {
                 let segments = MathScanner.scan(slice)
                 if segments.count == 1, case .displayMath(let latex) = segments[0] {
                     stats.mathCount += 1
-                    return [makeBlock(kind: .mathBlock(latex: latex), range: range)]
+                    return [makeBlock(kind: .mathBlock(latex: expandMathBlock(latex)), range: range)]
                 }
                 inlines = postProcess(assembleInlines(from: segments), math: false)
             } else {
@@ -720,7 +734,7 @@ public enum MarkdownConverter {
                 switch segment {
                 case .inlineMath(let latex), .displayMath(let latex):
                     stats.mathCount += 1
-                    result.append(.math(latex: latex))
+                    result.append(.math(latex: MathMacros.expand(latex, with: macroTable)))
                 case .text(let text):
                     let fragment = Markdown.Document(parsing: text)
                     for child in fragment.children {
@@ -747,7 +761,7 @@ public enum MarkdownConverter {
                 return makeBlock(kind: .mermaid(source: body), range: range)
             case "math", "latex", "tex":
                 stats.mathCount += 1
-                return makeBlock(kind: .mathBlock(latex: body), range: range)
+                return makeBlock(kind: .mathBlock(latex: expandMathBlock(body)), range: range)
             default:
                 stats.codeBlockCount += 1
                 appendProse(body)
@@ -888,7 +902,7 @@ public enum MarkdownConverter {
                         result.append(.text(t))
                     case .inlineMath(let latex), .displayMath(let latex):
                         stats.mathCount += 1
-                        result.append(.math(latex: latex))
+                        result.append(.math(latex: MathMacros.expand(latex, with: macroTable)))
                     }
                 }
             }
