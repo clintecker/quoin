@@ -434,6 +434,90 @@ final class SessionEditingTests: XCTestCase {
         XCTAssertEqual(second?.contentRevision, 1)
     }
 
+    // MARK: Undo/redo serialized with the edit pipeline (ledger #7)
+
+    func testEditStampedBeforeUndoIsRejectedAfterUndo() async throws {
+        // The #7 interleaving: a keystroke's edit is computed (and stamped)
+        // against the current content, then ⌘Z splices BEFORE the edit
+        // reaches the session. The stale-stamped edit must be rejected,
+        // never applied at pre-undo offsets.
+        let session = DocumentSession(source: "alpha bravo")
+        let rev0 = await session.contentRevision
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 5), replacement: "first"),
+            baseRevision: rev0)
+
+        // A queued keystroke stamps itself against the post-edit content…
+        let staleStamp = await session.contentRevision
+        XCTAssertEqual(staleStamp, rev0, "ordinary edits do not bump the revision")
+
+        // …but the undo lands first (the lost race).
+        let undone = try await session.undo()
+        XCTAssertEqual(undone?.source, "alpha bravo")
+        let bumped = await session.contentRevision
+        XCTAssertEqual(bumped, rev0 + 1, "undo must bump the content revision")
+
+        do {
+            _ = try await session.applyEdit(
+                SourceEdit(range: ByteRange(offset: 5, length: 0), replacement: "!"),
+                baseRevision: staleStamp)
+            XCTFail("an edit stamped before the undo must be rejected")
+        } catch SessionError.staleEditBase(let expected, let got) {
+            XCTAssertEqual(expected, bumped)
+            XCTAssertEqual(got, staleStamp)
+        }
+        let source = await session.document.source
+        XCTAssertEqual(source, "alpha bravo", "the rejected edit must not splice")
+    }
+
+    func testRedoAlsoBumpsContentRevision() async throws {
+        let session = DocumentSession(source: "one two")
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 3), replacement: "ONE"))
+        _ = try await session.undo()
+        let afterUndo = await session.contentRevision
+        let stale = afterUndo
+        _ = try await session.redo()
+        let afterRedo = await session.contentRevision
+        XCTAssertEqual(afterRedo, afterUndo + 1, "redo splices content too")
+
+        do {
+            _ = try await session.applyEdit(
+                SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "x"),
+                baseRevision: stale)
+            XCTFail("an edit stamped before the redo must be rejected")
+        } catch SessionError.staleEditBase { }
+
+        // A freshly stamped edit passes and the undo stacks stay usable.
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 0, length: 0), replacement: "z"),
+            baseRevision: afterRedo)
+        let source = await session.document.source
+        XCTAssertEqual(source, "zONE two")
+        let undoneOnce = try await session.undo()
+        XCTAssertEqual(undoneOnce?.source, "ONE two")
+    }
+
+    func testUndoRedoKeepHistoryStacksAcrossRevisionBumps() async throws {
+        // The revision bump is stale-edit REJECTION only — it must not
+        // behave like an external adoption (which clears both stacks).
+        let session = DocumentSession(source: "base")
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 4, length: 0), replacement: " one"))
+        try await session.applyEdit(
+            SourceEdit(range: ByteRange(offset: 8, length: 0), replacement: " two"))
+        _ = try await session.undo()
+        _ = try await session.undo()
+        let source = await session.document.source
+        XCTAssertEqual(source, "base")
+        let canRedo = await session.canRedo
+        XCTAssertTrue(canRedo)
+        _ = try await session.redo()
+        _ = try await session.redo()
+        let restored = await session.document.source
+        XCTAssertEqual(restored, "base one two")
+    }
+
     // MARK: External rename/move (ledger, data integrity #6)
 
     private func makeTempDir() throws -> URL {

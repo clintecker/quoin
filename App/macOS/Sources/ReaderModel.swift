@@ -559,19 +559,46 @@ final class ReaderModel {
     }
 
     func undo() {
-        guard let session else { return }
-        Task {
-            if let doc = try? await session.undo() {
-                self.restoreCaret(in: doc, atUTF8Offset: nil)
-            }
-        }
+        performHistoryOperation { try await $0.undo() }
     }
 
     func redo() {
+        performHistoryOperation { try await $0.redo() }
+    }
+
+    /// Undo/redo serialized with the edit pipeline (launch ledger, data
+    /// integrity #7). A ⌘Z issued while a keystroke's round-trip was still
+    /// in flight used to hop onto the session actor in NONDETERMINISTIC
+    /// order — when the undo won, it spliced first and the in-flight
+    /// keystroke then applied at pre-undo offsets, corrupting the source.
+    /// History operations now JOIN the same FIFO pipeline the keystrokes
+    /// flow through, so they run strictly after every edit submitted
+    /// before them. (The session's `contentRevision` bump on undo/redo is
+    /// the backstop: an edit stamped against pre-undo content is rejected
+    /// as `staleEditBase` rather than spliced.)
+    private func performHistoryOperation(
+        _ operation: @escaping @Sendable (DocumentSession) async throws -> QuoinDocument?
+    ) {
         guard let session else { return }
-        Task {
-            if let doc = try? await session.redo() {
-                self.restoreCaret(in: doc, atUTF8Offset: nil)
+        latestEditGeneration += 1
+        let generation = latestEditGeneration
+        let previousEditTask = editPipelineTask
+        editPipelineTask = Task { [weak self] in
+            await previousEditTask?.value
+            guard let self else { return }
+            let newDocument = (try? await operation(session)) ?? nil
+            // Adopt the bumped revision stamp immediately — the ingest of
+            // the published snapshot is asynchronous, and a keystroke typed
+            // in that window must not be stamped (and rejected) as stale.
+            self.sessionContentRevision = await session.contentRevision
+            guard generation == self.latestEditGeneration else { return }
+            if let newDocument {
+                QuoinPerformanceTrace.measure("model.restoreCaret.history") {
+                    self.restoreCaret(in: newDocument, atUTF8Offset: nil)
+                }
+            }
+            if generation == self.latestEditGeneration {
+                self.editPipelineTask = nil
             }
         }
     }

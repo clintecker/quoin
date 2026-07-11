@@ -46,11 +46,12 @@ public actor DocumentSession {
     /// Dedupes the save-failure banner while typing into a detached session.
     private var didReportDetachedEdit = false
     /// Bumped on every NON-edit content adoption (external reload, conflict
-    /// resolution, wholesale apply). Edits carry the revision they were
-    /// computed against; a mismatch at apply time means an external reload
-    /// slid in underneath and the edit's offsets are meaningless (launch
-    /// ledger, data integrity #14). Ordinary edits do NOT bump it — a
-    /// typing burst stays valid across its own in-flight edits.
+    /// resolution, wholesale apply) AND on every undo/redo splice (ledger
+    /// #7). Edits carry the revision they were computed against; a mismatch
+    /// at apply time means the content changed underneath and the edit's
+    /// offsets are meaningless (launch ledger, data integrity #14).
+    /// Ordinary edits do NOT bump it — a typing burst stays valid across
+    /// its own in-flight edits.
     public private(set) var contentRevision = 0
 
     private var watcher: FileWatcher?
@@ -355,6 +356,15 @@ public actor DocumentSession {
         guard let edit = undoStack.popLast() else { return nil }
         let (newSource, inverse) = try edit.apply(to: document.source)
         redoStack.append(inverse)
+        // A history splice changes content OUTSIDE the in-flight edit
+        // stream — exactly like an external adoption, any edit whose byte
+        // offsets were computed against the pre-undo snapshot is
+        // meaningless afterward. Bumping the revision makes `applyEdit`
+        // REJECT such an edit (`staleEditBase`) instead of splicing it at
+        // pre-undo offsets (launch ledger, data integrity #7). The model
+        // serializes undo/redo behind its edit pipeline too; this is the
+        // backstop for any ordering that slips past it.
+        contentRevision += 1
         publish(MarkdownConverter.parse(newSource))
         scheduleAutosave()
         return document
@@ -365,6 +375,8 @@ public actor DocumentSession {
         guard let edit = redoStack.popLast() else { return nil }
         let (newSource, inverse) = try edit.apply(to: document.source)
         undoStack.append(inverse)
+        // Same stale-edit rejection contract as undo (ledger #7).
+        contentRevision += 1
         publish(MarkdownConverter.parse(newSource))
         scheduleAutosave()
         return document
