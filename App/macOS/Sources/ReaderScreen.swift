@@ -122,10 +122,19 @@ struct ReaderScreen: View {
                         } else {
                             url = item as? URL
                         }
-                        guard let url,
-                              ReaderModel.imageExtensions.contains(url.pathExtension.lowercased())
-                        else { return }
-                        Task { @MainActor in model.insertImage(from: url) }
+                        guard let url else { return }
+                        if ReaderModel.imageExtensions.contains(url.pathExtension.lowercased()) {
+                            Task { @MainActor in model.insertImage(from: url) }
+                        } else if url.pathExtension.lowercased() == "md" {
+                            // Dropping a markdown file on the editor OPENS
+                            // it (UI #21) — inserting its bytes would be
+                            // surprising; a tab is what the gesture means.
+                            Task { @MainActor in
+                                NotificationCenter.default.post(
+                                    name: AppDelegate.openDocumentNotification,
+                                    object: nil, userInfo: ["url": url])
+                            }
+                        }
                     }
                 }
                 return handled

@@ -159,17 +159,24 @@ final class LibraryModel {
 
     /// Drops from INSIDE the library move; drops from outside COPY — a
     /// drag from Desktop must never make the original vanish (UI #21).
+    /// A failed drop beeps: silence reads as success.
     func importOrMove(url: URL, into folder: URL) {
         let standardized = url.standardizedFileURL.path
         if let rootPath = rootURL?.standardizedFileURL.path,
            standardized.hasPrefix(rootPath + "/") {
-            move(url: url, into: folder)
+            if move(url: url, into: folder) == nil,
+               url.deletingLastPathComponent().standardizedFileURL != folder.standardizedFileURL {
+                NSSound.beep()
+            }
         } else {
             let destination = Library.uniqueURL(
                 baseName: url.deletingPathExtension().lastPathComponent,
                 extension: url.pathExtension,
                 in: folder)
-            guard (try? FileManager.default.copyItem(at: url, to: destination)) != nil else { return }
+            guard (try? FileManager.default.copyItem(at: url, to: destination)) != nil else {
+                NSSound.beep()
+                return
+            }
             rescan()
         }
     }

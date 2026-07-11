@@ -85,11 +85,21 @@ struct LibrarySidebar: View {
             }
         }
         // Dropping onto empty sidebar space moves to the library root.
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+        .onDrop(of: [.fileURL], isTargeted: $isRootDropTargeted) { providers in
             guard let root = library.rootURL else { return false }
             return handleFileDrop(providers, into: root, library: library)
         }
+        .overlay {
+            if isRootDropTargeted {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 2)
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
     }
+
+    @State private var isRootDropTargeted = false
 
     // MARK: - Library-wide search (⇧⌘F, persistent per handoff)
 
@@ -183,6 +193,7 @@ private struct LibraryRow: View {
 
     @State private var isRenaming = false
     @State private var draftName = ""
+    @State private var isDropTargeted = false
 
     var body: some View {
         if node.kind == .folder {
@@ -214,10 +225,14 @@ private struct LibraryRow: View {
                     }
                 }
                 .onDrag { NSItemProvider(object: node.url as NSURL) }
-                // Dropping a file onto a folder moves it there (⌘Z undoes).
-                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                // Dropping a file onto a folder moves it there (⌘Z undoes);
+                // the target folder highlights while hovered (UI #21).
+                .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
                     handleFileDrop(providers, into: node.url, library: library)
                 }
+                .background(
+                    isDropTargeted ? Color.accentColor.opacity(0.15) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 4))
                 .contextMenu {
                     Button("New Document in “\(node.name)”") {
                         if let url = library.createDocument(in: node.url) { onOpen(url) }

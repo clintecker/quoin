@@ -111,9 +111,9 @@ top-down; nothing ships while a BLOCKER is open.*
 - [FIXED] System sidebar-toggle duplicate removed (replacing: .sidebar). #19.
 - [PARTIAL] a11y labels on new-document button + tab-bar tabs (button
   trait + selected). Full VoiceOver audit still owed. #20.
-- [PARTIAL] External drops now COPY (intra-library drops move with ⌘Z).
-  Remaining: drop failures silent, no drop-target highlighting, .md drop
-  on editor ignored. #21.
+- [FIXED] Drag-and-drop story complete: external drops COPY (intra-library
+  moves with ⌘Z), target folders + root highlight while hovered, failed
+  drops beep, .md dropped on the editor opens a tab. #21.
 - [OPEN] Tab switches destroy scroll/caret state (`.id(activeTab)`). #22.
 - [FIXED] Sidebar keyboard selection opens documents. #23.
 - [PARTIAL] Dock menu ✓, CFBundleTypeRole Editor ✓. Remaining: Services,
