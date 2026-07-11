@@ -95,6 +95,9 @@ final class MathGoldenRenderTests: XCTestCase {
         .init(name: "underbrace", latex: #"\underbrace{1 + 2 + \cdots + n}_{n\text{ terms}}"#, expectation: .mustRender),
         .init(name: "xrightarrow", latex: #"A \xrightarrow{f} B \xrightarrow[g]{} C"#, expectation: .mustRender),
         .init(name: "stackrel", latex: #"a \stackrel{\text{def}}{=} b"#, expectation: .mustRender),
+        // Phase 5 — boxed, phantom, color
+        .init(name: "boxed", latex: #"\boxed{E = mc^2}"#, expectation: .mustRender),
+        .init(name: "colored", latex: #"\color{#cc2222}{x} + \textcolor{#2244cc}{y} = \color{#00aa88}{z}"#, expectation: .mustRender),
     ]
 
     private var goldenDirectory: URL {

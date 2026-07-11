@@ -353,6 +353,36 @@ final class MathParserTests: XCTestCase {
             MathParser.parse("\\sum_{\\substack{i<n \\\\ i\\text{ odd}}} \\overbrace{i}^{k} \\xrightarrow{f}")))
     }
 
+    // MARK: - Decorations & color (Phase 5)
+
+    func testBoxedAndPhantom() {
+        guard case .decorated(_, .boxed) = MathParser.parse("\\boxed{x}") else {
+            return XCTFail("expected boxed")
+        }
+        guard case .decorated(_, .phantom) = MathParser.parse("\\phantom{x}") else {
+            return XCTFail("expected phantom")
+        }
+        guard case .decorated(_, .vphantom) = MathParser.parse("\\vphantom{x}") else {
+            return XCTFail("expected vphantom")
+        }
+    }
+
+    func testColorTakesNameThenBody() {
+        guard case .styled(_, let color) = MathParser.parse("\\color{red}{x + y}") else {
+            return XCTFail("expected styled")
+        }
+        XCTAssertEqual(color, "red")
+        guard case .styled(_, let hex) = MathParser.parse("\\textcolor{#00aa88}{z}") else {
+            return XCTFail("expected styled")
+        }
+        XCTAssertEqual(hex, "#00aa88")
+    }
+
+    func testDecorationsFullySupported() {
+        XCTAssertTrue(MathParser.isFullySupported(
+            MathParser.parse("\\boxed{\\color{red}{a} + \\phantom{b}}")))
+    }
+
     /// Convenience: the single mapped glyph of a one-atom expression.
     private func glyph(_ latex: String) -> String? {
         if case .symbol(let g, _, _) = MathParser.parse(latex) { return g }

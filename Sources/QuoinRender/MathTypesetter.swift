@@ -21,11 +21,19 @@ struct MathTypesetter {
 
     let theme: Theme
     let baseSize: CGFloat
+    /// Overrides the drawing color for a `\color`/`\textcolor` subtree. Set
+    /// on a sub-typesetter that lays out the recolored base, so the override
+    /// is baked into that subtree's draw closures at layout time.
+    var inkOverride: PlatformColor?
 
-    init(theme: Theme, baseSize: CGFloat) {
+    init(theme: Theme, baseSize: CGFloat, inkOverride: PlatformColor? = nil) {
         self.theme = theme
         self.baseSize = baseSize
+        self.inkOverride = inkOverride
     }
+
+    /// The active drawing color (a `\color` override or the theme ink).
+    private var ink: PlatformColor { inkOverride ?? theme.ink }
 
     // MARK: - Box model
 
@@ -100,6 +108,16 @@ struct MathTypesetter {
             return overUnderBox(base, over: over, under: under, kind: kind,
                                 size: s, display: display)
 
+        case .decorated(let base, let decoration):
+            return decoratedBox(base, decoration: decoration, size: s, display: display)
+
+        case .styled(let base, let color):
+            // Lay out the subtree with an ink override baked into its draw
+            // closures (a sub-typesetter, so nested \color still nests).
+            let tinted = MathTypesetter(theme: theme, baseSize: baseSize,
+                                        inkOverride: Self.resolveColor(color) ?? ink)
+            return tinted.layout(base, size: s, display: display)
+
         case .unsupported(let source):
             // Never reached when callers gate on isFullySupported, but draw
             // something sane regardless.
@@ -131,7 +149,7 @@ struct MathTypesetter {
 
     private func textBox(_ text: String, size: CGFloat, italic: Bool, bold: Bool = false, monospaced: Bool = false) -> MathBox {
         let ctFont = font(size: size, italic: italic, bold: bold, monospaced: monospaced)
-        let ink = theme.ink
+        let ink = self.ink
         let attributed = NSAttributedString(string: text, attributes: [
             kCTFontAttributeName as NSAttributedString.Key: ctFont,
             kCTForegroundColorFromContextAttributeName as NSAttributedString.Key: true,
@@ -199,6 +217,8 @@ struct MathTypesetter {
         case .overUnder(_, _, _, let kind):
             // Arrows relate; braces/oversets are ordinary.
             return (kind == .rightarrow || kind == .leftarrow) ? .relation : .ordinary
+        case .decorated(let base, _): return atomClass(of: base)
+        case .styled(let base, _): return atomClass(of: base)
         case .space, .unsupported: return nil
         }
     }
@@ -242,7 +262,7 @@ struct MathTypesetter {
 
         let ascent = axis + ruleThickness / 2 + gap + top.height
         let descent = -(axis - ruleThickness / 2 - gap - bottom.height)
-        let ink = theme.ink
+        let ink = self.ink
 
         return MathBox(width: width, ascent: ascent, descent: max(descent, bottom.height + gap - axis)) { context, pen in
             let ruleY = pen.y + axis
@@ -283,7 +303,7 @@ struct MathTypesetter {
         let ascent = axis + ruleThickness / 2 + gap + topBox.height
         let descent = max(-(axis - ruleThickness / 2 - gap - bottomBox.height),
                           bottomBox.height + gap - axis)
-        let ink = theme.ink
+        let ink = self.ink
 
         let stack = MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
             let ruleY = pen.y + axis
@@ -310,7 +330,7 @@ struct MathTypesetter {
 
     private func accentBox(_ base: MathNode, accent: MathAccent, size: CGFloat, display: Bool) -> MathBox {
         let baseBox = layout(base, size: size, display: display)
-        let ink = theme.ink
+        let ink = self.ink
         let ruleThickness = max(1, size * 0.045)
         let gap = size * 0.08
 
@@ -351,6 +371,79 @@ struct MathTypesetter {
         }
     }
 
+    // MARK: - Decorations (\boxed, \phantom)
+
+    private func decoratedBox(_ base: MathNode, decoration: MathDecoration,
+                              size: CGFloat, display: Bool) -> MathBox {
+        let baseBox = layout(base, size: size, display: display)
+        switch decoration {
+        case .phantom:
+            return MathBox(width: baseBox.width, ascent: baseBox.ascent,
+                           descent: baseBox.descent) { _, _ in }
+        case .hphantom:
+            return MathBox(width: baseBox.width, ascent: 0, descent: 0) { _, _ in }
+        case .vphantom:
+            return MathBox(width: 0, ascent: baseBox.ascent,
+                           descent: baseBox.descent) { _, _ in }
+        case .boxed:
+            let pad = size * 0.18
+            let line = max(1, size * 0.04)
+            let ink = self.ink
+            let width = baseBox.width + pad * 2
+            let ascent = baseBox.ascent + pad
+            let descent = baseBox.descent + pad
+            return MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
+                baseBox.draw(context, CGPoint(x: pen.x + pad, y: pen.y))
+                context.saveGState()
+                context.setStrokeColor(resolvedCGColor(ink))
+                context.setLineWidth(line)
+                context.stroke(CGRect(x: pen.x + line / 2, y: pen.y - descent + line / 2,
+                                      width: width - line, height: ascent + descent - line))
+                context.restoreGState()
+            }
+        }
+    }
+
+    /// Resolves a `\color` name or "#rrggbb" to a platform color. A small
+    /// named palette covers the common MathJax color words; unknown names
+    /// return nil (the caller keeps the theme ink).
+    static func resolveColor(_ name: String) -> PlatformColor? {
+        let key = name.trimmingCharacters(in: .whitespaces).lowercased()
+        if key.hasPrefix("#") { return hexColor(key) }
+        switch key {
+        case "red": return PlatformColor.systemRed
+        case "blue": return PlatformColor.systemBlue
+        case "green": return PlatformColor.systemGreen
+        case "orange": return PlatformColor.systemOrange
+        case "purple": return PlatformColor.systemPurple
+        case "teal": return PlatformColor.systemTeal
+        case "yellow": return PlatformColor.systemYellow
+        case "pink", "magenta": return PlatformColor.systemPink
+        case "brown": return PlatformColor.systemBrown
+        case "gray", "grey": return PlatformColor.systemGray
+        case "cyan": return colorRGB(0, 0.68, 0.94)
+        case "black": return colorRGB(0, 0, 0)
+        case "white": return colorRGB(1, 1, 1)
+        default: return nil
+        }
+    }
+
+    private static func hexColor(_ hex: String) -> PlatformColor? {
+        var v = hex; v.removeFirst()
+        guard v.count == 6, let n = UInt32(v, radix: 16) else { return nil }
+        return colorRGB(CGFloat((n >> 16) & 0xFF) / 255,
+                        CGFloat((n >> 8) & 0xFF) / 255,
+                        CGFloat(n & 0xFF) / 255)
+    }
+
+    private static func colorRGB(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> PlatformColor {
+        #if canImport(AppKit)
+        return PlatformColor(srgbRed: r, green: g, blue: b, alpha: 1)
+        #else
+        return PlatformColor(red: r, green: g, blue: b, alpha: 1)
+        #endif
+    }
+
     // MARK: - Over/under (\overset \underbrace \xrightarrow)
 
     private func overUnderBox(_ base: MathNode, over: MathNode?, under: MathNode?,
@@ -359,7 +452,7 @@ struct MathTypesetter {
         let overBox = over.map { layout($0, size: annotationSize, display: false) }
         let underBox = under.map { layout($0, size: annotationSize, display: false) }
         let gap = size * 0.08
-        let ink = theme.ink
+        let ink = self.ink
 
         switch kind {
         case .rightarrow, .leftarrow:
@@ -494,7 +587,7 @@ struct MathTypesetter {
         let ascent = body.ascent + gap + ruleThickness + size * 0.06
         let descent = body.descent
         let width = degreeAdvance + signWidth + body.width + size * 0.12
-        let ink = theme.ink
+        let ink = self.ink
 
         return MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
             context.saveGState()

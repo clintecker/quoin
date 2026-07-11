@@ -31,9 +31,23 @@ public indirect enum MathNode: Hashable, Sendable {
     /// (plain), \overbrace \underbrace (a drawn brace), \xrightarrow
     /// \xleftarrow (a stretchy arrow). `over`/`under` are the annotations.
     case overUnder(base: MathNode, over: MathNode?, under: MathNode?, kind: MathOverUnder)
+    /// A box/spacing decoration: \boxed (framed) or the \phantom family
+    /// (reserve space, draw nothing).
+    case decorated(base: MathNode, decoration: MathDecoration)
+    /// A recolored subexpression: \color / \textcolor. The color is a name
+    /// ("red", "teal") or "#rrggbb"; the renderer resolves it.
+    case styled(base: MathNode, color: String)
     /// Something we don't understand — rendered as literal marked source
     /// (the PRD rule: unknown input degrades, never errors).
     case unsupported(String)
+}
+
+/// A `.decorated` treatment: a frame or reserved (invisible) space.
+public enum MathDecoration: Hashable, Sendable {
+    case boxed        // \boxed — stroked frame with padding
+    case phantom      // reserve full box, draw nothing
+    case hphantom     // reserve width only
+    case vphantom     // reserve height only
 }
 
 /// How an `.overUnder` decoration is drawn between base and annotations.
@@ -412,6 +426,23 @@ public enum MathParser {
         case "substack":
             return parseSubstack(&tokens)
 
+        case "boxed":
+            return .decorated(base: parseAtom(&tokens) ?? .row([]), decoration: .boxed)
+        case "phantom":
+            return .decorated(base: parseAtom(&tokens) ?? .row([]), decoration: .phantom)
+        case "hphantom":
+            return .decorated(base: parseAtom(&tokens) ?? .row([]), decoration: .hphantom)
+        case "vphantom":
+            return .decorated(base: parseAtom(&tokens) ?? .row([]), decoration: .vphantom)
+
+        case "color", "textcolor":
+            // \color{name}{body} and \textcolor{name}{body} both take the
+            // color as a brace name then the body (we don't support the
+            // stateful \color{name}-applies-to-rest form).
+            let color = readBraceName(&tokens)
+            let body = parseAtom(&tokens) ?? .row([])
+            return .styled(base: body, color: color)
+
         // Spacing.
         case ",": return .space(3.0 / 18.0)
         case ":": return .space(4.0 / 18.0)
@@ -703,6 +734,10 @@ public enum MathParser {
             return isFullySupported(base)
                 && (over.map(isFullySupported) ?? true)
                 && (under.map(isFullySupported) ?? true)
+        case .decorated(let base, _):
+            return isFullySupported(base)
+        case .styled(let base, _):
+            return isFullySupported(base)
         }
     }
 
@@ -744,6 +779,10 @@ public enum MathParser {
                 walk(top); walk(bottom)
             case .overUnder(let base, let over, let under, _):
                 walk(base); over.map(walk); under.map(walk)
+            case .decorated(let base, _):
+                walk(base)
+            case .styled(let base, _):
+                walk(base)
             }
         }
         walk(node)
