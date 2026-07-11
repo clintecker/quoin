@@ -497,4 +497,42 @@ public enum MathParser {
             return rows.allSatisfy { $0.allSatisfy(isFullySupported) }
         }
     }
+
+    /// The distinct commands that degraded this expression to source
+    /// fallback, in first-seen order (deduped, capped). `isFullySupported`
+    /// answers "did it degrade"; this answers "on WHAT" so the fallback
+    /// card can name the culprit instead of a generic apology.
+    public static func unsupportedCommands(in node: MathNode, limit: Int = 4) -> [String] {
+        var seen: Set<String> = []
+        var ordered: [String] = []
+        func walk(_ node: MathNode) {
+            switch node {
+            case .unsupported(let raw):
+                // The payload is the raw token ("\\foo" or a stray char).
+                // Only surface real letter-commands (`\word`) — structural
+                // noise like a stray `\\` row separator isn't a nameable
+                // culprit and would just confuse the caption.
+                let name = raw.hasPrefix("\\") ? raw : "\\" + raw
+                let body = name.dropFirst()
+                guard !body.isEmpty, body.allSatisfy(\.isLetter) else { break }
+                if seen.insert(name).inserted { ordered.append(name) }
+            case .symbol, .space, .functionName:
+                break
+            case .row(let children):
+                children.forEach(walk)
+            case .fraction(let n, let d):
+                walk(n); walk(d)
+            case .radical(let degree, let radicand):
+                degree.map(walk); walk(radicand)
+            case .scripts(let base, let sub, let sup):
+                walk(base); sub.map(walk); sup.map(walk)
+            case .delimited(_, let body, _):
+                walk(body)
+            case .matrix(let rows, _, _, _):
+                rows.forEach { $0.forEach(walk) }
+            }
+        }
+        walk(node)
+        return Array(ordered.prefix(limit))
+    }
 }

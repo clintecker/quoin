@@ -1321,11 +1321,24 @@ public struct AttributedRenderer {
         // Unsupported LaTeX: the same tidy source-card treatment as an
         // unrenderable mermaid diagram — a dark canvas with a caption — so
         // degradation reads as intentional, never as a broken half-render.
+        // The caption NAMES the offending commands when it can.
         return renderSourceCard(
             language: "latex", code: latex,
             sourceKey: QuoinAttribute.mathSource, source: latex,
-            caption: "math · this LaTeX isn't natively typeset yet"
+            caption: Self.mathFallbackCaption(for: latex)
         )
+    }
+
+    /// "math · \substack, \xcancel aren't natively typeset yet" when the
+    /// degradation traces to specific commands; a generic line otherwise
+    /// (e.g. a nesting-limit or delimiter degradation with no named leaf).
+    static func mathFallbackCaption(for latex: String) -> String {
+        let commands = MathParser.unsupportedCommands(in: MathParser.parse(latex))
+        guard !commands.isEmpty else {
+            return "math · this LaTeX isn't natively typeset yet"
+        }
+        let verb = commands.count == 1 ? "isn't" : "aren't"
+        return "math · \(commands.joined(separator: ", ")) \(verb) natively typeset yet"
     }
 
     /// The shared fallback for content we can't render natively (an
@@ -1679,6 +1692,8 @@ public struct AttributedRenderer {
             attrs[.font] = theme.inlineCodeFont()
             attrs[.foregroundColor] = theme.secondaryTextColor
             attrs[QuoinAttribute.mathSource] = latex
+            // Name the culprit on hover — inline has no room for a caption.
+            attrs[.toolTip] = Self.mathFallbackCaption(for: latex)
             return NSAttributedString(string: latex, attributes: attrs)
 
         case .highlight(let children, let color):

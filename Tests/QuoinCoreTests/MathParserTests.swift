@@ -152,4 +152,33 @@ final class MathParserTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertTrue(MathParser.isFullySupported(node))
     }
+
+    // MARK: - Diagnostics (Phase 0)
+
+    func testUnsupportedCommandsNamesTheCulprit() {
+        let node = MathParser.parse("\\substack{a \\\\ b}")
+        XCTAssertFalse(MathParser.isFullySupported(node))
+        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\substack"])
+    }
+
+    func testUnsupportedCommandsDedupesAndPreservesOrder() {
+        let node = MathParser.parse("\\foo x + \\bar y + \\foo z")
+        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\foo", "\\bar"])
+    }
+
+    func testUnsupportedCommandsCaps() {
+        let node = MathParser.parse("\\a \\b \\c \\d \\e \\f")
+        XCTAssertEqual(MathParser.unsupportedCommands(in: node, limit: 4).count, 4)
+    }
+
+    func testUnsupportedCommandsFindsCulpritInsideStructure() {
+        // A single unsupported command buried in a fraction still surfaces.
+        let node = MathParser.parse("\\frac{1}{\\substack{a}}")
+        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\substack"])
+    }
+
+    func testFullySupportedExpressionHasNoUnsupportedCommands() {
+        let node = MathParser.parse("\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}")
+        XCTAssertTrue(MathParser.unsupportedCommands(in: node).isEmpty)
+    }
 }
