@@ -123,16 +123,40 @@ final class FlipTransitionFidelityTests: XCTestCase {
         let carenderer = CARenderer(mtlTexture: texture, options: nil)
         carenderer.layer = containerLayer
         carenderer.bounds = containerLayer.bounds
-        CATransaction.flush()
-        carenderer.beginFrame(atTime: CACurrentMediaTime(), timeStamp: nil)
-        carenderer.addUpdate(containerLayer.bounds)
-        carenderer.render()
-        carenderer.endFrame()
         // BGRA readout; row order calibrated by the assertions below (the
         // correct recipe must match under exactly one order).
         var overlayBytes = [UInt8](repeating: 0, count: width * containerHeight * 4)
-        texture.getBytes(&overlayBytes, bytesPerRow: width * 4,
-                         from: MTLRegionMake2D(0, 0, width, containerHeight), mipmapLevel: 0)
+        func renderOverlayReadout() {
+            CATransaction.flush()
+            carenderer.beginFrame(atTime: CACurrentMediaTime(), timeStamp: nil)
+            carenderer.addUpdate(containerLayer.bounds)
+            carenderer.render()
+            carenderer.endFrame()
+            texture.getBytes(&overlayBytes, bytesPerRow: width * 4,
+                             from: MTLRegionMake2D(0, 0, width, containerHeight), mipmapLevel: 0)
+        }
+        // The anchor doubles as a frame-validity probe: a readout where
+        // NEITHER of its rows is red is a blank frame — the layer-tree
+        // commit lost a race with the compositor readback (seen
+        // sporadically under machine load; the same binary passes on
+        // rerun). Retry the commit+readback; the fidelity assertions
+        // below are untouched, so a genuinely mirrored or misregistered
+        // slice still fails every attempt.
+        func anchorRedness(atTextureRow row: Int) -> Int {
+            var red = 0
+            for col in 572..<588 {
+                let i = (row * width + col) * 4
+                red += Int(overlayBytes[i + 2]) - Int(overlayBytes[i]) // R - B of BGRA
+            }
+            return red
+        }
+        for attempt in 0..<4 {
+            renderOverlayReadout()
+            if anchorRedness(atTextureRow: 8) > 800 || anchorRedness(atTextureRow: 32) > 800 { break }
+            print("FLIPFIDELITY blank compositor readback, attempt \(attempt) — retrying")
+            window.display()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
 
         // Ground truth for the same document region, straight from the
         // bitmap rep (row 0 = rect top, unambiguous).
@@ -194,16 +218,8 @@ final class FlipTransitionFidelityTests: XCTestCase {
         // straight). If the texture shows red at the band's BOTTOM
         // instead, this readout inverts content within each element, and
         // a screen-upright slice must be compared bottom-up.
-        func redness(atTextureRow row: Int) -> Int {
-            var red = 0
-            for col in 572..<588 {
-                let i = (row * width + col) * 4
-                red += Int(overlayBytes[i + 2]) - Int(overlayBytes[i]) // R - B of BGRA
-            }
-            return red
-        }
-        let anchorTopIsRed = redness(atTextureRow: 8) > 800
-        let anchorBottomIsRed = redness(atTextureRow: 32) > 800
+        let anchorTopIsRed = anchorRedness(atTextureRow: 8) > 800
+        let anchorBottomIsRed = anchorRedness(atTextureRow: 32) > 800
         XCTAssertNotEqual(anchorTopIsRed, anchorBottomIsRed,
                           "anchor must disambiguate the content row order")
         let contentRowsInverted = anchorBottomIsRed
