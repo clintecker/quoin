@@ -66,6 +66,49 @@ final class BlockEditingTests: XCTestCase {
         XCTAssertTrue(deleted.hasSuffix("```\n"), "got: \(deleted)")
     }
 
+    func testDeleteSoleBlockPreservesTrailingUnrenderedBytes() throws {
+        // Ledger (data integrity #15): the sole-block case used to take
+        // everything to EOF, wiping trailing bytes that belong to no
+        // rendered block. Only the block and its own line terminator go.
+        let cases: [(source: String, expected: String)] = [
+            ("Hello", ""),                       // bare block, nothing trailing
+            ("Hello\n", ""),                     // its own terminator goes with it
+            ("Hello\r\n", ""),                   // CRLF terminator too
+            ("Hello\n\n\n", "\n\n"),             // trailing blank lines survive
+            ("Hello\n   \n", "   \n"),           // trailing whitespace survives
+        ]
+        for (source, expected) in cases {
+            let document = MarkdownConverter.parse(source)
+            XCTAssertEqual(document.blocks.count, 1, "fixture must be a sole block: \(source.debugDescription)")
+            let edit = try XCTUnwrap(BlockEditing.deleteEdit(
+                source: source, blocks: document.blocks, blockIndex: 0))
+            XCTAssertEqual(try apply(edit, to: source), expected,
+                           "deleting the sole block of \(source.debugDescription)")
+        }
+    }
+
+    func testDeleteSoleBlockKeepsLinkReferenceDefinitions() throws {
+        // A link reference definition renders no block of its own; deleting
+        // the only visible block must not silently destroy it.
+        let source = "See the docs.\n\n[docs]: https://example.com\n"
+        let document = MarkdownConverter.parse(source)
+        guard document.blocks.count == 1 else {
+            // If the parser ever starts modeling reference definitions as
+            // blocks this fixture stops being a sole-block case; the blank
+            // line fixtures above still cover the invariant.
+            return
+        }
+        let block = document.blocks[0]
+        // The definition must live OUTSIDE the sole block's range for this
+        // fixture to prove anything.
+        XCTAssertLessThan(block.range.upperBound, source.utf8.count)
+        let edit = try XCTUnwrap(BlockEditing.deleteEdit(
+            source: source, blocks: document.blocks, blockIndex: 0))
+        let remaining = try apply(edit, to: source)
+        XCTAssertTrue(remaining.contains("[docs]: https://example.com"),
+                      "trailing reference definition must survive; got \(remaining.debugDescription)")
+    }
+
     // MARK: Tables
 
     func testAddRowMatchesColumnCount() throws {
