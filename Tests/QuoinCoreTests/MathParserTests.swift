@@ -181,4 +181,82 @@ final class MathParserTests: XCTestCase {
         let node = MathParser.parse("\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}")
         XCTAssertTrue(MathParser.unsupportedCommands(in: node).isEmpty)
     }
+
+    // MARK: - Math alphabets (Phase 1)
+
+    func testMathbbFullAlphabet() {
+        // Blackboard maps every letter, with the Letterlike holes.
+        XCTAssertEqual(glyph("\\mathbb{R}"), "ℝ")  // hole
+        XCTAssertEqual(glyph("\\mathbb{A}"), "𝔸")  // contiguous block
+        XCTAssertEqual(glyph("\\mathbb{k}"), "𝕜")  // lowercase
+    }
+
+    func testCalligraphicAndFraktur() {
+        XCTAssertEqual(glyph("\\mathcal{L}"), "ℒ")   // script hole
+        XCTAssertEqual(glyph("\\mathcal{A}"), "𝒜")   // script block
+        XCTAssertEqual(glyph("\\mathfrak{g}"), "𝔤")  // fraktur
+        XCTAssertEqual(glyph("\\mathscr{B}"), "ℬ")   // scr == cal
+    }
+
+    func testSansAndMonospace() {
+        XCTAssertEqual(glyph("\\mathsf{X}"), "𝖷")
+        XCTAssertEqual(glyph("\\mathtt{x}"), "𝚡")
+        XCTAssertEqual(glyph("\\mathsf{5}"), "𝟧")   // sans digits
+    }
+
+    func testMathbfStillBoldStyle() {
+        // Unchanged: \mathbf renders with a bold system font, not a codepoint.
+        guard case .symbol("x", _, let style) = MathParser.parse("\\mathbf{x}") else {
+            return XCTFail("expected symbol")
+        }
+        XCTAssertEqual(style, .bold)
+    }
+
+    // MARK: - Direct-typed Unicode (Phase 1)
+
+    func testDirectUnicodeOperatorGetsLargeOperatorClass() {
+        guard case .symbol("∫", .largeOperator, _) = MathParser.parse("∫") else {
+            return XCTFail("a directly-typed ∫ must class as a large operator")
+        }
+    }
+
+    func testDirectUnicodeRelationGetsRelationClass() {
+        guard case .symbol("≤", .relation, _) = MathParser.parse("≤") else {
+            return XCTFail("≤ must class as a relation")
+        }
+    }
+
+    func testDirectGreekMatchesCommandForm() {
+        guard case .symbol("α", let cls, .italic) = MathParser.parse("α") else {
+            return XCTFail("α should be italic ordinary")
+        }
+        XCTAssertEqual(cls, .ordinary)
+    }
+
+    // MARK: - Operators & \big (Phase 1)
+
+    func testBigDelimitersAreTransparent() {
+        // \big( no longer degrades — it passes the ( through as an opening.
+        let node = MathParser.parse("\\big( x \\big)")
+        XCTAssertTrue(MathParser.isFullySupported(node))
+    }
+
+    func testNegativeThinSpace() {
+        guard case .space(let width) = MathParser.parse("\\!") else {
+            return XCTFail("expected space")
+        }
+        XCTAssertLessThan(width, 0)
+    }
+
+    func testExtraOperatorNames() {
+        for op in ["\\Pr", "\\argmax", "\\limsup"] {
+            XCTAssertTrue(MathParser.isFullySupported(MathParser.parse(op)), "\(op) should render")
+        }
+    }
+
+    /// Convenience: the single mapped glyph of a one-atom expression.
+    private func glyph(_ latex: String) -> String? {
+        if case .symbol(let g, _, _) = MathParser.parse(latex) { return g }
+        return nil
+    }
 }

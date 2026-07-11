@@ -83,6 +83,11 @@ final class MathGoldenRenderTests: XCTestCase {
         .init(name: "prime-derivative", latex: #"f'(x) = \lim_{h\to 0}\frac{f(x+h)-f(x)}{h}"#, expectation: .mustRender),
         .init(name: "operatorname-custom", latex: #"\operatorname{softmax}(z)_i = \frac{e^{z_i}}{\sum_j e^{z_j}}"#, expectation: .mustRender),
         .init(name: "stacked-substack", latex: #"\sum_{\substack{i < n \\ i \text{ odd}}} i"#, expectation: .knownUnsupported),
+        // Phase 1 — math alphabets, direct Unicode, operators, \big
+        .init(name: "alphabets", latex: #"\mathbb{RCQ}\ \mathcal{ABL}\ \mathfrak{gH}\ \mathsf{sf}\ \mathtt{tt}"#, expectation: .mustRender),
+        .init(name: "unicode-direct", latex: #"∫_0^∞ e^{-x} dx ≤ α + β"#, expectation: .mustRender),
+        .init(name: "big-manual", latex: #"\big( x \big) + \bigl[ y \bigr]"#, expectation: .mustRender),
+        .init(name: "operators-more", latex: #"\Pr(X) = \operatorname{argmax}_\theta L(\theta)"#, expectation: .mustRender),
     ]
 
     private var goldenDirectory: URL {

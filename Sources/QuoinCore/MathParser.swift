@@ -181,8 +181,15 @@ public enum MathParser {
         if ch.isNumber || ch == "." {
             return .symbol(String(ch), .ordinary, style: .roman)
         }
+        // ASCII letters are italic variables; other letters (Greek α typed
+        // directly, etc.) keep the class the symbol table assigns their
+        // glyph so `α` matches `\alpha` and stays italic ordinary.
         if ch.isLetter {
-            return .symbol(String(ch), .ordinary, style: .italic)
+            if ch.isASCII {
+                return .symbol(String(ch), .ordinary, style: .italic)
+            }
+            let cls = glyphAtomClass[String(ch)] ?? .ordinary
+            return .symbol(String(ch), cls, style: .italic)
         }
         switch ch {
         case "+", "−": return .symbol(String(ch), .binary, style: .roman)
@@ -197,9 +204,27 @@ public enum MathParser {
         case ",", ";": return .symbol(String(ch), .punctuation, style: .roman)
         case "!", "?", "'", "|", ":": return .symbol(String(ch), .ordinary, style: .roman)
         default:
+            // A directly-typed math glyph (∫ ∑ ≤ →): give it the atom class
+            // its `\command` form would, so spacing and (for operators)
+            // stacked limits work. `∫x` typed raw now behaves like `\int x`.
+            if let cls = glyphAtomClass[String(ch)] {
+                return .symbol(String(ch), cls, style: .roman)
+            }
             return .symbol(String(ch), .ordinary, style: .roman)
         }
     }
+
+    /// Reverse of `symbolTable`: glyph → atom class, so a directly-typed
+    /// Unicode math character is classed like its command spelling.
+    static let glyphAtomClass: [String: MathAtomClass] = {
+        var map: [String: MathAtomClass] = [:]
+        for (_, value) in symbolTable {
+            // First writer wins; classes for a given glyph are consistent
+            // in the table (all arrows relation, all operators binary, …).
+            if map[value.0] == nil { map[value.0] = value.1 }
+        }
+        return map
+    }()
 
     private static func commandNode(_ name: String, _ tokens: inout ArraySlice<Token>) -> MathNode {
         // Structural commands.
@@ -252,7 +277,8 @@ public enum MathParser {
             }
             return .row([])
 
-        case "mathbb", "mathcal", "mathbf":
+        case "mathbb", "mathcal", "mathscr", "mathfrak", "mathsf",
+             "mathtt", "mathbf", "boldsymbol", "bm":
             let inner = parseAtom(&tokens) ?? .row([])
             return styledLetters(inner, command: name)
 
@@ -263,9 +289,20 @@ public enum MathParser {
         case ",": return .space(3.0 / 18.0)
         case ":": return .space(4.0 / 18.0)
         case ";": return .space(5.0 / 18.0)
+        case "!": return .space(-3.0 / 18.0)   // negative thin space
         case "quad": return .space(1.0)
         case "qquad": return .space(2.0)
         case " ": return .space(6.0 / 18.0)
+
+        // Manual delimiter sizing: we don't yet enlarge the fence, but the
+        // size prefix must be transparent — parse the delimiter that
+        // follows at normal size rather than degrading the whole
+        // expression (\big( used to become a source card).
+        case "big", "Big", "bigg", "Bigg",
+             "bigl", "Bigl", "biggl", "Biggl",
+             "bigr", "Bigr", "biggr", "Biggr",
+             "bigm", "Bigm", "biggm", "Biggm":
+            return parseAtom(&tokens) ?? .row([])
 
         default:
             if let (glyph, atomClass) = symbolTable[name] {
@@ -384,18 +421,30 @@ public enum MathParser {
         }
     }
 
-    /// Blackboard/calligraphic letter mapping (ℝ, 𝒞 …).
+    /// Math font commands. `\mathbf` stays a system-font bold style;
+    /// `\boldsymbol`/`\bm` are bold-italic; the rest map each letter/digit
+    /// to its Mathematical-Alphanumeric-Symbols codepoint (𝔸 𝒜 𝔞 𝗔 𝚊 …),
+    /// which CoreText resolves through STIX/Apple Symbols. The mapped glyph
+    /// already encodes the styling, so it carries `.roman` to avoid a
+    /// synthetic italic slant on top of it.
     private static func styledLetters(_ node: MathNode, command: String) -> MathNode {
-        func map(_ s: String) -> String {
-            guard command == "mathbb" else { return s }
-            let bb: [Character: String] = [
-                "C": "ℂ", "H": "ℍ", "N": "ℕ", "P": "ℙ", "Q": "ℚ", "R": "ℝ", "Z": "ℤ",
-            ]
-            return s.count == 1 ? (bb[s.first!] ?? s) : s
+        // `\mathbf` is the one command we render with a real bold system
+        // font rather than a codepoint (matches long-standing behavior).
+        if command == "mathbf" {
+            switch node {
+            case .symbol(let s, let cls, _):
+                return .symbol(s, cls, style: .bold)
+            case .row(let children):
+                return .row(children.map { styledLetters($0, command: command) })
+            default:
+                return node
+            }
         }
+        guard let alphabet = MathAlphabet(command: command) else { return node }
         switch node {
         case .symbol(let s, let cls, _):
-            return .symbol(map(s), cls, style: command == "mathbf" ? .bold : .roman)
+            let mapped = s.count == 1 ? (alphabet.glyph(for: s.first!) ?? s) : s
+            return .symbol(mapped, cls, style: .roman)
         case .row(let children):
             return .row(children.map { styledLetters($0, command: command) })
         default:
@@ -409,6 +458,8 @@ public enum MathParser {
         "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan",
         "sinh", "cosh", "tanh", "log", "ln", "lg", "exp", "min", "max", "sup",
         "inf", "lim", "det", "dim", "ker", "arg", "gcd", "deg", "mod",
+        "Pr", "hom", "argmin", "argmax", "limsup", "liminf",
+        "coth", "sech", "csch",
     ]
 
     static let symbolTable: [String: (String, MathAtomClass)] = [
