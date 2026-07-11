@@ -67,8 +67,9 @@ top-down; nothing ships while a BLOCKER is open.*
   library loss shows the first-run prompt with no explanation. #11.
 - [OPEN] Same file can open as two live sessions (URL-equality keying;
   multi-window makes it trivial) — two autosavers ping-pong content. #12.
-- [OPEN] First-H1 rename tears down the live editor mid-typing
-  (`.id(activeTab)` recreation). #13.
+- [FIXED] First-H1 rename no longer tears down the live editor: tabs are
+  `DocumentTab` (stable UUID identity, mutable url); the editor keys on
+  `tab.id`. #13.
 - [FIXED] Edits stamped with `contentRevision` (non-edit adoption counter);
   `applyEdit` rejects stale bases (`staleEditBase`); ReaderModel mirrors
   via `revisionedSnapshots()`. iOS still passes nil bases (follow-up). #14.
