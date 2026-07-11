@@ -180,5 +180,68 @@ final class EditEchoSerializationTests: XCTestCase {
         coordinator.noteEditEchoApplied(in: textView)
         XCTAssertEqual(sent().count, 1, "a flip invalidates queued positions entirely")
     }
+
+    // Ledger #9 — format commands and smart paste used to BYPASS the echo
+    // gate: ⌘B one frame after a fast keystroke computed its wrap range
+    // against the stale projection. They must queue like keystrokes and
+    // apply against the freshly restored selection.
+
+    func testFormatCommandQueuesMidFlightAndAppliesAtFreshSelection() throws {
+        let (coordinator, textView, sent) = try makeHarness()
+        let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)
+
+        // Open the flight window with a keystroke.
+        textView.setSelectedRange(NSRange(location: active.location + 12, length: 0))
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: active.location + 12, length: 0),
+            replacementString: "a")
+        XCTAssertEqual(sent().count, 1)
+
+        // ⌘B mid-flight: must NOT wrap a stale range.
+        coordinator.applyFormat(.bold, in: textView)
+        XCTAssertEqual(sent().count, 1, "format never applies against stale coordinates")
+
+        // Echo restores the selection over "TD"; the queued bold flushes
+        // against the FRESH selection.
+        let source = try XCTUnwrap(coordinator.parent.rendered.activeSourceText)
+        let word = (source as NSString).range(of: "TD")
+        textView.setSelectedRange(NSRange(location: active.location + word.location, length: word.length))
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 2)
+        XCTAssertEqual(sent()[1].text, "**TD**")
+
+        // The format edit re-armed the gate: the next keystroke queues.
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: active.location + 12, length: 0),
+            replacementString: "z")
+        XCTAssertEqual(sent().count, 2, "format edits arm the echo gate like keystrokes")
+    }
+
+    func testSmartPasteQueuesMidFlightAndLinksAtFreshSelection() throws {
+        let (coordinator, textView, sent) = try makeHarness()
+        let active = try XCTUnwrap(coordinator.parent.rendered.activeEditableRange)
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("https://example.com/x", forType: .string)
+
+        // Open the flight window.
+        textView.setSelectedRange(NSRange(location: active.location + 12, length: 0))
+        _ = coordinator.textView(
+            textView, shouldChangeTextIn: NSRange(location: active.location + 12, length: 0),
+            replacementString: "a")
+        XCTAssertEqual(sent().count, 1)
+
+        // Paste mid-flight: handled (queued), nothing sent yet.
+        XCTAssertTrue(coordinator.handleSmartPaste())
+        XCTAssertEqual(sent().count, 1, "paste never applies against stale coordinates")
+
+        // Echo restores a selection over "TD" → URL-over-selection links it.
+        let source = try XCTUnwrap(coordinator.parent.rendered.activeSourceText)
+        let word = (source as NSString).range(of: "TD")
+        textView.setSelectedRange(NSRange(location: active.location + word.location, length: word.length))
+        coordinator.noteEditEchoApplied(in: textView)
+        XCTAssertEqual(sent().count, 2)
+        XCTAssertEqual(sent()[1].text, "[TD](https://example.com/x)")
+    }
 }
 #endif
