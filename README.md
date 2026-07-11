@@ -140,7 +140,7 @@ example of every type, each drawn by Quoin's own engine.
 | Live reload + non-blocking conflict banner on external change | ✅ |
 | Source-level undo/redo through the session | ✅ |
 | First-H1 auto-rename of Untitled files | ✅ |
-| Export: PDF, HTML, Markdown, RTF — light or dark | ✅ |
+| Export: PDF, HTML, Markdown, RTF, TXT — light or dark | ✅ |
 | Word count, reading time, per-element statistics | ✅ |
 | Dark mode (code canvas constant across appearances, per design spec) | ✅ |
 
