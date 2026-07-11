@@ -96,6 +96,10 @@ struct MathTypesetter {
             return genfracBox(top, bottom, hasRule: hasRule, left: left, right: right,
                               size: s, display: display)
 
+        case .overUnder(let base, let over, let under, let kind):
+            return overUnderBox(base, over: over, under: under, kind: kind,
+                                size: s, display: display)
+
         case .unsupported(let source):
             // Never reached when callers gate on isFullySupported, but draw
             // something sane regardless.
@@ -192,6 +196,9 @@ struct MathTypesetter {
         case .scripts(let base, _, _): return atomClass(of: base)
         case .accent(let base, _): return atomClass(of: base)
         case .genfrac: return .ordinary
+        case .overUnder(_, _, _, let kind):
+            // Arrows relate; braces/oversets are ordinary.
+            return (kind == .rightarrow || kind == .leftarrow) ? .relation : .ordinary
         case .space, .unsupported: return nil
         }
     }
@@ -342,6 +349,136 @@ struct MathTypesetter {
             let y = pen.y + accentBaseY + accentBoxGlyph.descent
             accentBoxGlyph.draw(context, CGPoint(x: x, y: y))
         }
+    }
+
+    // MARK: - Over/under (\overset \underbrace \xrightarrow)
+
+    private func overUnderBox(_ base: MathNode, over: MathNode?, under: MathNode?,
+                              kind: MathOverUnder, size: CGFloat, display: Bool) -> MathBox {
+        let annotationSize = size * 0.7
+        let overBox = over.map { layout($0, size: annotationSize, display: false) }
+        let underBox = under.map { layout($0, size: annotationSize, display: false) }
+        let gap = size * 0.08
+        let ink = theme.ink
+
+        switch kind {
+        case .rightarrow, .leftarrow:
+            // Stretchy arrow sized to the widest annotation.
+            let labelWidth = max(overBox?.width ?? 0, underBox?.width ?? 0)
+            let arrowWidth = max(size * 1.4, labelWidth + size * 0.5)
+            let arrowThickness = max(1, size * 0.04)
+            let headLength = size * 0.28
+            let axis = size * 0.26
+            var ascent = axis + arrowThickness / 2
+            var descent = arrowThickness / 2 - axis
+            if let overBox { ascent += gap + overBox.height }
+            if let underBox { descent += gap + underBox.height }
+            let left = kind == .leftarrow
+            return MathBox(width: arrowWidth, ascent: ascent, descent: max(descent, 0)) { context, pen in
+                let y = pen.y + axis
+                context.saveGState()
+                context.setStrokeColor(resolvedCGColor(ink))
+                context.setLineWidth(arrowThickness)
+                context.setLineCap(.round)
+                context.beginPath()
+                context.move(to: CGPoint(x: pen.x, y: y))
+                context.addLine(to: CGPoint(x: pen.x + arrowWidth, y: y))
+                // Arrowhead.
+                let tipX = left ? pen.x : pen.x + arrowWidth
+                let dir: CGFloat = left ? 1 : -1
+                context.move(to: CGPoint(x: tipX + dir * headLength, y: y + headLength * 0.5))
+                context.addLine(to: CGPoint(x: tipX, y: y))
+                context.addLine(to: CGPoint(x: tipX + dir * headLength, y: y - headLength * 0.5))
+                context.strokePath()
+                context.restoreGState()
+                if let overBox {
+                    overBox.draw(context, CGPoint(
+                        x: pen.x + (arrowWidth - overBox.width) / 2,
+                        y: y + arrowThickness / 2 + gap + overBox.descent))
+                }
+                if let underBox {
+                    underBox.draw(context, CGPoint(
+                        x: pen.x + (arrowWidth - underBox.width) / 2,
+                        y: y - arrowThickness / 2 - gap - underBox.ascent))
+                }
+            }
+
+        case .overbrace, .underbrace:
+            let baseBox = layout(base, size: size, display: display)
+            let braceHeight = size * 0.22
+            let isOver = kind == .overbrace
+            let label = isOver ? overBox : underBox
+            var ascent = baseBox.ascent
+            var descent = baseBox.descent
+            if isOver {
+                ascent += gap + braceHeight + (label.map { gap + $0.height } ?? 0)
+            } else {
+                descent += gap + braceHeight + (label.map { gap + $0.height } ?? 0)
+            }
+            let width = max(baseBox.width, label?.width ?? 0)
+            return MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
+                baseBox.draw(context, CGPoint(x: pen.x + (width - baseBox.width) / 2, y: pen.y))
+                let braceY = isOver
+                    ? pen.y + baseBox.ascent + gap
+                    : pen.y - baseBox.descent - gap - braceHeight
+                drawHorizontalBrace(context, x: pen.x, y: braceY, width: width,
+                                    height: braceHeight, pointingUp: isOver, ink: ink)
+                if let label {
+                    let labelY = isOver
+                        ? braceY + braceHeight + gap + label.descent
+                        : braceY - gap - label.ascent
+                    label.draw(context, CGPoint(x: pen.x + (width - label.width) / 2, y: labelY))
+                }
+            }
+
+        case .plain:
+            // \overset / \underset: stack annotation above/below the base.
+            let baseBox = layout(base, size: size, display: display)
+            let width = max(baseBox.width, overBox?.width ?? 0, underBox?.width ?? 0)
+            var ascent = baseBox.ascent
+            var descent = baseBox.descent
+            if let overBox { ascent += gap + overBox.height }
+            if let underBox { descent += gap + underBox.height }
+            return MathBox(width: width, ascent: ascent, descent: descent) { context, pen in
+                baseBox.draw(context, CGPoint(x: pen.x + (width - baseBox.width) / 2, y: pen.y))
+                if let overBox {
+                    overBox.draw(context, CGPoint(
+                        x: pen.x + (width - overBox.width) / 2,
+                        y: pen.y + baseBox.ascent + gap + overBox.descent))
+                }
+                if let underBox {
+                    underBox.draw(context, CGPoint(
+                        x: pen.x + (width - underBox.width) / 2,
+                        y: pen.y - baseBox.descent - gap - underBox.ascent))
+                }
+            }
+        }
+    }
+
+    /// A horizontal curly brace spanning `width`, drawn as four quadratic
+    /// arcs with a center notch — same hand-stroked approach as the radical.
+    private func drawHorizontalBrace(_ context: CGContext, x: CGFloat, y: CGFloat,
+                                     width: CGFloat, height: CGFloat, pointingUp: Bool, ink: PlatformColor) {
+        let thickness = max(1, height * 0.18)
+        let notch = pointingUp ? y + height : y            // tip toward the label
+        let shoulder = pointingUp ? y : y + height          // ends toward the base
+        let midX = x + width / 2
+        context.saveGState()
+        context.setStrokeColor(resolvedCGColor(ink))
+        context.setLineWidth(thickness)
+        context.setLineCap(.round)
+        context.beginPath()
+        context.move(to: CGPoint(x: x, y: shoulder))
+        context.addQuadCurve(to: CGPoint(x: x + width * 0.25, y: (shoulder + notch) / 2),
+                             control: CGPoint(x: x + width * 0.18, y: shoulder))
+        context.addQuadCurve(to: CGPoint(x: midX, y: notch),
+                             control: CGPoint(x: x + width * 0.32, y: notch))
+        context.addQuadCurve(to: CGPoint(x: x + width * 0.75, y: (shoulder + notch) / 2),
+                             control: CGPoint(x: x + width * 0.68, y: notch))
+        context.addQuadCurve(to: CGPoint(x: x + width, y: shoulder),
+                             control: CGPoint(x: x + width * 0.82, y: shoulder))
+        context.strokePath()
+        context.restoreGState()
     }
 
     // MARK: - Radicals
@@ -502,6 +639,9 @@ struct MathTypesetter {
                            style: MathMatrixStyle, size: CGFloat) -> MathBox {
         guard !rows.isEmpty else { return .empty }
 
+        // \substack is a tight single-column stack rendered at script size.
+        let size = style == .substack ? size * 0.7 : size
+
         // Lay out every cell; track per-column width and per-row ascent/descent.
         let columns = rows.map(\.count).max() ?? 0
         var cellBoxes: [[MathBox]] = []
@@ -522,7 +662,7 @@ struct MathTypesetter {
             cellBoxes.append(boxes)
         }
 
-        let rowGap = size * 0.35
+        let rowGap = style == .substack ? size * 0.18 : size * 0.35
         // `aligned` columns meet at the & with almost no gutter; grids space out.
         let colGap = style == .aligned ? size * 0.16 : size * 0.7
 
@@ -553,7 +693,7 @@ struct MathTypesetter {
             case .aligned:
                 // Even columns right-aligned, odd left-aligned (meet at &).
                 return col % 2 == 0 ? colX[col] + (colWidth[col] - box.width) : colX[col]
-            case .centered:
+            case .centered, .substack:
                 return colX[col] + (colWidth[col] - box.width) / 2
             }
         }

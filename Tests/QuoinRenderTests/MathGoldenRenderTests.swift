@@ -77,12 +77,12 @@ final class MathGoldenRenderTests: XCTestCase {
         // Advanced — expectation set empirically; promote as coverage grows.
         .init(name: "accents", latex: #"\hat{x} + \vec{v} + \bar{y} + \dot{z}"#, expectation: .mustRender),
         .init(name: "binomial", latex: #"\binom{n}{k} = \frac{n!}{k!(n-k)!}"#, expectation: .mustRender),
-        .init(name: "overbrace", latex: #"\overbrace{a + b + c}^{\text{sum}}"#, expectation: .knownUnsupported),
-        .init(name: "underset", latex: #"\underset{x \to 0}{\mathrm{argmin}}\; f(x)"#, expectation: .knownUnsupported),
+        .init(name: "overbrace", latex: #"\overbrace{a + b + c}^{\text{sum}}"#, expectation: .mustRender),
+        .init(name: "underset", latex: #"\underset{x \to 0}{\mathrm{argmin}}\; f(x)"#, expectation: .mustRender),
         .init(name: "partial-derivative", latex: #"\frac{\partial^2 u}{\partial x^2}"#, expectation: .mustRender),
         .init(name: "prime-derivative", latex: #"f'(x) = \lim_{h\to 0}\frac{f(x+h)-f(x)}{h}"#, expectation: .mustRender),
         .init(name: "operatorname-custom", latex: #"\operatorname{softmax}(z)_i = \frac{e^{z_i}}{\sum_j e^{z_j}}"#, expectation: .mustRender),
-        .init(name: "stacked-substack", latex: #"\sum_{\substack{i < n \\ i \text{ odd}}} i"#, expectation: .knownUnsupported),
+        .init(name: "stacked-substack", latex: #"\sum_{\substack{i < n \\ i \text{ odd}}} i"#, expectation: .mustRender),
         // Phase 1 — math alphabets, direct Unicode, operators, \big
         .init(name: "alphabets", latex: #"\mathbb{RCQ}\ \mathcal{ABL}\ \mathfrak{gH}\ \mathsf{sf}\ \mathtt{tt}"#, expectation: .mustRender),
         .init(name: "unicode-direct", latex: #"∫_0^∞ e^{-x} dx ≤ α + β"#, expectation: .mustRender),
@@ -91,6 +91,10 @@ final class MathGoldenRenderTests: XCTestCase {
         // Phase 2 — accents & generalized fractions
         .init(name: "accents-wide", latex: #"\widehat{abc} + \tilde{n} + \ddot{u} + \overline{AB} + \underline{x}"#, expectation: .mustRender),
         .init(name: "binom-nested", latex: #"\dbinom{n}{k} + \cfrac{1}{1 + \cfrac{1}{x}}"#, expectation: .mustRender),
+        // Phase 3 — over/under, stretchy arrow, stackrel
+        .init(name: "underbrace", latex: #"\underbrace{1 + 2 + \cdots + n}_{n\text{ terms}}"#, expectation: .mustRender),
+        .init(name: "xrightarrow", latex: #"A \xrightarrow{f} B \xrightarrow[g]{} C"#, expectation: .mustRender),
+        .init(name: "stackrel", latex: #"a \stackrel{\text{def}}{=} b"#, expectation: .mustRender),
     ]
 
     private var goldenDirectory: URL {

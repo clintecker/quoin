@@ -156,9 +156,9 @@ final class MathParserTests: XCTestCase {
     // MARK: - Diagnostics (Phase 0)
 
     func testUnsupportedCommandsNamesTheCulprit() {
-        let node = MathParser.parse("\\substack{a \\\\ b}")
+        let node = MathParser.parse("\\xcancel{x}")
         XCTAssertFalse(MathParser.isFullySupported(node))
-        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\substack"])
+        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\xcancel"])
     }
 
     func testUnsupportedCommandsDedupesAndPreservesOrder() {
@@ -173,8 +173,8 @@ final class MathParserTests: XCTestCase {
 
     func testUnsupportedCommandsFindsCulpritInsideStructure() {
         // A single unsupported command buried in a fraction still surfaces.
-        let node = MathParser.parse("\\frac{1}{\\substack{a}}")
-        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\substack"])
+        let node = MathParser.parse("\\frac{1}{\\xcancel{a}}")
+        XCTAssertEqual(MathParser.unsupportedCommands(in: node), ["\\xcancel"])
     }
 
     func testFullySupportedExpressionHasNoUnsupportedCommands() {
@@ -298,6 +298,59 @@ final class MathParserTests: XCTestCase {
     func testAccentAndBinomFullySupported() {
         XCTAssertTrue(MathParser.isFullySupported(
             MathParser.parse("\\widehat{abc} + \\dbinom{n}{k} + \\overline{z}")))
+    }
+
+    // MARK: - Over/under & substack (Phase 3)
+
+    func testOversetUnderset() {
+        guard case .overUnder(_, let over, nil, .plain) = MathParser.parse("\\overset{!}{=}") else {
+            return XCTFail("expected overset")
+        }
+        XCTAssertNotNil(over)
+        guard case .overUnder(_, nil, let under, .plain) = MathParser.parse("\\underset{x}{y}") else {
+            return XCTFail("expected underset")
+        }
+        XCTAssertNotNil(under)
+    }
+
+    func testOverbraceCapturesSuperscriptLabel() {
+        // \overbrace{…}^{label} — the ^label becomes the brace annotation,
+        // not a superscript on the whole brace.
+        guard case .overUnder(_, let over, nil, .overbrace) = MathParser.parse("\\overbrace{a+b}^{s}") else {
+            return XCTFail("expected overbrace")
+        }
+        XCTAssertNotNil(over)
+    }
+
+    func testUnderbraceCapturesSubscriptLabel() {
+        guard case .overUnder(_, nil, let under, .underbrace) = MathParser.parse("\\underbrace{a+b}_{s}") else {
+            return XCTFail("expected underbrace")
+        }
+        XCTAssertNotNil(under)
+    }
+
+    func testStretchyArrows() {
+        guard case .overUnder(_, let over, _, .rightarrow) = MathParser.parse("\\xrightarrow{f}") else {
+            return XCTFail("expected rightarrow")
+        }
+        XCTAssertNotNil(over)
+        // \xrightarrow[below]{above} — both annotations.
+        guard case .overUnder(_, let a, let b, .rightarrow) = MathParser.parse("\\xrightarrow[g]{f}") else {
+            return XCTFail("expected rightarrow with both")
+        }
+        XCTAssertNotNil(a); XCTAssertNotNil(b)
+    }
+
+    func testSubstackIsATightMatrix() {
+        guard case .matrix(let rows, _, _, .substack) = MathParser.parse("\\substack{a \\\\ b \\\\ c}") else {
+            return XCTFail("expected substack matrix")
+        }
+        XCTAssertEqual(rows.count, 3)
+    }
+
+    func testPhase3ConstructsFullySupported() {
+        XCTAssertTrue(MathParser.isFullySupported(
+            MathParser.parse("\\sum_{\\substack{i<n \\\\ i\\text{ odd}}} \\overbrace{i}^{k} \\xrightarrow{f}")))
     }
 
     /// Convenience: the single mapped glyph of a one-atom expression.

@@ -27,9 +27,22 @@ public indirect enum MathNode: Hashable, Sendable {
     /// rule and optional enclosing fences. `\frac` is rule-yes/no-fence;
     /// `\binom` is rule-no/paren-fence.
     case genfrac(top: MathNode, bottom: MathNode, hasRule: Bool, left: String, right: String)
+    /// Material set over and/or under a base: \overset \underset \stackrel
+    /// (plain), \overbrace \underbrace (a drawn brace), \xrightarrow
+    /// \xleftarrow (a stretchy arrow). `over`/`under` are the annotations.
+    case overUnder(base: MathNode, over: MathNode?, under: MathNode?, kind: MathOverUnder)
     /// Something we don't understand — rendered as literal marked source
     /// (the PRD rule: unknown input degrades, never errors).
     case unsupported(String)
+}
+
+/// How an `.overUnder` decoration is drawn between base and annotations.
+public enum MathOverUnder: Hashable, Sendable {
+    case plain        // \overset / \underset / \stackrel — bare stacking
+    case overbrace    // ⏞ drawn above the base
+    case underbrace   // ⏟ drawn below the base
+    case rightarrow   // stretchy → with the annotation(s) over/under it
+    case leftarrow    // stretchy ←
 }
 
 /// An accent decoration placed over (or, for rules, over/under) a base.
@@ -102,6 +115,7 @@ public enum MathMatrixStyle: Hashable, Sendable {
     case centered   // matrix / pmatrix / bmatrix …
     case cases      // left-aligned columns (a `cases` list)
     case aligned    // alternating right/left, meeting at the `&` (aligned/align)
+    case substack   // tight centered stack at script size (\substack)
 }
 
 public enum MathParser {
@@ -350,6 +364,54 @@ public enum MathParser {
             let base = parseAtom(&tokens) ?? .row([])
             return .accent(base: base, accent: MathAccent(command: name)!)
 
+        case "overset", "stackrel":
+            // \overset{over}{base}; \stackrel is the same with a relation base.
+            let over = parseAtom(&tokens) ?? .row([])
+            let base = parseAtom(&tokens) ?? .row([])
+            return .overUnder(base: base, over: over, under: nil, kind: .plain)
+
+        case "underset":
+            let under = parseAtom(&tokens) ?? .row([])
+            let base = parseAtom(&tokens) ?? .row([])
+            return .overUnder(base: base, over: nil, under: under, kind: .plain)
+
+        case "overbrace":
+            let body = parseAtom(&tokens) ?? .row([])
+            var label: MathNode?
+            if tokens.first == .superscriptMark {
+                tokens.removeFirst()
+                label = parseAtom(&tokens)
+            }
+            return .overUnder(base: body, over: label, under: nil, kind: .overbrace)
+
+        case "underbrace":
+            let body = parseAtom(&tokens) ?? .row([])
+            var label: MathNode?
+            if tokens.first == .subscriptMark {
+                tokens.removeFirst()
+                label = parseAtom(&tokens)
+            }
+            return .overUnder(base: body, over: nil, under: label, kind: .underbrace)
+
+        case "xrightarrow", "xleftarrow":
+            // \xrightarrow[under]{over} — optional [under], then {over}.
+            var under: MathNode?
+            if tokens.first == .character("[") {
+                tokens.removeFirst()
+                var nodes: [MathNode] = []
+                while let t = tokens.first, t != .character("]") {
+                    if let atom = parseAtom(&tokens) { nodes.append(atom) }
+                }
+                if tokens.first == .character("]") { tokens.removeFirst() }
+                under = nodes.count == 1 ? nodes[0] : .row(nodes)
+            }
+            let over = parseAtom(&tokens) ?? .row([])
+            return .overUnder(base: .row([]), over: over, under: under,
+                              kind: name == "xrightarrow" ? .rightarrow : .leftarrow)
+
+        case "substack":
+            return parseSubstack(&tokens)
+
         // Spacing.
         case ",": return .space(3.0 / 18.0)
         case ":": return .space(4.0 / 18.0)
@@ -463,6 +525,28 @@ public enum MathParser {
         if !cell.isEmpty || !row.isEmpty { endRow() }
 
         return .matrix(rows: rows, left: left, right: right, style: style)
+    }
+
+    /// `\substack{ line1 \\ line2 }` — a tight vertical stack, one cell per
+    /// line, used under summation limits. Lowered to a single-column matrix
+    /// with the `.substack` style so it reuses the grid layout.
+    private static func parseSubstack(_ tokens: inout ArraySlice<Token>) -> MathNode {
+        guard tokens.first == .groupOpen else { return .row([]) }
+        tokens.removeFirst()
+        var rows: [[MathNode]] = []
+        var line: [MathNode] = []
+        func endLine() { rows.append([line.count == 1 ? line[0] : .row(line)]); line = [] }
+        while let token = tokens.first {
+            if token == .groupClose { tokens.removeFirst(); break }
+            if case .command("\\") = token { tokens.removeFirst(); endLine(); continue }
+            if let atom = parseAtomWithScripts(&tokens) {
+                line.append(atom)
+            } else if tokens.first != nil {
+                tokens.removeFirst()
+            }
+        }
+        if !line.isEmpty { endLine() }
+        return .matrix(rows: rows, left: "", right: "", style: .substack)
     }
 
     private static func takeDelimiter(_ tokens: inout ArraySlice<Token>) -> String? {
@@ -615,6 +699,10 @@ public enum MathParser {
             return isFullySupported(base)
         case .genfrac(let top, let bottom, _, _, _):
             return isFullySupported(top) && isFullySupported(bottom)
+        case .overUnder(let base, let over, let under, _):
+            return isFullySupported(base)
+                && (over.map(isFullySupported) ?? true)
+                && (under.map(isFullySupported) ?? true)
         }
     }
 
@@ -654,6 +742,8 @@ public enum MathParser {
                 walk(base)
             case .genfrac(let top, let bottom, _, _, _):
                 walk(top); walk(bottom)
+            case .overUnder(let base, let over, let under, _):
+                walk(base); over.map(walk); under.map(walk)
             }
         }
         walk(node)
