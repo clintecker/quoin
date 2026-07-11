@@ -17,6 +17,24 @@ import QuoinCore
 /// for side-by-side inspection.
 final class MathGoldenRenderTests: XCTestCase {
 
+    // Goldens are LIGHT-appearance renders, but `Theme()` follows
+    // NSApp.effectiveAppearance — and any earlier test that touches an
+    // NSView boots AppKit, after which the SYSTEM appearance leaks in
+    // (dark-mode machines rendered white-ink actuals depending on test
+    // order). Pin Aqua for the duration of this suite.
+    private var savedAppearance: NSAppearance?
+
+    override func setUp() {
+        super.setUp()
+        savedAppearance = NSApp?.appearance
+        NSApp?.appearance = NSAppearance(named: .aqua)
+    }
+
+    override func tearDown() {
+        NSApp?.appearance = savedAppearance
+        super.tearDown()
+    }
+
     enum Expectation { case mustRender, knownUnsupported }
 
     struct Fixture {
