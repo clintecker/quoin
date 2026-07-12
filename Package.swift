@@ -19,7 +19,7 @@ let package = Package(
         // from the one-third-party-dependency policy).
         .package(url: "https://github.com/clintecker/MermaidKit.git", from: "0.9.0"),
         // The math engine — Quoin's own published package, same policy.
-        .package(url: "https://github.com/clintecker/Vinculum.git", from: "0.1.0"),
+        .package(url: "https://github.com/clintecker/Vinculum.git", from: "0.3.0"),
     ],
     targets: [
         .target(
