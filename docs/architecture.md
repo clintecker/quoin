@@ -177,10 +177,11 @@ sub-typesetter. `MathImageRenderer` rasterises the box into an
 `NSTextAttachment` at theme size, cached by content + a
 `MathTheme.fingerprint`. The renderer depends on `MathTheme` (ink +
 appearance), NOT Quoin's `Theme` — the same seam pattern as MermaidKit's
-`DiagramTheme`, and the reason the math engine is a lift-and-shift away
-from being its own package — **Vinculum** (see `docs/math-extraction.md`;
-sources are pre-grouped into `Sources/QuoinCore/Math/` → VinculumLayout
-and `Sources/QuoinRender/Math/` → VinculumRender).
+`DiagramTheme`. The math engine now lives in its own published package —
+**Vinculum** (`github.com/clintecker/Vinculum`, products `VinculumLayout`
++ `VinculumRender`), consumed from GitHub exactly like MermaidKit;
+QuoinCore `@_exported import`s `VinculumLayout` so `MathParser` etc. stay
+reachable through `import QuoinCore`. See `docs/math-extraction.md`.
 
 ## Diagram engine
 

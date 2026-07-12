@@ -3,6 +3,7 @@ import Foundation
 import ImageIO
 import QuoinCore
 import MermaidRender
+import VinculumRender
 
 #if canImport(AppKit)
 import AppKit

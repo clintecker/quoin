@@ -4,8 +4,8 @@ set -euo pipefail
 # Approved remote packages: swift-markdown is the one permitted THIRD-PARTY
 # code dependency; MermaidKit is FIRST-PARTY (Quoin's own published package,
 # extracted from this repo). Anything else requires written TRD justification.
-approved_urls="https://github.com/swiftlang/swift-markdown.git https://github.com/clintecker/MermaidKit.git"
-approved_identities="swift-markdown swift-cmark mermaidkit"
+approved_urls="https://github.com/swiftlang/swift-markdown.git https://github.com/clintecker/MermaidKit.git https://github.com/clintecker/Vinculum.git"
+approved_identities="swift-markdown swift-cmark mermaidkit vinculum"
 
 if ! command -v swift >/dev/null 2>&1; then
   echo "error: swift is required to check Quoin's dependency policy." >&2
@@ -76,9 +76,9 @@ if unexpected:
     print("error: Package.resolved contains unapproved pins:", file=sys.stderr)
     for identity in unexpected:
         print(f"  - {identity}", file=sys.stderr)
-    print("Only swift-markdown (+ swift-cmark transitive) and first-party mermaidkit are allowed without TRD justification.", file=sys.stderr)
+    print("Only swift-markdown (+ swift-cmark transitive) and first-party mermaidkit + vinculum are allowed without TRD justification.", file=sys.stderr)
     sys.exit(1)
 PYEOF
 fi
 
-echo "Dependency policy OK: remotes limited to swift-markdown (third-party) and first-party MermaidKit."
+echo "Dependency policy OK: remotes limited to swift-markdown (third-party) and first-party MermaidKit + Vinculum."

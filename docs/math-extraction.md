@@ -1,10 +1,10 @@
-# Extracting the math engine into Vinculum
+# The math engine extraction: Vinculum
 
-*Planning doc. The native math typesetter is Quoin's second-largest
-self-contained engine (after diagrams). This lays out how to extract it
-into its own published package — **Vinculum** — the way MermaidKit was,
-and records the decoupling work already done so a future extraction is a
-lift-and-shift, not a rewrite.*
+*DONE 2026-07-11. The native math typesetter — Quoin's second-largest
+self-contained engine after diagrams — was extracted into its own
+published package, **Vinculum** (`github.com/clintecker/Vinculum`), the
+way MermaidKit was. This doc records how, and remains the reference for
+co-developing the engine going forward.*
 
 ## Why
 
@@ -124,14 +124,23 @@ Small and mechanical; none of it needs doing before the split is scheduled:
    version skew — the `.toolTip` iOS break this session is the same class
    of "shared file, one platform" hazard).
 
-## Status checklist
+## Status checklist — DONE (2026-07-11)
 
 - [x] Theme decoupled behind `MathTheme` seam + `Theme.mathTheme` adapter
 - [x] Sources grouped into `Math/` folders matching the product split
 - [x] Cache keyed on ink fingerprint (custom-ink correctness)
 - [x] Name chosen: **Vinculum** (`github.com/clintecker/Vinculum`)
-- [ ] `Platform.swift` for VinculumRender (copy MermaidRender's)
-- [ ] New repo assembled, tests + golden fixtures moved, own CI green
-- [ ] Published + tagged; Quoin pins it, re-exports it, allowlists it
-      (`vinculum` in `scripts/check-dependency-policy.sh`)
-- [ ] Vendored `Math/` folders deleted from Quoin
+- [x] `Platform.swift` for VinculumRender (copy MermaidRender's)
+- [x] Repo assembled, tests + golden fixtures moved (regenerated with
+      `MathTheme.light`), own CI green
+- [x] Published + tagged (`0.1.0`); Quoin pins it (`from: "0.1.0"`),
+      re-exports it (`VinculumReexport.swift`), allowlists it (`vinculum`)
+- [x] Vendored `Math/` folders deleted from Quoin
+
+**Extraction complete.** The engine now lives at
+[github.com/clintecker/Vinculum](https://github.com/clintecker/Vinculum);
+Quoin consumes it from GitHub exactly like MermaidKit. Follow-ups for
+Vinculum's own backlog: a Swift 6 strict-concurrency pass, and the math
+gaps still tracked (array rule drawing, `\tag`, `\DeclareMathOperator`, a
+real OpenType MATH font). Engine changes now happen in the Vinculum repo →
+publish → bump Quoin's pin (remember `swift package clean` after each bump).

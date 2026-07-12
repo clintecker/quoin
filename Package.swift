@@ -18,6 +18,8 @@ let package = Package(
         // GitHub exactly like any other host app would (first-party, so exempt
         // from the one-third-party-dependency policy).
         .package(url: "https://github.com/clintecker/MermaidKit.git", from: "0.9.0"),
+        // The math engine — Quoin's own published package, same policy.
+        .package(url: "https://github.com/clintecker/Vinculum.git", from: "0.1.0"),
     ],
     targets: [
         .target(
@@ -25,6 +27,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown"),
                 .product(name: "MermaidLayout", package: "MermaidKit"),
+                .product(name: "VinculumLayout", package: "Vinculum"),
             ],
             path: "Sources/QuoinCore"
         ),
@@ -33,6 +36,7 @@ let package = Package(
             dependencies: [
                 "QuoinCore",
                 .product(name: "MermaidRender", package: "MermaidKit"),
+                .product(name: "VinculumRender", package: "Vinculum"),
             ],
             path: "Sources/QuoinRender"
         ),

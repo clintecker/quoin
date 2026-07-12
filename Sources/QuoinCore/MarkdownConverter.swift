@@ -1,5 +1,8 @@
 import Foundation
 import Markdown
+// Math parsing + macro expansion happen at parse time (unlike mermaid,
+// which parses in QuoinRender), so this file uses VinculumLayout directly.
+import VinculumLayout
 
 /// Parses markdown source into an immutable `QuoinDocument`.
 ///

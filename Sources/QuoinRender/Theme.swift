@@ -14,6 +14,7 @@ public typealias PlatformAppearance = NSObject
 #if canImport(AppKit) || canImport(UIKit)
 import Foundation
 import MermaidRender
+import VinculumRender
 
 /// The Graphite design system from `docs/design/handoff.md`. Colors, type
 /// ramp, spacing, and radii are the handoff's exact values — change them
