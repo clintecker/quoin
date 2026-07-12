@@ -178,9 +178,9 @@ sub-typesetter. `MathImageRenderer` rasterises the box into an
 `MathTheme.fingerprint`. The renderer depends on `MathTheme` (ink +
 appearance), NOT Quoin's `Theme` — the same seam pattern as MermaidKit's
 `DiagramTheme`, and the reason the math engine is a lift-and-shift away
-from being its own package (see `docs/math-extraction.md`; sources are
-pre-grouped into `Sources/QuoinCore/Math/` → MathLayout and
-`Sources/QuoinRender/Math/` → MathRender).
+from being its own package — **Vinculum** (see `docs/math-extraction.md`;
+sources are pre-grouped into `Sources/QuoinCore/Math/` → VinculumLayout
+and `Sources/QuoinRender/Math/` → VinculumRender).
 
 ## Diagram engine
 

@@ -1,10 +1,10 @@
-# Extracting the math engine into its own package
+# Extracting the math engine into Vinculum
 
 *Planning doc. The native math typesetter is Quoin's second-largest
 self-contained engine (after diagrams). This lays out how to extract it
-into its own published package the way MermaidKit was, and records the
-decoupling work already done so a future extraction is a lift-and-shift,
-not a rewrite.*
+into its own published package — **Vinculum** — the way MermaidKit was,
+and records the decoupling work already done so a future extraction is a
+lift-and-shift, not a rewrite.*
 
 ## Why
 
@@ -21,26 +21,41 @@ and re-exported through `Sources/QuoinCore/MermaidReexport.swift` so
 `import QuoinCore` still exposes `MermaidParser`. The math extraction
 should mirror this exactly.
 
+## The name: Vinculum
+
+**Decided (2026-07-11): `Vinculum`.** The vinculum is the horizontal bar
+in a fraction, the line over a root, the `\overline` — the exact stroke
+the typesetter hand-draws everywhere. It's unmistakably *math*, has zero
+collisions in the Swift ecosystem (unlike the crowded `SwiftMath`/`iosMath`
+descriptive space), and — like MermaidKit naming itself for its domain
+rather than "DiagramKit" — it gives the engine an identity of its own.
+Package repo: `github.com/clintecker/Vinculum`. No "Kit" suffix — the word
+carries itself.
+
 ## Target shape (mirrors MermaidLayout / MermaidRender)
 
 Two products, matching the split that already exists in-repo:
 
-- **MathLayout** (platform-free, Linux-safe, zero deps) — the current
+- **VinculumLayout** (platform-free, Linux-safe, zero deps) — the current
   `Sources/QuoinCore/Math/` files: `MathParser` (+ `MathNode`,
   `MathAtomClass`, `MathSymbolStyle`, `MathMatrixStyle`, `MathAccent`,
   `MathOverUnder`, `MathDecoration`), `MathScanner`, `MathAlphabet`,
   `MathMacros`. The analog of MermaidLayout: parse + model, no drawing.
-- **MathRender** (CoreText/CoreGraphics, AppKit/UIKit-guarded) — the
+  (Type names keep their `Math*` prefix — they're the vocabulary of the
+  domain, and renaming them would churn every call site for no gain, just
+  as MermaidLayout kept `MermaidParser`/`DiagramScene`.)
+- **VinculumRender** (CoreText/CoreGraphics, AppKit/UIKit-guarded) — the
   current `Sources/QuoinRender/Math/` files: `MathTypesetter` (the
   `MathBox` layout), `MathImageRenderer` (the cached `NSTextAttachment`
   API), `MathTheme` (the seam). The analog of MermaidRender. Needs its
   own `Platform.swift` with the `PlatformColor/Font/Image` typealiases
   (copy MermaidRender's verbatim).
 
-`MathRender` depends on `MathLayout`. QuoinCore depends on `MathLayout`
-and `@_exported import MathLayout`s it (new `MathReexport.swift`, mirror
-of `MermaidReexport.swift`) so every `import QuoinCore` call site is
-unchanged. QuoinRender depends on `MathRender`.
+`VinculumRender` depends on `VinculumLayout`. QuoinCore depends on
+`VinculumLayout` and `@_exported import VinculumLayout`s it (new
+`VinculumReexport.swift`, mirror of `MermaidReexport.swift`) so every
+`import QuoinCore` call site is unchanged. QuoinRender depends on
+`VinculumRender`.
 
 ## Already done (this session — the hard part)
 
@@ -95,13 +110,13 @@ Small and mechanical; none of it needs doing before the split is scheduled:
    `Tests/fixtures/math-golden/` → the package's own CI. Quoin keeps a
    thin conformance test (the guide already is one) and the render-digest
    snapshot (which exercises the integration, not the engine).
-3. Publish to `github.com/clintecker/<name>`, tag, add its own green CI.
-4. In Quoin: add the `.package(url:from:)` dependency, wire the two
-   products into the QuoinCore/QuoinRender targets, add `MathReexport.swift`,
-   delete the vendored `Math/` folders, and **allowlist the identity** in
-   `scripts/check-dependency-policy.sh` (`approved_urls` + `approved_
-   identities`) — it's first-party, exempt from the one-dependency policy,
-   same as mermaidkit.
+3. Publish to `github.com/clintecker/Vinculum`, tag, add its own green CI.
+4. In Quoin: add the `.package(url:from:)` dependency, wire
+   `VinculumLayout` into QuoinCore and `VinculumRender` into QuoinRender,
+   add `VinculumReexport.swift`, delete the vendored `Math/` folders, and
+   **allowlist the identity** in `scripts/check-dependency-policy.sh`
+   (`vinculum` in `approved_urls` + `approved_identities`) — it's
+   first-party, exempt from the one-dependency policy, same as mermaidkit.
 5. Heed the MermaidKit gotchas (from memory): after each pin bump,
    `swift package clean` before testing (a changed public-struct layout
    has caused link failures AND a runtime segfault on incremental builds);
@@ -109,30 +124,14 @@ Small and mechanical; none of it needs doing before the split is scheduled:
    version skew — the `.toolTip` iOS break this session is the same class
    of "shared file, one platform" hazard).
 
-## Open decision — the name
-
-MermaidKit is named for its input format. The math analog wants a name
-that's memorable, not colliding (note: **`SwiftMath` already exists** — a
-KaTeX-port; avoid it), and ideally nodding to Quoin's letterpress brand.
-Shortlist to pick from:
-
-- **`Quoin`-family**: `QuoinMath` (clear lineage, less reusable-sounding).
-- **Craft/letterpress**: `Sorts` (a piece of movable type), `Galley`,
-  `Chase` — evocative but obscure.
-- **Descriptive**: `TypesetMath`, `NativeTeX`, `Formulae`, `Notation`.
-
-Recommendation: decide alongside the app/logo brand pass — the letterpress
-angle (`Sorts`/`Galley`) pairs with the quoin story if we want a family;
-otherwise `Formulae` is the clearest descriptive name. **This is the one
-real decision the extraction is waiting on.**
-
 ## Status checklist
 
 - [x] Theme decoupled behind `MathTheme` seam + `Theme.mathTheme` adapter
 - [x] Sources grouped into `Math/` folders matching the product split
 - [x] Cache keyed on ink fingerprint (custom-ink correctness)
-- [ ] Name chosen
-- [ ] `Platform.swift` for MathRender (copy MermaidRender's)
+- [x] Name chosen: **Vinculum** (`github.com/clintecker/Vinculum`)
+- [ ] `Platform.swift` for VinculumRender (copy MermaidRender's)
 - [ ] New repo assembled, tests + golden fixtures moved, own CI green
 - [ ] Published + tagged; Quoin pins it, re-exports it, allowlists it
+      (`vinculum` in `scripts/check-dependency-policy.sh`)
 - [ ] Vendored `Math/` folders deleted from Quoin
