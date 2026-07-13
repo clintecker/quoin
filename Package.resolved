@@ -1,5 +1,5 @@
 {
-  "originHash" : "9e4f9c368ea5027214cb4ffbe843d055bab24580dbbe725a9756698906793b0f",
+  "originHash" : "c8b6bb5f12ac2d866c7753abc506803756e0e019ab916b15aea4aefbb4f647cc",
   "pins" : [
     {
       "identity" : "mermaidkit",
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/clintecker/Vinculum.git",
       "state" : {
-        "revision" : "fcd48c0656991de1d343cf19cf9399536f0cd0af",
-        "version" : "0.18.0"
+        "revision" : "d210348286c60d52c88a6979eae03f0fefbfe835",
+        "version" : "0.23.0"
       }
     }
   ],
