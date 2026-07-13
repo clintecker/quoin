@@ -108,6 +108,12 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// Scroll position as a 0…1 fraction of the document (reading
     /// progress hairline).
     public let onScrollProgress: ((Double) -> Void)?
+    /// Whether this editor is the frontmost tab in its window. Keep-alive
+    /// tabs share the window's responder chain, so on becoming active the
+    /// editor must claim first responder (steal it back from the tab the
+    /// user switched away from). Defaults true so single-editor hosts and
+    /// tests are unaffected.
+    public var isActiveTab: Bool = true
 
     public init(
         rendered: RenderedDocument,
@@ -134,7 +140,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onScrollProgress: ((Double) -> Void)? = nil,
         onBlockCommand: ((BlockID, BlockCommand) -> Void)? = nil,
         focusSentenceScope: Bool = false,
-        onEmptyDocumentInsert: ((String) -> Void)? = nil
+        onEmptyDocumentInsert: ((String) -> Void)? = nil,
+        isActiveTab: Bool = true
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -161,6 +168,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.onBlockCommand = onBlockCommand
         self.focusSentenceScope = focusSentenceScope
         self.onEmptyDocumentInsert = onEmptyDocumentInsert
+        self.isActiveTab = isActiveTab
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -522,12 +530,27 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
         // A freshly opened document must be TYPEABLE immediately — ⌘N
         // then typing did nothing until a manual click (field report).
-        // Claim first responder exactly once, when the window exists.
-        if !coordinator.hasClaimedInitialFocus, let window = textView.window {
+        // Claim first responder exactly once, when the window exists. Only
+        // the frontmost tab claims — a background keep-alive editor must not
+        // steal focus from the visible one at launch.
+        if isActiveTab, !coordinator.hasClaimedInitialFocus, let window = textView.window {
             coordinator.hasClaimedInitialFocus = true
             if window.firstResponder === window || window.firstResponder == nil {
                 window.makeFirstResponder(textView)
             }
+        }
+
+        // Tab switch: the newly-frontmost editor claims first responder,
+        // taking it back from the (still-alive) editor the user just left.
+        // Edge-triggered on the false→true transition so it never fights the
+        // find field or a deliberate click within the active tab. Only
+        // recorded once the window exists, so the grab stays armed through a
+        // window-less first pass (a tab opened at runtime).
+        if let window = textView.window {
+            if isActiveTab, !coordinator.wasActiveTab, window.firstResponder !== textView {
+                window.makeFirstResponder(textView)
+            }
+            coordinator.wasActiveTab = isActiveTab
         }
 
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {

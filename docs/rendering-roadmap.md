@@ -108,13 +108,17 @@ reintroducing full re-renders.
   ⌘B works on a rendered selection without entering edit mode. Hot-path change;
   guard the byte-lossless round-trip.
 
-### 1.3 Nested block decorations don't draw  — M
+### 1.3 Nested block decorations don't draw  — M ✅ done
 - **Symptom:** a fenced code block inside a blockquote (or list item) renders as
   bare monospace with no dark canvas.
 - **Cause:** decoration geometry/round-trip inside a nested container; the box's
   full-width override and the parent's indent/italic passes interact badly.
 - **Approach:** compute decoration frames relative to the nested content bounds;
   don't let the blockquote's font/indent enumeration clobber child cards.
+- **Fixed:** `renderBlockQuote` collects the child cards' `blockDecoration`
+  ranges, skips them in the quote's italic/recolor/indent/quote-rule passes,
+  and pushes each card's geometry with `indentCard(…by: 16)` so it follows the
+  container. Nested code/table/diagram/callout keep their own canvas.
 
 ## Phase 2 — Diagram rendering quality
 

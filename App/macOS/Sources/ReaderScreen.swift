@@ -9,11 +9,12 @@ import QuoinRender
 /// find bar, and a status bar with section + live statistics.
 /// The library sidebar arrives in Phase D.
 struct ReaderScreen: View {
+    /// The document's model, owned by `OpenDocumentStore` (one per file across
+    /// all windows/tabs), NOT by this view. The view is a projection that
+    /// comes and goes as tabs switch; the model — and its live session and undo
+    /// history — outlives it in the store (#12/#22).
+    let model: ReaderModel
     let fileURL: URL?
-    let initialText: String
-    var onFileRenamed: (URL) -> Void = { _ in }
-
-    @State private var model = ReaderModel()
     /// Fresh per body evaluation: `Theme()` captures the CURRENT appearance,
     /// and reading `colorScheme` below is what makes SwiftUI re-evaluate
     /// this view when the appearance flips (system or Settings preference).
@@ -221,8 +222,9 @@ struct ReaderScreen: View {
         // for the path — table-stakes Mac behavior (launch ledger UI #14).
         .navigationDocument(ifPresent: model.fileURL ?? fileURL)
         .onAppear {
-            model.onFileRenamed = onFileRenamed
-            model.start(fileURL: fileURL, initialText: initialText)
+            // The model's lifecycle (start/stop) and rename handler belong to
+            // OpenDocumentStore — this view only projects it. Do NOT start or
+            // stop here, or a tab switch would fight the store over the session.
             // Screenshot automation presets (see MainWindow.applyShotState).
             switch UserDefaults.standard.string(forKey: "QuoinShotState") {
             case "find":
@@ -261,7 +263,6 @@ struct ReaderScreen: View {
                 break
             }
         }
-        .onDisappear { model.stop() }
     }
 
     private func menuObservers(_ content: some View) -> some View {

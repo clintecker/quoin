@@ -432,15 +432,22 @@ struct DocumentTabBar: View {
 
     var body: some View {
         if tabs.count > 1 {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 1) {
-                    ForEach(tabs) { tab in
-                        tabView(tab)
-                    }
+            // A plain HStack, NOT a horizontal ScrollView: on macOS Tahoe the
+            // toolbar's scroll-edge effect gives any scroll view abutting the
+            // toolbar a glass "pocket" overlay. The sidebar's List insets its
+            // rows below that pocket, but this strip's ScrollView did not — so
+            // the pocket sat ON TOP of the tabs and swallowed every click and
+            // hover (tabs became unselectable by mouse; ⌘1–9 still worked).
+            // A handful of tabs don't need scrolling; overflow clips.
+            HStack(spacing: 1) {
+                ForEach(tabs) { tab in
+                    tabView(tab)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.04))
             .overlay(alignment: .bottom) { Divider() }
+            .clipped()
         }
     }
 
@@ -448,11 +455,25 @@ struct DocumentTabBar: View {
         let isActive = tab.id == activeTabID
         let isHovered = tab.id == hoveredTab
         let name = tab.url.deletingPathExtension().lastPathComponent
+        // Selecting a tab is a Button, NOT `.onTapGesture` — the horizontal
+        // ScrollView's pan gesture was swallowing the taps, so clicking a tab
+        // did nothing (activeTabID never changed). The close ✕ is a SIBLING
+        // button (never nested inside the select button) so each owns its hit
+        // area cleanly.
         return HStack(spacing: 6) {
-            Text(name)
-                .font(.system(size: 12, weight: isActive ? .medium : .regular))
-                .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.5))
-                .lineLimit(1)
+            Button {
+                activeTabID = tab.id
+            } label: {
+                Text(name)
+                    .font(.system(size: 12, weight: isActive ? .medium : .regular))
+                    .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.5))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(name) tab")
+            .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
             // Close affordance appears on hover (handoff: the unsaved dot
             // swaps to ✕ on hover; ✕ stays hidden otherwise).
             Button {
@@ -470,11 +491,6 @@ struct DocumentTabBar: View {
         .padding(.vertical, 6)
         .frame(minWidth: 120)
         .background(isActive ? Color(nsColor: .textBackgroundColor) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture { activeTabID = tab.id }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(name) tab")
-        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
         .onHover { inside in
             hoveredTab = inside ? tab.id : (hoveredTab == tab.id ? nil : hoveredTab)
         }

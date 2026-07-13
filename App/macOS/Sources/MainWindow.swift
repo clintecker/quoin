@@ -6,6 +6,9 @@ import QuoinCore
 /// editor · outline inspector (⌥⌘0), with quick open (⇧⌘O) floating above.
 struct MainWindow: View {
     @State private var library = LibraryModel()
+    /// One `ReaderModel` per file, shared across every window and tab — a tab
+    /// acquires on open and releases on close (#12/#22).
+    private let store = OpenDocumentStore.shared
 
     @State private var sidebarSelection: URL?
     @State private var openTabs: [DocumentTab] = []
@@ -58,18 +61,17 @@ struct MainWindow: View {
                     DocumentTabBar(tabs: openTabs, activeTabID: $activeTabID) { tab in
                         close(tab)
                     }
-                    if let tab = activeTab {
-                        // Keyed by the tab's STABLE identity, not the URL —
-                        // a first-H1 rename used to tear down the live
-                        // editor mid-typing (ledger senior #13).
-                        ReaderScreen(fileURL: tab.url, initialText: "", onFileRenamed: { newURL in
-                            if let index = openTabs.firstIndex(where: { $0.id == tab.id }) {
-                                openTabs[index].url = newURL
-                            }
-                            sidebarSelection = newURL
-                            library.rescan()
-                        })
-                        .id(tab.id)
+                    if let tab = activeTab, let model = store.model(for: tab.url) {
+                        // ONE editor is on screen at a time (a keep-alive stack
+                        // of full ReaderScreens duplicated the window toolbar and
+                        // broke interaction). The live session + undo history no
+                        // longer die on a tab switch because the MODEL is owned by
+                        // the app-level store (#12/#22), not by this transient
+                        // view — re-entry re-projects from the cached model, never
+                        // from disk. Keyed by the tab's STABLE identity so a
+                        // first-H1 rename can't tear the editor down (ledger #13).
+                        ReaderScreen(model: model, fileURL: tab.url)
+                            .id(tab.id)
                     } else {
                         emptyState
                     }
@@ -139,11 +141,30 @@ struct MainWindow: View {
         // not key-gated) — a live session would autosave into the Trash.
         .onReceive(NotificationCenter.default.publisher(for: LibraryModel.documentTrashedNotification)) { note in
             if let url = note.userInfo?["url"] as? URL {
+                let dropped = openTabs.filter { $0.url == url || $0.url.path.hasPrefix(url.path + "/") }
                 openTabs.removeAll { $0.url == url || $0.url.path.hasPrefix(url.path + "/") }
+                dropped.forEach { store.release($0.url) }
                 if activeTab == nil {
                     activeTabID = openTabs.last?.id
                 }
             }
+        }
+        // A document renamed itself on disk (first-H1 rename). The store already
+        // relocated the one shared session; every window re-points its tab so
+        // the URL, tab title, and sidebar selection follow the file (#12/#13).
+        .onReceive(NotificationCenter.default.publisher(for: OpenDocumentStore.documentRenamedNotification)) { note in
+            guard let old = note.userInfo?["old"] as? URL,
+                  let new = note.userInfo?["new"] as? URL else { return }
+            var touched = false
+            for index in openTabs.indices where OpenDocumentStore.sameFile(openTabs[index].url, old) {
+                openTabs[index].url = new
+                touched = true
+            }
+            guard touched else { return }
+            if let selection = sidebarSelection, OpenDocumentStore.sameFile(selection, old) {
+                sidebarSelection = new
+            }
+            library.rescan()
         }
         // Help ▸ Markdown Guide / Welcome to Quoin: LIVE documents in the
         // library (editable examples — the guide teaches by being edited).
@@ -160,6 +181,14 @@ struct MainWindow: View {
         .onAppear {
             restoreTabs()
             applyShotState()
+        }
+        // Closing the window (red button) with tabs still open must release the
+        // store's hold on each, or their sessions leak (kept watching + never
+        // stopped). ⌘W already releases per tab; this covers the whole-window
+        // path. Autosave safety on quit is handled separately by the live-
+        // session flush registry.
+        .onDisappear {
+            openTabs.forEach { store.release($0.url) }
         }
         .onChange(of: openTabs) { persistTabs() }
         .onChange(of: activeTabID) { persistTabs() }
@@ -191,6 +220,9 @@ struct MainWindow: View {
             .filter { $0.hasPrefix(rootPath + "/") && FileManager.default.fileExists(atPath: $0) }
             .map { DocumentTab(url: URL(fileURLWithPath: $0)) }
         guard !restored.isEmpty else { return }
+        // Acquire BEFORE publishing the tabs so the model is present the first
+        // time the body renders the active tab (no empty-state flash).
+        restored.forEach { store.acquire($0.url) }
         openTabs = restored
         let activePath = lines[0]
         let active = restored.first { $0.url.path == activePath } ?? restored.last
@@ -235,9 +267,12 @@ struct MainWindow: View {
     // MARK: - Tabs
 
     private func open(_ url: URL) {
-        if let existing = openTabs.first(where: { $0.url == url }) {
+        // Dedup by file IDENTITY, not raw URL equality — two path forms of the
+        // same file must reuse the one tab, not open a second session (#12).
+        if let existing = openTabs.first(where: { OpenDocumentStore.sameFile($0.url, url) }) {
             activeTabID = existing.id
         } else {
+            store.acquire(url)
             let tab = DocumentTab(url: url)
             openTabs.append(tab)
             activeTabID = tab.id
@@ -254,6 +289,9 @@ struct MainWindow: View {
 
     private func close(_ tab: DocumentTab) {
         openTabs.removeAll { $0.id == tab.id }
+        // Let go of this window's hold on the file; the store stops the session
+        // only when the LAST tab (across all windows) releases it.
+        store.release(tab.url)
         if activeTabID == tab.id {
             activeTabID = openTabs.last?.id
         }

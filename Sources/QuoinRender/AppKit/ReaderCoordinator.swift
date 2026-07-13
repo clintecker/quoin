@@ -46,6 +46,10 @@ extension MarkdownReaderView {
         var appliedEditSourceToggleGeneration: Int = 0
         /// One-shot initial focus claim (⌘N must be typeable immediately).
         var hasClaimedInitialFocus = false
+        /// `isActiveTab` as of the last update with a window: lets a keep-alive
+        /// editor recognize the moment it BECOMES the frontmost tab and claim
+        /// first responder (stealing it from the tab switched away from).
+        var wasActiveTab = false
         var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
