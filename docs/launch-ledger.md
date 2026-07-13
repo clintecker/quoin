@@ -71,8 +71,9 @@ top-down; nothing ships while a BLOCKER is open.*
 - [FIXED] Dead security-scope bookmark now explains itself: the first-run
   prompt shows what happened (moved/renamed/deleted, documents untouched)
   and how to reconnect (`bookmarkRestoreFailure`). #11.
-- [OPEN] Same file can open as two live sessions (URL-equality keying;
-  multi-window makes it trivial) — two autosavers ping-pong content. #12.
+- [FIXED] Same file opened twice is one session: `OpenDocumentStore` keys a
+  single `ReaderModel` by the resolved/standardized URL and ref-counts it
+  across every window and tab, so there is exactly one autosaver per file. #12.
 - [FIXED] First-H1 rename no longer tears down the live editor: tabs are
   `DocumentTab` (stable UUID identity, mutable url); the editor keys on
   `tab.id`. #13.
@@ -119,7 +120,10 @@ top-down; nothing ships while a BLOCKER is open.*
 - [FIXED] Drag-and-drop story complete: external drops COPY (intra-library
   moves with ⌘Z), target folders + root highlight while hovered, failed
   drops beep, .md dropped on the editor opens a tab. #21.
-- [OPEN] Tab switches destroy scroll/caret state (`.id(activeTab)`). #22.
+- [FIXED] Tab switches keep the session alive (model owned by
+  `OpenDocumentStore`, not the transient view) so undo history survives, and
+  the editor stashes its scroll + caret in the model on teardown and restores
+  them on return. #22.
 - [FIXED] Sidebar keyboard selection opens documents. #23.
 - [PARTIAL] Dock menu ✓, CFBundleTypeRole Editor ✓. Remaining: Services,
   progress hairline overlaps find bar. #24.

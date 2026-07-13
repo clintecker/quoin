@@ -30,6 +30,19 @@ public enum CaretHint: Equatable, Sendable {
     case source(Int)
 }
 
+/// A tab's scroll + selection, stashed when its editor is torn down (a tab
+/// switch) and restored when the editor is rebuilt, so switching tabs returns
+/// you to exactly where you were reading (#22). The owning model outlives the
+/// view in `OpenDocumentStore`, so it holds this across the switch.
+public struct ViewportSnapshot: Equatable, Sendable {
+    public var scrollY: CGFloat
+    public var selection: NSRange
+    public init(scrollY: CGFloat, selection: NSRange) {
+        self.scrollY = scrollY
+        self.selection = selection
+    }
+}
+
 /// The reading surface: a TextKit 2 `NSTextView` wrapped for SwiftUI.
 ///
 /// TextKit 2 does viewport-based layout — only visible content is laid out —
@@ -114,6 +127,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// user switched away from). Defaults true so single-editor hosts and
     /// tests are unaffected.
     public var isActiveTab: Bool = true
+    /// Fires when this editor is torn down (tab switch), reporting its final
+    /// scroll + selection so the host can stash it in the persistent model.
+    public var onCaptureViewport: ((ViewportSnapshot) -> Void)? = nil
+    /// Scroll + selection to restore once, when this editor is (re)built for a
+    /// tab the user is returning to. Applied only when no block is being
+    /// edited — an active block's caret is restored by the model's own path.
+    public var restoreViewport: ViewportSnapshot? = nil
 
     public init(
         rendered: RenderedDocument,
@@ -141,7 +161,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onBlockCommand: ((BlockID, BlockCommand) -> Void)? = nil,
         focusSentenceScope: Bool = false,
         onEmptyDocumentInsert: ((String) -> Void)? = nil,
-        isActiveTab: Bool = true
+        isActiveTab: Bool = true,
+        onCaptureViewport: ((ViewportSnapshot) -> Void)? = nil,
+        restoreViewport: ViewportSnapshot? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -169,6 +191,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.focusSentenceScope = focusSentenceScope
         self.onEmptyDocumentInsert = onEmptyDocumentInsert
         self.isActiveTab = isActiveTab
+        self.onCaptureViewport = onCaptureViewport
+        self.restoreViewport = restoreViewport
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -561,6 +585,45 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 }
             }
         }
+
+        // Returning to a tab (#22): restore where the user was reading, exactly
+        // once, after content is laid out. Skipped while a block is being
+        // edited — the model's caret path (above) owns that positioning, and a
+        // reveal changes the coordinate space the saved selection lived in.
+        if !coordinator.hasRestoredViewport,
+           let snapshot = restoreViewport,
+           rendered.activeBlockID == nil {
+            coordinator.hasRestoredViewport = true
+            let length = textView.textContentStorage?.textStorage?.length ?? 0
+            let loc = min(snapshot.selection.location, length)
+            let len = min(snapshot.selection.length, length - loc)
+            coordinator.suppressSelectionCallback = true
+            textView.setSelectedRange(NSRange(location: loc, length: len))
+            coordinator.suppressSelectionCallback = false
+            // Scroll after TextKit 2 settles the (lazy) layout height, else the
+            // target clamps against a not-yet-grown document.
+            let restoreScroll = { [weak scrollView, weak textView] in
+                guard let scrollView, let textView else { return }
+                let viewport = scrollView.contentView.bounds.height
+                let maxY = max(0, textView.frame.height - viewport)
+                let y = min(max(0, snapshot.scrollY), maxY)
+                textView.scroll(NSPoint(x: 0, y: y))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+            restoreScroll()
+            DispatchQueue.main.async(execute: restoreScroll)
+        }
+    }
+
+    /// The editor is being torn down (the host switched tabs). Capture the
+    /// final scroll + selection so the persistent model can hand it back when
+    /// this tab is shown again (#22).
+    public static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        guard let textView = coordinator.textView else { return }
+        coordinator.parent.onCaptureViewport?(
+            ViewportSnapshot(
+                scrollY: scrollView.contentView.bounds.origin.y,
+                selection: textView.selectedRange()))
     }
 
 }

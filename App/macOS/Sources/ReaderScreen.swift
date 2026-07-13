@@ -108,7 +108,9 @@ struct ReaderScreen: View {
                 onScrollProgress: { progress in scrollProgress = progress },
                 onBlockCommand: { id, command in model.perform(command, on: id) },
                 focusSentenceScope: isSentenceFocus,
-                onEmptyDocumentInsert: { text in model.insertIntoEmptyDocument(text) }
+                onEmptyDocumentInsert: { text in model.insertIntoEmptyDocument(text) },
+                onCaptureViewport: { snapshot in model.savedViewport = snapshot },
+                restoreViewport: model.savedViewport
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.

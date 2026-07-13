@@ -54,6 +54,10 @@ final class ReaderModel {
     private(set) var document: QuoinDocument = .empty
 
     @ObservationIgnored var onFileRenamed: ((URL) -> Void)?
+    /// The tab's last scroll + selection, stashed when its editor is torn down
+    /// on a tab switch and handed back when the tab is shown again (#22). Lives
+    /// here because the model outlives the transient editor in the store.
+    @ObservationIgnored var savedViewport: ViewportSnapshot?
 
     @ObservationIgnored private var session: DocumentSession?
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?

@@ -50,6 +50,9 @@ extension MarkdownReaderView {
         /// editor recognize the moment it BECOMES the frontmost tab and claim
         /// first responder (stealing it from the tab switched away from).
         var wasActiveTab = false
+        /// One-shot guard so a returning tab's saved scroll/selection is
+        /// applied exactly once, on the first update of the rebuilt editor.
+        var hasRestoredViewport = false
         var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
         private var matchRanges: [NSRange] = []
