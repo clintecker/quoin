@@ -55,8 +55,21 @@ justification in the TRD first; the default answer is no.
   or `swift package edit MermaidKit`; then publish to the MermaidKit repo,
   tag, and bump the version here. Diagram engine changes are tested by
   MermaidKit's own CI, not Quoin's.
+- LaTeX math comes from **Vinculum**, Quoin's own published package, consumed
+  FROM GITHUB the same way: github.com/clintecker/Vinculum (`from: "0.23.0"`,
+  first-party — same policy exemption/allowlist as MermaidKit). No longer
+  vendored here. VinculumLayout is the platform-free parser + typesetting
+  geometry → device-independent `MathScene`; VinculumRender draws via
+  CoreText/CoreGraphics behind a `MathTheme` seam (Quoin adapts with
+  `Theme.mathTheme`, feeding `MathImageRenderer.attachmentString`). QuoinCore
+  `@_exported import`s VinculumLayout, so `import QuoinCore` still exposes
+  `MathParser` etc. Coverage is large (~400 commands); the exhaustive matrix
+  lives in Vinculum's `docs/COVERAGE.md`/`docs/COMMANDS.md`. Co-develop and
+  test exactly like MermaidKit (path override or `swift package edit`; publish,
+  tag, bump); math engine changes are tested by Vinculum's own CI, not Quoin's.
 - `Sources/QuoinCore` — platform-agnostic engine (parses, sessions, search,
-  stats, exporters, math parser). Must build and test on Linux.
+  stats, exporters; math parsing is re-exported from Vinculum, not local).
+  Must build and test on Linux.
 - `Sources/QuoinRender` — attributed-string projection + TextKit 2
   typesetting and diagram drawing. Shared engine files (guarded
   `canImport(AppKit) || canImport(UIKit)`) sit at the target root; the

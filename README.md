@@ -51,8 +51,8 @@ one region, and the viewport never jumps.
 
 **Degrade, never break.** Unsupported LaTeX constructs and Mermaid types render
 as a tidy labelled source card with a copy button — and the caption *names the
-command* that isn't typeset yet (`math · \tag isn't natively typeset yet`), so
-degradation is legible, not a shrug. Pathological input (10k-deep nesting,
+command* that isn't typeset yet (`math · \DeclareMathOperator isn't natively
+typeset yet`), so degradation is legible, not a shrug. Pathological input (10k-deep nesting,
 unclosed everything) parses to *something* without crashing; the torture suite
 keeps it that way.
 
@@ -80,32 +80,45 @@ keeps it that way.
 
 ### Math (LaTeX)
 
-| Feature | Status |
-| :--- | :---: |
-| Delimiters: `$…$`, `$$…$$`, `\(…\)`, `\[…\]` | ✅ |
-| Greek, operators, relations, arrows, `\infty` `\partial` `\nabla` … | ✅ |
-| Fractions, `\sqrt[n]{}`, sub/superscripts | ✅ |
-| Big operators with stacked limits (`\sum` `\int` `\prod`) | ✅ |
-| `\left…\right` auto-sized fences | ✅ |
-| `matrix` `pmatrix` `bmatrix` `Bmatrix` `vmatrix` `Vmatrix` | ✅ |
-| `cases` (piecewise) | ✅ |
-| `aligned` `align` `alignedat` `split` `gather` | ✅ |
-| `\text{}` `\mathbf{}`, upright function names | ✅ |
-| Math alphabets `\mathbb{}` `\mathcal{}` `\mathscr{}` `\mathfrak{}` `\mathsf{}` `\mathtt{}` | ✅ Unicode codepoints |
-| Accents `\hat \vec \bar \dot \ddot \tilde` `\widehat`, `\overline` `\underline` | ✅ |
-| `\binom` `\dbinom` `\cfrac`, `\overset` `\underset` `\stackrel` | ✅ |
-| `\overbrace` `\underbrace`, `\xrightarrow` `\xleftarrow`, `\substack` | ✅ |
-| `\boxed`, `\phantom` family, `\color{}` `\textcolor{}` (named + `#hex`) | ✅ |
-| Document-scoped macros: `\newcommand` `\renewcommand` `\def` | ✅ |
-| Directly-typed Unicode math (`∫ ∑ ≤ α` — classed like their commands) | ✅ |
-| `array` with `\hline` (grid renders; rules/column-spec not yet drawn) | 🟡 |
-| `\tag`, equation numbering, `\DeclareMathOperator`, mhchem | 🟡 named-source-card fallback |
+Math is powered by **[Vinculum](https://github.com/clintecker/Vinculum)** —
+Quoin's own native TeX-style typesetter (~400 commands, each carrying its correct
+TeX atom class, so inter-atom spacing is real). No MathJax, no KaTeX. The table
+below summarizes the breadth; for the exhaustive, always-current
+command-by-command matrix see Vinculum's
+**[coverage doc](https://github.com/clintecker/Vinculum/blob/main/docs/COVERAGE.md)**
+and **[command index](https://github.com/clintecker/Vinculum/blob/main/docs/COMMANDS.md)** —
+those are the source of truth so this list can't quietly drift.
+
+| Feature | Status | Notes |
+| :--- | :---: | :--- |
+| Delimiters `$…$` `$$…$$` `\(…\)` `\[…\]` | ✅ | inline + display |
+| ~400 symbols — Greek + variants, binary ops, relations (incl. negated), arrows, harpoons, dots, delimiters | ✅ | each classed for correct spacing |
+| Directly-typed Unicode math (`∫ ∑ ≤ α →`) | ✅ | classed like their command spellings |
+| Fractions `\frac \dfrac \tfrac \cfrac \binom \dbinom \genfrac` | ✅ | true multi-level `\cfrac`; `\genfrac` custom delims / rule / style |
+| Roots `\sqrt` `\sqrt[n]{}`, sub/superscripts, coalesced primes | ✅ | cramped-style scripts in radicands/denominators |
+| Big operators with correct limits (`\sum \prod` stack; `\int \oint` stay side) | ✅ | display vs. inline placement per TeX |
+| Matrices `matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix` | ✅ | plus starred forms and `*[r]`/`*[l]` alignment |
+| `cases`, `aligned align alignat split gather gathered multline`, `substack` | ✅ | alignment at `&` |
+| `array` — per-column `{l c r}`, `\|` vertical rules, `\hline` / `\cline` | ✅ | augmented, bordered, and truth tables |
+| Math alphabets `\mathbb \mathcal \mathscr \mathfrak \mathsf \mathtt \mathbf \boldsymbol \bm \pmb` | ✅ | Unicode codepoints (script/fraktur are letters only; `\mathbf` uses a bold system font) |
+| Accents `\hat \vec \bar \dot \ddot \tilde …`, stretchy `\widehat \widetilde \widecheck`, rules `\overline \underline` | ✅ | |
+| Over/under family `\overbrace \underbrace \overbracket \overparen \overrightarrow \overleftrightarrow …` | ✅ | drawn braces / brackets / arcs / vector arrows |
+| Extensible arrows `\xrightarrow[under]{over}` `\xleftarrow` | ✅ | hook/harpoon/mapsto/double-line heads approximate to a plain shaft |
+| Atom-class overrides `\mathbin \mathrel \mathop \mathord \mathopen …` | ✅ | force spacing class; `\mathop`/`\operatorname*` stack limits |
+| Boxes & rules `\boxed \fbox \colorbox \fcolorbox \rule \raisebox` | ✅ | |
+| `\cancel \bcancel \xcancel \cancelto`, `\not` | ✅ | forward/back/crossed strikes and negation |
+| Color `\color \textcolor` (named palette + `#rrggbb`) | ✅ | includes the **stateful** `\color{red} …` form |
+| Phantoms & spacing `\phantom \smash \mathstrut \mathrlap`, `\, \; \quad \hspace \kern \mspace …` | ✅ | em/mu/ex/pt length units, signed lengths |
+| `\left…\right`, `\middle`, `\big…\Bigg` auto-sized fences | ✅ | MATH-table tall size-variant glyphs for `( ) [ ] { }`; others point-scale |
+| `\tag` / `\tag*`, `\notag`, `\text` `\operatorname` `\pmod` `\bmod` | ✅ | tag appended inline (flush-right placement is a host concern) |
+| Document-scoped macros `\newcommand` `\renewcommand` `\def` | ✅ | `#1`…`#9` params, optional argc, recursion cap |
+| `\DeclareMathOperator`, `\sideset`, `\mathchoice`, mhchem `\ce`, harpoon accents, `\begin{CD}` | 🟡 | named-source-card fallback |
 
 ### Diagrams (Mermaid)
 
-**All 30 diagram types render natively** — zero JavaScript, zero network. See
-the **[diagram gallery](docs/diagram-gallery.md)** for a simple and a complex
-example of every type, each drawn by Quoin's own engine.
+**All 23 diagram types Quoin recognises render natively** — zero JavaScript,
+zero network. See the **[diagram gallery](docs/diagram-gallery.md)** for a simple
+and a complex example of every type, each drawn by Quoin's own engine.
 
 | Type | Status | Notes |
 | :--- | :---: | :--- |

@@ -1,13 +1,13 @@
 # Quoin — features context pack
 
 *Everything someone evaluating Quoin should know. Verified against the code
-on 2026-07-10 (pre-1.0, version 0.1.0). Companion pack:
+on 2026-07-13 (pre-1.0, version 0.1.0). Companion pack:
 `mermaidkit-features.md`.*
 
 ## One paragraph
 
 Quoin is a native macOS WYSIWYG markdown editor. It renders markdown —
-including LaTeX math and all 30 Mermaid diagram types — entirely with
+including LaTeX math and all 23 Mermaid diagram types — entirely with
 TextKit 2, CoreText, and CoreGraphics: **zero JavaScript, zero web views,
 zero network at runtime**. Documents are plain `.md` files on disk, folders
 are directories, and the open→edit→save round-trip is **byte-lossless** for
@@ -74,41 +74,74 @@ locks type into the chase.
 - **Raw HTML / remote images** — labelled source card / placeholder, by
   design (degrade, never break).
 
-## Math (native TeX-style typesetter — no MathJax/KaTeX)
+## Math (native TeX-style typesetter via Vinculum — no MathJax/KaTeX)
 
-Delimiters `$…$`, `$$…$$`, `\(…\)`, `\[…\]`. Greek/operators/relations/
-arrows, fractions, `\sqrt[n]{}`, sub/superscripts, big operators with
-stacked limits (`\sum` `\int` `\prod`), `\left…\right` auto-sized fences,
-all six matrix environments, `cases`, `aligned`/`align`/`gather`/`split`,
-`\text{}` `\mathbf{}`. Plus a deep everyday-KaTeX layer:
+Math is drawn by **Vinculum** (Quoin's own first-party CoreText/CoreGraphics
+math engine, consumed from GitHub like MermaidKit — `github.com/clintecker/
+Vinculum`, `from: "0.23.0"`). It now covers **~400 commands** (404 symbol-table
+entries + 37 function-name operators), each carrying its correct TeX atom class
+so inter-atom spacing is real. Delimiters `$…$`, `$$…$$`, `\(…\)`, `\[…\]`.
+Core: Greek/operators/relations/arrows, fractions, `\sqrt[n]{}`,
+sub/superscripts, big operators with stacked limits (`\sum` `\int` `\prod`,
+integrals correctly keeping side-scripts), `\left…\right` auto-sized fences,
+all matrix environments (`matrix`/`pmatrix`/`bmatrix`/`Bmatrix`/`vmatrix`/
+`Vmatrix`/`smallmatrix`), `cases`, `aligned`/`align`/`alignat`/`gather`/
+`gathered`/`split`/`multline`, `\text{}` `\mathbf{}`. Plus a deep KaTeX/amsmath
+layer:
 
 - **Math alphabets** to real Unicode glyphs: `\mathbb` `\mathcal` `\mathscr`
-  `\mathfrak` `\mathsf` `\mathtt` `\boldsymbol` (ℝ 𝒜 𝔤 𝖷 𝚡).
-- **Accents**: `\hat \vec \bar \dot \ddot \tilde \check \breve \acute`,
-  stretchy `\widehat`/`\widetilde`, and `\overline`/`\underline` (accents
-  hug the glyph's ink top, not the font ascent).
-- **Fractions & stacks**: `\binom` `\dbinom` `\cfrac`, `\overset`
+  `\mathfrak` `\mathsf` `\mathtt` `\boldsymbol`/`\bm` `\pmb` (ℝ 𝒜 𝔤 𝖷 𝚡).
+- **Accents**: `\hat \vec \bar \dot \ddot \tilde \check \breve \acute
+  \grave \mathring`, stretchy `\widehat`/`\widetilde`/`\widecheck`, and
+  `\overline`/`\underline` (accents hug the glyph's ink top, not the font
+  ascent).
+- **Fractions & stacks**: `\frac` `\dfrac` `\tfrac` `\binom` `\dbinom`
+  `\tbinom`, true full-size `\cfrac`, custom `\genfrac`, `\overset`
   `\underset` `\stackrel`, `\overbrace`/`\underbrace` with labels,
   `\substack`.
-- **Stretchy arrows** `\xrightarrow`/`\xleftarrow` with over/under labels.
-- **Decorations**: `\boxed`, `\phantom`/`\hphantom`/`\vphantom`,
-  `\color`/`\textcolor` (named palette + `#hex`).
+- **Over/under constructs**: `\overbracket`/`\underbracket`,
+  `\overparen`/`\underparen`, and vector arrows
+  `\overrightarrow`/`\overleftarrow`/`\overleftrightarrow` (and the `\under…`
+  forms).
+- **Stretchy arrows** `\xrightarrow`/`\xleftarrow` with over/under labels
+  (the hook/harpoon/mapsto `\x…` variants are accepted and stretched but
+  approximate a plain shaft).
+- **Delimiters**: `\middle` interior fences, manual sizing
+  `\big`/`\Big`/`\bigg`/`\Bigg` (+`l`/`r`/`m`), standalone `\langle \lceil
+  \lfloor …`, and MATH-table size-variant glyphs for tall `( ) [ ] { }`.
+- **Atom-class overrides**: `\mathbin \mathrel \mathop \mathord \mathopen
+  \mathclose \mathpunct` force a subexpression's spacing class.
+- **Decorations & boxes**: `\boxed`/`\fbox`, `\colorbox`/`\fcolorbox`,
+  `\rule`, `\raisebox`, `\cancel`/`\bcancel`/`\xcancel`/`\cancelto`, `\not`,
+  `\phantom`/`\hphantom`/`\vphantom`/`\smash`, `\mathrlap`/`\mathllap`/
+  `\mathclap`.
+- **Color**: `\color`/`\textcolor` (named palette + `#hex`), both the braced
+  two-argument form and the **stateful** `\color{name}` form.
+- **Equation tags**: `\tag{…}`/`\tag*{…}` render inline (`\notag`/`\nonumber`
+  are no-ops); true flush-right placement is a host concern.
+- **Operator names**: `\operatorname`/`\operatorname*` (the starred form
+  stacks its limits), `\pmod`/`\bmod`/`\pod`, spacing commands (`\,` `\;`
+  `\quad` `\hspace` `\mkern` …).
 - **Document-scoped macros**: `\newcommand`/`\renewcommand`/`\def` are
   collected across the whole document and expanded everywhere — define a
   shorthand once, use it in any equation (even before its definition).
 - **Directly-typed Unicode** (`∫ ∑ ≤ α`) is classed like its `\command`
   spelling, so a raw `∫` gets stacked limits and correct spacing.
 
-Verified by a golden-image harness: ~35 fixtures rendered to 2× PNGs and
-diffed against reference renders in CI, with a coverage ledger that FAILS
-the build if a known-unsupported construct starts rendering (so the docs
-can never overstate). When something isn't typeset yet (`\tag`, equation
-numbering, `\DeclareMathOperator`, mhchem, array column rules), it
-degrades to a source card whose caption NAMES the command.
+Vinculum is verified by its own golden-image harness and a coverage ledger in
+**Vinculum's** CI (not Quoin's) — the exhaustive, code-checked support matrix
+lives in Vinculum's `docs/COVERAGE.md` / `docs/COMMANDS.md`. Vinculum never
+throws and never half-renders: an unknown command becomes an `.unsupported`
+leaf, so Quoin shows a source card whose caption NAMES the offending command
+(via `MathParser.unsupportedCommands`). Genuinely-unsupported constructs that
+still fall back today: `\DeclareMathOperator`, `\sideset`, `\mathchoice`,
+harpoon accents, `\begin{CD}`, and out-of-scope packages (mhchem `\ce`,
+siunitx, `\href`). Note: `\tag` and `array` column rules/`\hline` now render
+natively.
 
 ## Diagrams
 
-All **30 Mermaid diagram types** render natively via MermaidKit (see the
+All **23 Mermaid diagram types** render natively via MermaidKit (see the
 companion pack for the full list and per-type details). Inside Quoin:
 diagrams participate in syntax-reveal editing with the live preview panel,
 match the document theme (including dark mode) via the `DiagramTheme`
@@ -167,14 +200,17 @@ stress documents scroll at full frame rate.
 
 ## Trust & engineering signals
 
-- Test suite: 430+ tests including torture tests (10k-deep nesting,
-  unclosed everything), byte-lossless round-trip suites, viewport-
-  invariant tests (the caret line may not move on ANY projection change),
-  golden-image math rendering, latency budgets, and data-integrity
-  regression tests for every fixed loss bug.
+- Test suite: 376 tests in the package suite (QuoinCore + QuoinRender)
+  including torture tests (10k-deep nesting, unclosed everything),
+  byte-lossless round-trip suites, viewport-invariant tests (the caret line
+  may not move on ANY projection change), math/diagram native-vs-fallback
+  classification, latency budgets, and data-integrity regression tests for
+  every fixed loss bug. (Golden-image math rendering lives in Vinculum's own
+  CI; diagram rendering in MermaidKit's.)
 - Dependency policy: ONE third-party dependency (Apple's swift-markdown,
-  Apache 2.0, attributed in About ▸ Acknowledgements). MermaidKit is
-  first-party. Everything else is Apple frameworks.
+  Apache 2.0, attributed in About ▸ Acknowledgements). MermaidKit (diagrams)
+  and Vinculum (math) are Quoin's own first-party packages, consumed from
+  GitHub. Everything else is Apple frameworks.
 - QuoinCore (parse/session/search/stats/export engines) is platform-free
   and builds on Linux; an iOS/iPadOS reader target exists (editor later).
 - Sandboxed, hardened runtime; notarization pipeline in
@@ -224,10 +260,10 @@ icon, Sparkle update wiring, deep-perf items, visual token refresh).
 - macOS-only editor today (iOS reader target exists, unshipped).
 - No sync/collaboration — files are files; use your own sync.
 - Raw HTML doesn't execute (by design); remote images placeholder-only.
-- Remaining math gaps (named-source-card fallback): `\tag`/equation
-  numbering, `\DeclareMathOperator`, mhchem/physics packages, array
-  column rules + `\hline` drawing (the grid renders, the rules don't).
-  Mermaid venn overlap layout + parts of C4 are engine gaps (tracked in
-  MermaidKit).
+- Remaining math gaps (named-source-card fallback): `\DeclareMathOperator`,
+  `\sideset`, `\mathchoice`, harpoon accents, `\begin{CD}`, and out-of-scope
+  packages (mhchem `\ce`, siunitx, `\href`). (`\tag` and `array` column
+  rules + `\hline` now render natively.) Some Mermaid diagram sub-features
+  remain engine gaps, tracked in MermaidKit.
 - Switching tabs currently resets scroll/caret position (on the ledger).
 - No plugin system; no Vim mode.

@@ -15,6 +15,28 @@ re-projected. This is what makes the round-trip byte-lossless — untouched
 regions of the file are never re-serialized, because the file is never
 serialized *from* the view at all.
 
+## Dependencies
+
+Quoin has exactly **one third-party dependency** and two first-party packages
+of its own (all pinned in `Package.swift`):
+
+| Package | Version | Role | Policy |
+| --- | --- | --- | --- |
+| `swift-markdown` (swiftlang) | `from: 0.8.0` | CommonMark/GFM parse via cmark-gfm | the one allowed third-party dep |
+| `MermaidKit` (clintecker) | `from: 0.9.0` | Mermaid diagrams (`MermaidLayout` + `MermaidRender`) | first-party, exempt |
+| `Vinculum` (clintecker) | `from: 0.23.0` | LaTeX math (`VinculumLayout` + `VinculumRender`) | first-party, exempt |
+
+MermaidKit and Vinculum are Quoin's own published packages, consumed from
+GitHub exactly like any other host app would — they were extracted out of
+this repo, not vendored in, so their engines are versioned and CI-tested on
+their own. The one-third-party-dependency rule still bites for anything
+genuinely external: a new outside dependency requires a written TRD case
+first, and the default answer is no. Each first-party package splits a
+platform-free layout product (Foundation-only, Linux-clean) from an
+Apple-only render product; QuoinCore `@_exported import`s the layout product
+of each (`MermaidReexport.swift`, `VinculumReexport.swift`) so their public
+types stay reachable through `import QuoinCore`.
+
 ## Data flow
 
 The edit loop is a one-way cycle: keystrokes never mutate the view directly —
@@ -56,7 +78,8 @@ flowchart TD
 - **Math scanning** happens against the *raw source slice*, not the parsed
   inline tree: cmark has no math extension and mangles `$a_b + c_d$` into
   emphasis. The scanner recognises `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`
-  (see `MathScanner`); the non-math remainder is re-parsed as inline markdown.
+  (`MathScanner`, a Vinculum type re-exported through QuoinCore); the
+  non-math remainder is re-parsed as inline markdown.
 - **Extension post-passes** splice highlights (`==…==`), callout detection,
   front matter, `[TOC]`, and footnote gathering.
 
@@ -143,77 +166,79 @@ case in `AttributedRenderer` and a styler pass in `MarkdownSourceStyler`, and
 register its delimiter in the claimed-ranges ordering (`**` before `*`, links
 before emphasis).
 
-## Math engine
+## Math engine (Vinculum)
 
-`MathParser` (QuoinCore, platform-free) tokenizes LaTeX into a `MathNode`
-tree deliberately close to TeX's model: symbols carry atom classes
-(ordinary / binary / relation / operator / …) so the typesetter can apply
-real inter-atom spacing. Environments (`\begin{…}`) become `.matrix` grids
-with per-environment alignment (centered / cases / aligned-at-`&`). Unknown
-commands become `.unsupported` leaves — the parse never fails, and
-`isFullySupported` gates native rendering vs. the styled source-card
-fallback (whose caption is populated by `unsupportedCommands(in:)`, which
-walks the tree collecting the offending `\command` names). A linear
-pre-scan bounds brace/environment nesting so pathological input degrades
-instead of overflowing the parse stack. The node set covers accents
-(`.accent`), generalized fractions (`.genfrac` — `\binom`), over/under
-constructs (`.overUnder` — braces, `\overset`, stretchy `\xrightarrow`),
-box/space decorations (`.decorated`), and recoloring (`.styled`);
-`MathAlphabet` maps `\mathbb`/`\mathcal`/`\mathfrak`/… to Unicode
-Mathematical-Alphanumeric codepoints. `MathMacros` is a pre-tokenize
-string pass: `MarkdownConverter` collects `\newcommand`/`\def` from every
-math segment in the document up front (so uses resolve order-independently)
-and expands each equation's latex before it's stored — the source range is
-untouched, so byte-lossless round-trip and syntax reveal still see the
-literal source.
+Math is **not** Quoin code. It lives in **Vinculum**
+(`github.com/clintecker/Vinculum`), Quoin's own published package, consumed
+from GitHub exactly like MermaidKit — first-party, so exempt from the
+one-third-party-dependency policy. Vinculum ships two products:
+`VinculumLayout` (Foundation-only, builds/tests on Linux — parsing, macros,
+all typesetting geometry, the OpenType MATH-table constants, the device-
+independent `MathScene` IR) and `VinculumRender` (Apple-only — measuring,
+drawing via CoreText/CoreGraphics, the bundled font, the cached
+`NSTextAttachment`). QuoinCore `@_exported import`s `VinculumLayout`
+(`VinculumReexport.swift`), so `MathParser`, `MathNode`, `MathScanner`,
+`MathMacros`, `MathAlphabet`, and the model enums stay reachable through
+`import QuoinCore` with no per-file import — the same pattern as
+`MermaidReexport`.
 
-`MathTypesetter` (QuoinRender) lays each node out as a `MathBox`
-(width/ascent/descent + `inkAscent` for accent hugging + a draw closure in
-y-up baseline coordinates): fractions on the math axis, stacked limits for
-display-style big operators, radicals with degree indices, fences scaled to
-body height, grids with per-column widths and per-row baselines,
-hand-stroked braces/arrows, and a `\color` `inkOverride` threaded through a
-sub-typesetter. `MathImageRenderer` rasterises the box into an
-`NSTextAttachment` at theme size, cached by content + a
-`MathTheme.fingerprint`. The renderer depends on `MathTheme` (ink +
-appearance), NOT Quoin's `Theme` — the same seam pattern as MermaidKit's
-`DiagramTheme`. The math engine now lives in its own published package —
-**Vinculum** (`github.com/clintecker/Vinculum`, products `VinculumLayout`
-+ `VinculumRender`), consumed from GitHub exactly like MermaidKit;
-QuoinCore `@_exported import`s `VinculumLayout` so `MathParser` etc. stay
-reachable through `import QuoinCore`. See `docs/math-extraction.md`.
+The breadth is now large — on the order of **400 commands** across 24
+`MathNode` cases: TeX-model atom-class spacing, generalized fractions,
+accents, over/under constructs, stretchy delimiters with real MATH-table
+size variants, boxes, stateful `\color`, math alphabets, and ~400 symbols.
+The exhaustive, current coverage matrix is Vinculum's to own — see
+`Vinculum/docs/ARCHITECTURE.md`, `COVERAGE.md`, and `COMMANDS.md` rather
+than duplicating a list here that would only drift. `MathParser.parse`
+never fails: unknown commands become `.unsupported` leaves, and
+`isFullySupported` / `unsupportedCommands(in:)` gate native rendering vs.
+the source-card fallback.
 
-## Diagram engine
+**What Quoin owns is the integration, not the typesetting:**
 
-`MermaidParser` (QuoinCore) parses flowchart/graph, sequence, pie, class, ER,
-state (v2, recursive composites; nesting depth capped), and gantt (sections,
-`after` dependencies, date/duration timeline resolved to day offsets at parse
-time, statuses, milestones). Anything else returns nil → tidy source card.
+- **Scanning.** `MarkdownConverter` runs `MathScanner` (a Vinculum type,
+  re-exported) over the *raw source slice* — cmark has no math extension and
+  would mangle `$a_b$` — recognising `$…$`, `$$…$$`, `\(…\)`, `\[…\]`.
+- **Macros.** The `\newcommand`/`\def` pre-pass is host-driven: because
+  definitions are document-scoped, `MarkdownConverter` collects them across
+  every math segment up front (order-independent) and expands each equation's
+  latex before it's stored. The source range is untouched, so byte-lossless
+  round-trip and syntax reveal still see the literal source.
+- **The theme seam.** `Theme.mathTheme` projects Quoin's design system onto
+  Vinculum's `MathTheme` (just ink + `prefersDark`) — the same adapter
+  pattern as `diagramTheme`. `AttributedRenderer` calls
+  `MathImageRenderer.attachmentString(latex:display:mathTheme:baseSize:)`
+  (from VinculumRender); a `nil` return means unsupported and drops to the
+  styled source card, whose caption is built from `MathParser
+  .unsupportedCommands` naming the offending `\command`s.
 
-`DiagramLayoutEngine` (QuoinCore) is pure geometry with an injected text
-measurer, so it unit-tests without fonts:
+Vinculum's own CI tests the parser, layout geometry (headless, via an
+injected measurer), and golden renders — not Quoin's. To co-develop, point
+`Package.swift` at a local checkout (`.package(path: "../Vinculum")`, don't
+commit it) or `swift package edit Vinculum`, then publish, tag, and bump the
+version here. See `docs/math-extraction.md` for the extraction history.
 
-- **Flowcharts:** Sugiyama layered drawing — longest-path layering with DFS
-  back-edge exclusion (cycles must not drift nodes downward), then **dummy
-  nodes** for every edge spanning more than one layer (Graphviz/dagre-style):
-  they join their layer and reserve a channel in barycenter ordering +
-  coordinate assignment, so long and back edges route *between* the nodes they
-  cross, not under them. Each edge is routed through its dummy-chain waypoints
-  (vertical runs in the channels, horizontal jogs confined to inter-layer
-  gaps); attachment points project onto node outlines. Edge labels are placed
-  by a collision-scoring pass so they don't overprint boxes.
-- **Box diagrams (class/ER/state):** shared `layeredRoutes` — the same
-  dummy-node layered routing as the flowchart, top-down: layers, dummy nodes
-  for multi-layer edges reserving channels, barycenter ordering, coordinate
-  assignment, then orthogonal routing through each edge's chain. Near-aligned
-  edges snap to a shared column so they stay straight; same-layer edges take a
-  short side-face route. Composite states lay out recursively; each child scope
-  becomes a fixed-size titled container in its parent, then flattens to
-  absolute coordinates.
+## Diagram engine (MermaidKit)
 
-`DiagramRenderer` (QuoinRender) draws layouts with CoreGraphics — nodes,
-polylines, arrowheads, UML markers, crow's feet — and caches rendered images
-keyed by source + appearance.
+Diagrams, like math, are a separate first-party package: **MermaidKit**
+(`github.com/clintecker/MermaidKit`), consumed from GitHub and exempt from
+the dependency policy. It splits the same way Vinculum does:
+`MermaidLayout` (platform-free parser + layout + scene IR + geometry linter,
+Linux-clean) and `MermaidRender` (CoreGraphics/CoreText drawing behind a
+`DiagramTheme` seam). QuoinCore `@_exported import`s `MermaidLayout`
+(`MermaidReexport.swift`), so `MermaidParser` and friends stay reachable
+through `import QuoinCore`. All Mermaid diagram types render natively
+(flowchart/graph, sequence, class, state, ER, pie, gantt, journey, …); the
+layout internals (Sugiyama layering, dummy-node edge routing, composite-state
+recursion) are MermaidKit's to document.
+
+Quoin's side is again just the seam and the fallback: `Theme.diagramTheme`
+projects Quoin's design system onto MermaidKit's `DiagramTheme` (ink,
+secondary/tertiary text, canvas, accent, hairline, `prefersDark`), and
+`AttributedRenderer` calls `MermaidRenderer.attachmentString(source:theme:)`
+(from MermaidRender) — an unparseable or unsupported source returns `nil`
+and drops to the tidy source card. Diagram-engine changes are tested by
+MermaidKit's own CI, not Quoin's; co-develop via a local `.package(path:)`
+or `swift package edit MermaidKit`, then publish, tag, and bump.
 
 ## Platform layering
 
@@ -225,9 +250,9 @@ is platform-specific.
   on Apple platforms, guarded by `#if canImport(CoreGraphics)`. It builds on
   macOS, iOS, iPadOS, visionOS, and Linux.
 - **`QuoinRender`** splits into shared engine and platform views. The shared
-  files — `AttributedRenderer`, `MathTypesetter`, `DiagramRenderer`,
-  `MathImageRenderer`, `MarkdownSourceStyler`, `Theme`, `BlockDecoration`,
-  `QuoinAttributes`, `AsyncImageStore`, `DocumentExporters` — are guarded
+  files — `AttributedRenderer`, `MarkdownSourceStyler`, `Theme`,
+  `BlockDecoration`, `QuoinAttributes`, `TableLayout`, `AsyncImageStore`,
+  `DocumentExporters` — are guarded
   `canImport(AppKit) || canImport(UIKit)` and branch on `PlatformFont` /
   `PlatformColor` / `PlatformImage` typealiases, so one body compiles on both
   AppKit and UIKit. The platform view layers live in their own subfolders:
@@ -282,7 +307,11 @@ fail to compile. Supporting it means changing those guards to
    the document from the view.
 2. `QuoinCore` stays platform-free (`CoreGraphics` types only via
    Foundation/corelibs; no AppKit/UIKit).
-3. One dependency (swift-markdown). New ones need a written TRD case.
+3. One *third-party* dependency (swift-markdown). The two first-party GitHub
+   packages — MermaidKit (diagrams) and Vinculum (math) — are Quoin's own,
+   published and consumed like a host app would, and are explicitly exempt
+   (the policy script allowlists them). Any new third-party dependency needs
+   a written TRD case.
 4. Unknown input degrades to a labelled source card — never a crash, never a
    half-render.
 5. Never override system shortcuts (⌘P print, ⌘E use-selection-for-find,
@@ -317,9 +346,9 @@ fail to compile. Supporting it means changing those guards to
   attributes, zero reflow), typewriter scrolling (the caret-pin reused),
   jump history, breadcrumb path, outline collapse + hover peek, link
   hover previews, reading-progress hairline.
-- **Verification harnesses**: math golden PNGs
-  (`MathGoldenRenderTests`, `Tests/fixtures/math-golden/`) doubling as a
-  coverage ledger; compositor-truth flip fidelity; per-feature latency
-  budgets (see `docs/launch-ledger.md` for the enrollment gaps).
+- **Verification harnesses**: compositor-truth flip fidelity; per-feature
+  latency budgets (see `docs/launch-ledger.md` for the enrollment gaps).
+  Math golden PNGs and the diagram geometry linter now live with their
+  engines — they are Vinculum's and MermaidKit's CI, not Quoin's.
 - **Ledgers**: `docs/rendering-ledger.md` (field reports → fixes),
   `docs/launch-ledger.md` (four-track pre-launch review).
