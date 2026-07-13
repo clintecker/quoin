@@ -172,14 +172,25 @@ final class QuoinTextView: NSTextView {
             metadata: "clipBefore=\(Int(clipBefore)) clipAfter=\(Int(clipAfter)) moved=\(Int(clipAfter - clipBefore)) clicks=\(event.clickCount)")
     }
 
+    /// Force the visible viewport to finish layout, THEN redraw — so
+    /// decorations read SETTLED fragment positions, not estimates that predate
+    /// a reflow. Revealing a delimiter flips its font (1pt↔full), which
+    /// reflows the block and moves every following fragment; a bare
+    /// `needsDisplay` on the next runloop tick can still draw before TextKit
+    /// has propagated the new heights, leaving the accent frame / code canvas
+    /// offset from its own text ("box lags text"). Laying out the viewport
+    /// first is the editor's "measure phase" — cheap (decorations are
+    /// viewport-culled anyway) and correct on every path and doc size.
+    private func settleDecorations() {
+        textLayoutManager?.textViewportLayoutController.layoutViewport()
+        needsDisplay = true
+    }
+
     func invalidateDecorations() {
         runsAreStale = true
         needsDisplay = true
-        // Second pass once TextKit settles: fragment frames queried during
-        // the first draw can predate a reflow (estimated geometry), which
-        // leaves decorations offset from their text until the next redraw.
         DispatchQueue.main.async { [weak self] in
-            self?.needsDisplay = true
+            self?.settleDecorations()
         }
     }
 
@@ -191,7 +202,7 @@ final class QuoinTextView: NSTextView {
     func redrawDecorations() {
         needsDisplay = true
         DispatchQueue.main.async { [weak self] in
-            self?.needsDisplay = true
+            self?.settleDecorations()
         }
     }
 
@@ -245,7 +256,7 @@ final class QuoinTextView: NSTextView {
         decorationRuns = before + middle + after
         needsDisplay = true
         DispatchQueue.main.async { [weak self] in
-            self?.needsDisplay = true
+            self?.settleDecorations()
         }
     }
 
