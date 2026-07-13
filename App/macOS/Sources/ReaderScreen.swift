@@ -261,6 +261,29 @@ struct ReaderScreen: View {
                     try? await Task.sleep(for: .seconds(2))
                     model.applyEdit(relativeRange: ByteRange(offset: byteOffset, length: 3), replacement: "")
                 }
+            case "codeEdit":
+                // Self-driving repro for the code-block editing overlap: open
+                // the first code block's source and type a character, so a
+                // screenshot captures the active editing state (accent frame +
+                // canvas + revealed source) and any geometry misalignment.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    guard let block = model.document.blocks.first(where: {
+                        if case .codeBlock = $0.kind { return true }
+                        return false
+                    }) else { return }
+                    model.activateBlock(block.id, caretHint: .source(0))
+                    try? await Task.sleep(for: .seconds(1))
+                    // Type into the body to exercise the per-keystroke
+                    // decoration path (offset past the opening ``` line).
+                    guard let active = model.activeBlockID,
+                          let activeBlock = model.document.blocks.first(where: { $0.id == active }),
+                          let slice = model.document.source.substring(in: activeBlock.range),
+                          let firstNewline = slice.firstIndex(of: "\n")
+                    else { return }
+                    let bodyOffset = slice[..<slice.index(after: firstNewline)].utf8.count
+                    model.applyEdit(relativeRange: ByteRange(offset: bodyOffset, length: 0), replacement: "let x = 1  ")
+                }
             default:
                 break
             }

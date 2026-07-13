@@ -127,6 +127,31 @@ final class ScreenshotTests: XCTestCase {
         app.terminate()
     }
 
+    /// Diagnostic: drives the `codeEdit` self-repro (activate the first code
+    /// block + type into it) and captures the active editing state, so a
+    /// headless session can SEE the code-block rendering overlap (accent frame
+    /// vs canvas vs revealed source geometry) instead of guessing.
+    func testCaptureCodeEditing() throws {
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-QuoinLibraryPath", fixturesPath,
+            "-QuoinShotOpen", "showcase.md",
+            "-QuoinShotState", "codeEdit",
+        ]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        // The self-drive activates at ~2s and types at ~3s; capture after it
+        // settles, then once more to catch any lingering box-lag.
+        Thread.sleep(forTimeInterval: 4.5)
+        capture(name: "20-code-editing", window: window)
+        Thread.sleep(forTimeInterval: 1.5)
+        capture(name: "21-code-editing-settled", window: window)
+        app.terminate()
+    }
+
     /// Captures the app's window (cropped — README/CI quality) when
     /// available, falling back to the full screen.
     private func capture(name: String, window: XCUIElement? = nil) {
