@@ -200,7 +200,7 @@ stress documents scroll at full frame rate.
 
 ## Trust & engineering signals
 
-- Test suite: 389 tests in the package suite (QuoinCore + QuoinRender)
+- Test suite: 402 tests in the package suite (QuoinCore + QuoinRender)
   including torture tests (10k-deep nesting, unclosed everything),
   byte-lossless round-trip suites, viewport-invariant tests (the caret line
   may not move on ANY projection change), math/diagram native-vs-fallback

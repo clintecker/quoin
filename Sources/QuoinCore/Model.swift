@@ -18,6 +18,12 @@ public indirect enum Inline: Hashable, Sendable {
     case highlight([Inline], HighlightColor)
     /// A `[^id]` footnote reference; `index` is its 1-based document ordinal.
     case footnoteReference(id: String, index: Int)
+    /// A CriticMarkup suggestion mark (docs/design/suggestions.md):
+    /// `{++ins++}` `{--del--}` `{~~old~>new~~}` `{>>comment<<}` `{==hl==}`.
+    /// `range` is the whole mark's ABSOLUTE byte range in the document
+    /// source (accept/reject in S2 splices exactly these bytes); `id` is
+    /// the optional RDFM `{#id}` metadata reference.
+    case suggestion(kind: SuggestionKind, range: ByteRange, id: String?)
     case softBreak
     case lineBreak
     case html(String)
@@ -33,6 +39,7 @@ public indirect enum Inline: Hashable, Sendable {
         case .image(_, let alt): return alt
         case .math(let latex): return latex
         case .footnoteReference(_, let index): return "[\(index)]"
+        case .suggestion(let kind, _, _): return kind.plainText
         case .softBreak: return " "
         case .lineBreak: return "\n"
         case .html: return ""
@@ -42,6 +49,31 @@ public indirect enum Inline: Hashable, Sendable {
 
 extension Array where Element == Inline {
     public var plainText: String { map(\.plainText).joined() }
+}
+
+/// A CriticMarkup mark's content. Insertions/deletions/highlights carry
+/// re-parsed inline children; substitution carries both halves; comments
+/// carry raw text (annotation, not document content).
+public indirect enum SuggestionKind: Hashable, Sendable {
+    case insertion([Inline])
+    case deletion([Inline])
+    case substitution(old: [Inline], new: [Inline])
+    case comment(String)
+    case highlight([Inline])
+
+    /// Search/stats projection: what the document WOULD say — insertions,
+    /// deletions, and both substitution halves are all findable; comments
+    /// are annotations and don't count as document text.
+    public var plainText: String {
+        switch self {
+        case .insertion(let c), .deletion(let c), .highlight(let c):
+            return c.plainText
+        case .substitution(let old, let new):
+            return old.plainText + " " + new.plainText
+        case .comment:
+            return ""
+        }
+    }
 }
 
 /// The 5-color highlight palette from the handoff (§ inline styling).
@@ -200,6 +232,7 @@ public struct DocumentStats: Hashable, Sendable {
     public var taskDone = 0
     public var footnoteCount = 0
     public var highlightCount = 0
+    public var suggestionCount = 0
 
     public init() {}
 

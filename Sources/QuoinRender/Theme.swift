@@ -177,6 +177,12 @@ public struct Theme: Sendable {
             light: rgbStatic(0x000000, alpha: 0.12), dark: rgbStatic(0xFFFFFF, alpha: 0.12))
         static let quoteRule = themeDynamic(
             light: rgbStatic(0x000000, alpha: 0.15), dark: rgbStatic(0xFFFFFF, alpha: 0.15))
+        static let suggestionInsertFill = themeDynamic(light: rgbStatic(0xDCF2DC), dark: rgbStatic(0x2E4A33))
+        static let suggestionInsertInk = themeDynamic(light: rgbStatic(0x2E7D42), dark: rgbStatic(0x7FC98F))
+        static let suggestionDeleteFill = themeDynamic(light: rgbStatic(0xF9DCDC), dark: rgbStatic(0x53302F))
+        static let suggestionCommentFill = themeDynamic(light: rgbStatic(0xFDF3D0), dark: rgbStatic(0x4A4432))
+        static let suggestionCommentInk = themeDynamic(light: rgbStatic(0x8A6D1D), dark: rgbStatic(0xD9BE6C))
+        static let suggestionHighlightFill = themeDynamic(light: rgbStatic(0xFCE9B8), dark: rgbStatic(0x5D5330))
         static let tableRule = themeDynamic(
             light: rgbStatic(0x000000, alpha: 0.07), dark: rgbStatic(0xFFFFFF, alpha: 0.09))
     }
@@ -210,6 +216,19 @@ public struct Theme: Sendable {
 
     /// Table body-row hairline: 7% ink (header rule uses `quoteRule`, 15%).
     public var tableRule: PlatformColor { Palette.tableRule }
+
+    // MARK: Suggestions (CriticMarkup marks — docs/design/suggestions.md)
+
+    /// Insertion underlay: quiet green, readable ink on both appearances.
+    public var suggestionInsertFill: PlatformColor { Palette.suggestionInsertFill }
+    public var suggestionInsertInk: PlatformColor { Palette.suggestionInsertInk }
+    /// Deletion underlay: quiet red behind struck 55%-ink text.
+    public var suggestionDeleteFill: PlatformColor { Palette.suggestionDeleteFill }
+    /// Comment chip (annotation, not document text).
+    public var suggestionCommentFill: PlatformColor { Palette.suggestionCommentFill }
+    public var suggestionCommentInk: PlatformColor { Palette.suggestionCommentInk }
+    /// Critic highlight `{==…==}`: amber, distinct from the `==…==` palette.
+    public var suggestionHighlightFill: PlatformColor { Palette.suggestionHighlightFill }
 
     /// Highlight palette (≥4.5:1 with ink.body); dark variants desaturated ~15%.
     public enum Highlight: String, CaseIterable, Sendable {

@@ -153,6 +153,20 @@ public enum HTMLExporter {
                 out += "<span class=\"math-inline\">\\(\(escape(latex))\\)</span>"
             case .footnoteReference(let id, let index):
                 out += "<sup class=\"fn-ref\"><a href=\"#fn-\(escapeAttribute(id))\">\(index)</a></sup>"
+            case .suggestion(let kind, _, _):
+                // Canonical CriticMarkup HTML (toolkit conventions).
+                switch kind {
+                case .insertion(let children):
+                    out += "<ins>\(render(children))</ins>"
+                case .deletion(let children):
+                    out += "<del>\(render(children))</del>"
+                case .substitution(let old, let new):
+                    out += "<del>\(render(old))</del><ins>\(render(new))</ins>"
+                case .comment(let text):
+                    out += "<span class=\"critic comment\">\(escape(text))</span>"
+                case .highlight(let children):
+                    out += "<mark class=\"critic\">\(render(children))</mark>"
+                }
             case .softBreak:
                 out += " "
             case .lineBreak:

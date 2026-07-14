@@ -160,6 +160,12 @@ struct MarkdownSourceStyler {
 
         styleLinks(in: output, text: text, caretOffset: caretOffset, claimed: &claimed)
 
+        // CriticMarkup marks claim BEFORE `~~` and `==` (below), or the
+        // plain strikethrough/highlight passes half-match `{~~…~~}` /
+        // `{==…==}` interiors and the reveal flickers between stylings as
+        // the caret moves (suggestions design, integration risk #4).
+        styleCriticMarks(in: output, text: text, claimed: &claimed)
+
         styleDelimited(in: output, text: text, delimiter: "**", contentAttributes: [
             .font: theme.boldBodyFont(),
         ], caretOffset: caretOffset, claimed: &claimed)
@@ -180,6 +186,65 @@ struct MarkdownSourceStyler {
             .font: theme.inlineCodeFont(),
             .foregroundColor: theme.accent,
         ], caretOffset: caretOffset, claimed: &claimed)
+    }
+
+    /// CriticMarkup marks in revealed source: the braces/sigils stay
+    /// FADED-VISIBLE regardless of caret (a suggestion's boundaries are
+    /// semantically load-bearing — the `>` prefix philosophy, not the `**`
+    /// one), the content takes the same per-kind treatment the rendered
+    /// projection uses, and a trailing `{#id}` reference fades with the
+    /// delimiters. Asymmetric delimiters need a regex pass — the symmetric
+    /// `styleDelimited` can't express `{++`/`++}`.
+    private func styleCriticMarks(
+        in output: NSMutableAttributedString,
+        text: NSString,
+        claimed: inout [NSRange]
+    ) {
+        guard collapsesNonLiteralSpans else { return } // prose reveals only
+        let source = text as String
+        guard CriticScanner.containsMark(source) else { return }
+
+        let insertContent: [NSAttributedString.Key: Any] = [
+            .backgroundColor: theme.suggestionInsertFill,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .underlineColor: theme.suggestionInsertInk.withAlphaComponent(0.5),
+        ]
+        let deleteContent: [NSAttributedString.Key: Any] = [
+            .backgroundColor: theme.suggestionDeleteFill,
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            .foregroundColor: theme.ink.withAlphaComponent(0.55),
+        ]
+        let patterns: [(pattern: String, contents: [[NSAttributedString.Key: Any]])] = [
+            (#"\{\+\+([\s\S]*?)\+\+\}(\{#[A-Za-z0-9_-]+\})?"#, [insertContent]),
+            (#"\{--([\s\S]*?)--\}(\{#[A-Za-z0-9_-]+\})?"#, [deleteContent]),
+            (#"\{~~([\s\S]*?)~>([\s\S]*?)~~\}(\{#[A-Za-z0-9_-]+\})?"#, [deleteContent, insertContent]),
+            (#"\{>>([\s\S]*?)<<\}(\{#[A-Za-z0-9_-]+\})?"#, [[
+                .foregroundColor: theme.suggestionCommentInk,
+                .backgroundColor: theme.suggestionCommentFill,
+            ]]),
+            (#"\{==([\s\S]*?)==\}(\{#[A-Za-z0-9_-]+\})?"#, [[
+                .backgroundColor: theme.suggestionHighlightFill,
+            ]]),
+        ]
+
+        for entry in patterns {
+            guard let regex = try? NSRegularExpression(pattern: entry.pattern) else { continue }
+            for match in regex.matches(in: source, range: NSRange(location: 0, length: text.length)) {
+                let whole = match.range
+                guard !claimed.contains(where: { NSIntersectionRange($0, whole).length > 0 }),
+                      !SmartPairs.isInsideCodeContext(text: source, caretUTF16: whole.location)
+                else { continue }
+                // Everything is a faded-visible delimiter…
+                output.addAttributes(delimiterAttributes, range: whole)
+                // …except the content group(s), which take the kind styling.
+                for (index, contentAttributes) in entry.contents.enumerated() {
+                    let group = match.range(at: index + 1)
+                    guard group.location != NSNotFound, group.length > 0 else { continue }
+                    output.addAttributes(contentAttributes, range: group)
+                }
+                claimed.append(whole)
+            }
+        }
     }
 
     private func italicFont() -> PlatformFont {

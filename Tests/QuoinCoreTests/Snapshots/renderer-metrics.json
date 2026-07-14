@@ -120,6 +120,17 @@
     "tables" : 0,
     "tasks" : 0
   },
+  "11-suggestions.md" : {
+    "blocks" : 13,
+    "codeBlocks" : 1,
+    "diagrams" : 0,
+    "headings" : 5,
+    "images" : 0,
+    "links" : 1,
+    "math" : 2,
+    "tables" : 0,
+    "tasks" : 0
+  },
   "12-torture.md" : {
     "blocks" : 55,
     "codeBlocks" : 5,

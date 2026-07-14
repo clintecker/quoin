@@ -636,7 +636,14 @@ public enum MarkdownConverter {
             // through the raw-slice scanner: cmark unescapes `\$`→`$` and
             // `\[`→`[` in text nodes, so only the raw slice can tell a math
             // delimiter from an escaped literal.
-            if let slice,
+            if let slice, CriticScanner.containsMark(slice), isSafeForSliceReparse(slice) {
+                // CriticMarkup marks route through the raw slice for the same
+                // reason math does (suggestions design §3): smart punctuation
+                // en-dashes `{--` and GFM strikethrough consumes `{~~…~~}`
+                // interiors before any post-pass could see them.
+                inlines = postProcess(assembleCriticInlines(
+                    from: CriticScanner.scan(slice), blockOffset: range.offset), math: false)
+            } else if let slice,
                slice.contains("$") || slice.contains("\\[") || slice.contains("\\("),
                isSafeForSliceReparse(slice) {
                 // The robust path: scan the raw source slice so that cmark's
@@ -727,6 +734,45 @@ public enum MarkdownConverter {
                 if line.drop(while: { $0 == " " || $0 == "\t" }).first == ">" { return false }
             }
             return true
+        }
+
+        /// Turns critic-scanner segments into an inline list: text segments
+        /// route through the math scanner + markdown re-parse exactly like an
+        /// unmarked paragraph; each mark becomes an `Inline.suggestion` with
+        /// its ABSOLUTE byte range (accept/reject in S2 splices those bytes)
+        /// and markdown-parsed children (math inside mark bodies stays
+        /// literal in v1 — documented limitation).
+        mutating func assembleCriticInlines(
+            from segments: [CriticScanner.Segment], blockOffset: Int
+        ) -> [Inline] {
+            var result: [Inline] = []
+            for segment in segments {
+                switch segment {
+                case .text(let text):
+                    result.append(contentsOf: assembleInlines(from: MathScanner.scan(text)))
+                case .mark(let mark):
+                    stats.suggestionCount += 1
+                    let absolute = ByteRange(
+                        offset: blockOffset + mark.range.offset, length: mark.range.length)
+                    let kind: SuggestionKind
+                    switch mark.payload {
+                    case .insertion(let content):
+                        kind = .insertion(assembleInlines(from: [.text(content)]))
+                    case .deletion(let content):
+                        kind = .deletion(assembleInlines(from: [.text(content)]))
+                    case .substitution(let old, let new):
+                        kind = .substitution(
+                            old: assembleInlines(from: [.text(old)]),
+                            new: assembleInlines(from: [.text(new)]))
+                    case .comment(let text):
+                        kind = .comment(text)
+                    case .highlight(let content):
+                        kind = .highlight(assembleInlines(from: [.text(content)]))
+                    }
+                    result.append(.suggestion(kind: kind, range: absolute, id: mark.id))
+                }
+            }
+            return result
         }
 
         /// Turns math-scanner segments into an inline list, re-parsing text

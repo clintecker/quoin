@@ -20757,6 +20757,648 @@
       }
     ]
   },
+  "11-suggestions.md" : {
+    "runs" : [
+      {
+        "f" : "26.00/0.40b",
+        "fg" : "#1D1D1F",
+        "p" : "lh1.25 ps12.00 psb32.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "11 — Suggestions (CriticMarkup)"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Tracked changes live as literal bytes in the source (docs/design/suggestions.md). Plain renderers show the markup; Quoin renders it as review chrome."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "20.00/0.40b",
+        "fg" : "#1D1D1F",
+        "p" : "lh1.30 ps10.00 psb28.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "The five marks"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "The launch is"
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "now",
+        "underline" : "accent@50"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "scheduled. The old copy"
+      },
+      {
+        "bg" : "#F9DCDC",
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "strike" : "on",
+        "t" : "was too long and rambling"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "reads better. We"
+      },
+      {
+        "bg" : "#F9DCDC",
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "strike" : "on",
+        "t" : "cannot"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : " → "
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "can",
+        "underline" : "accent@50"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "ship this quarter."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Please revisit"
+      },
+      {
+        "bg" : "#FCE9B8",
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "this whole sentence"
+      },
+      {
+        "bg" : "#FDF3D0",
+        "f" : "11.20/0.00",
+        "fg" : "#8A6D1D",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : " 💬 Needs a citation from t… "
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "before publishing."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "20.00/0.40b",
+        "fg" : "#1D1D1F",
+        "p" : "lh1.30 ps10.00 psb28.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Marks with markdown inside"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "An insertion can carry"
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.30b",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "bold",
+        "underline" : "accent@50"
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : ", ",
+        "underline" : "accent@50"
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "italic",
+        "underline" : "accent@50"
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : ", and ",
+        "underline" : "accent@50"
+      },
+      {
+        "bg" : "#F2F2F4",
+        "f" : "12.50/0.00m",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "code",
+        "underline" : "accent@50"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "spans. A deletion can strike"
+      },
+      {
+        "bg" : "#F9DCDC",
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "strike" : "on",
+        "t" : "an "
+      },
+      {
+        "bg" : "#F9DCDC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "link" : "https://example.com",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "strike" : "on",
+        "t" : "old link",
+        "underline" : "accent@35"
+      },
+      {
+        "bg" : "#F9DCDC",
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "strike" : "on",
+        "t" : " entirely"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "20.00/0.40b",
+        "fg" : "#1D1D1F",
+        "p" : "lh1.30 ps10.00 psb28.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Metadata references (RDFM)"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Anchored comment with an id:"
+      },
+      {
+        "bg" : "#FCE9B8",
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "the metric"
+      },
+      {
+        "bg" : "#FDF3D0",
+        "f" : "11.20/0.00",
+        "fg" : "#8A6D1D",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : " 💬 Which metric exactly? "
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : ". A suggestion with an id:"
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "per-tenant limits",
+        "underline" : "accent@50"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "20.00/0.40b",
+        "fg" : "#1D1D1F",
+        "p" : "lh1.30 ps10.00 psb28.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Degradation (must stay literal)"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "An {++unclosed insertion stays literal. Marks inside "
+      },
+      {
+        "bg" : "#F2F2F4",
+        "f" : "12.50/0.00m",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "{--code spans--}"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : " stay literal. A substitution without an arrow {"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#1D1D1F73",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "strike" : "on",
+        "t" : "like this"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "} stays literal."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.00 ps0.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "deco" : "codeCanvas(#1E2430)",
+        "f" : "10.50/0.00m",
+        "fg" : "#FFFFFF73",
+        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "q" : [
+          "embed"
+        ],
+        "t" : "text    "
+      },
+      {
+        "deco" : "codeCanvas(#1E2430)",
+        "f" : "10.50/0.00m",
+        "fg" : "accent",
+        "link" : "quoin-edit://block",
+        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "q" : [
+          "embed"
+        ],
+        "t" : "‹/› edit    "
+      },
+      {
+        "deco" : "codeCanvas(#1E2430)",
+        "f" : "10.50/0.00m",
+        "fg" : "accent",
+        "link" : "quoin-copy://block",
+        "p" : "lh1.70 ps2.00 psb8.00 fh12.00 hi12.00 ti-12.00 al2 tabs12",
+        "q" : [
+          "copy",
+          "embed"
+        ],
+        "t" : "⧉ copy\n"
+      },
+      {
+        "deco" : "codeCanvas(#1E2430)",
+        "f" : "12.00/0.00m",
+        "fg" : "#D6DCE6",
+        "p" : "lh1.60 ps8.00 psb0.00 fh12.00 hi12.00 ti-12.00 al4 tabs12",
+        "q" : [
+          "embed",
+          "embedStart=8"
+        ],
+        "t" : "{++fenced code is never parsed for marks++}"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.00 ps0.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "Math is opaque:"
+      },
+      {
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+          "attachment",
+          "math"
+        ],
+        "t" : "￼"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "stays math, while"
+      },
+      {
+        "bg" : "#DCF2DC",
+        "f" : "14.00/0.00",
+        "fg" : "accent",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "this edit",
+        "underline" : "accent@50"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "and"
+      },
+      {
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+          "attachment",
+          "math"
+        ],
+        "t" : "￼"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "coexist in one paragraph."
+      }
+    ]
+  },
   "12-torture.md" : {
     "runs" : [
       {
