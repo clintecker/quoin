@@ -48,6 +48,34 @@ public enum SuggestionResolver {
         return SourceEdit(range: range, replacement: replacement)
     }
 
+    /// THE resolution edit: mark replacement AND the endmatter resolution
+    /// record as ONE atomic splice (mark start → endmatter end, unchanged
+    /// middle carried verbatim), so a single ⌘Z restores both. The two-edit
+    /// version left a chimera after one undo: the mark back in the text
+    /// with metadata still saying resolved — cards visible but actionless,
+    /// counts wrong (live screenshot, 2026-07-14). Falls back to the
+    /// mark-only edit when the mark has no {#id} or no endmatter entry.
+    public static func combinedResolutionEdit(
+        resolving markRange: ByteRange, in source: String, action: Action
+    ) -> SourceEdit? {
+        guard let markEdit = edit(resolving: markRange, in: source, action: action) else { return nil }
+        guard let id = markID(at: markRange, in: source),
+              let summary = resolutionSummary(at: markRange, in: source, action: action),
+              let recordEdit = ReviewEndmatter.resolutionRecordEdit(
+                  resolving: id, summary: summary, in: source),
+              recordEdit.range.offset >= markRange.offset + markRange.length
+        else { return markEdit }
+
+        let bytes = Array(source.utf8)
+        let middle = String(decoding: bytes[
+            (markRange.offset + markRange.length)..<recordEdit.range.offset], as: UTF8.self)
+        return SourceEdit(
+            range: ByteRange(
+                offset: markRange.offset,
+                length: (recordEdit.range.offset + recordEdit.range.length) - markRange.offset),
+            replacement: markEdit.replacement + middle + recordEdit.replacement)
+    }
+
     /// The human-readable record a resolution writes into the endmatter
     /// (`resolved:`): what happened, to what text.
     public static func resolutionSummary(
@@ -185,7 +213,12 @@ extension SuggestionResolver {
 
         for mark in all {
             let meta = entry(mark.id)
-            let resolved = meta?.status == "resolved"
+            // MARK WINS: a live mark is actionable no matter what stale
+            // metadata says (an undo or a hand edit can restore a mark
+            // whose record still reads resolved — the mark's presence is
+            // truth; its record is excluded from history until it resolves
+            // again, see ReviewEndmatter.resolvedRecords).
+            let resolved = false
             switch mark.kind {
             case .highlight(let children):
                 // Hold; a directly-following comment claims it as anchor.

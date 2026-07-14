@@ -530,23 +530,14 @@ final class ReaderModel {
     }
 
     func resolveSuggestion(markRange: ByteRange, action: SuggestionResolver.Action) {
-        guard let edit = SuggestionResolver.edit(
+        // ONE atomic edit: mark replacement + the endmatter resolution
+        // record (RDFM-native history) in a single splice — a single ⌘Z
+        // restores both together (the two-edit version left a mark-back/
+        // record-stale chimera after one undo; live screenshot 2026-07-14).
+        guard let edit = SuggestionResolver.combinedResolutionEdit(
             resolving: markRange, in: document.source, action: action) else {
             reportFailure("That suggestion changed since it was rendered — try again.")
             return
-        }
-        // Resolution is RECORDED, not erased (user redline: "acted-on
-        // things just disappear"): the endmatter entry keeps author/time and
-        // gains status: resolved + a summary — RDFM-native history the
-        // review panel's Resolved section reads back. Applied FIRST (higher
-        // offsets, so the mark edit is unaffected); two pipeline edits = two
-        // undo steps. A mark with no {#id} resolves unrecorded.
-        if let id = SuggestionResolver.markID(at: markRange, in: document.source),
-           let summary = SuggestionResolver.resolutionSummary(
-               at: markRange, in: document.source, action: action),
-           let record = ReviewEndmatter.resolutionRecordEdit(
-               resolving: id, summary: summary, in: document.source) {
-            applyAbsolute(record, caretUTF8: nil)
         }
         applyAbsolute(edit, caretUTF8: markRange.offset)
     }

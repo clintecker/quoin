@@ -224,12 +224,14 @@ extension SuggestionResolutionTests {
         // Other entries keep their original lines byte-exactly.
         XCTAssertTrue(after.contains("c1: { by: user, at: \"2026-04-28T12:00:00Z\" }"))
         XCTAssertTrue(after.contains("body: \"A reply.\""))
-        // And it reads back as history.
-        let records = ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after))
-        XCTAssertEqual(records.count, 1)
-        XCTAssertEqual(records[0].id, "s1")
-        XCTAssertEqual(records[0].summary, "accepted · alpha")
-        XCTAssertEqual(records[0].by, "AI")
+        // The entry reads back with the record fields. (It does NOT show
+        // as history yet — the mark is still live in this test, and the
+        // mark wins; combinedResolutionEdit's test covers the full flow.)
+        let metadata = try XCTUnwrap(MarkdownConverter.parse(after).reviewMetadata)
+        XCTAssertEqual(metadata.suggestions["s1"]?.status, "resolved")
+        XCTAssertEqual(metadata.suggestions["s1"]?.resolved, "accepted · alpha")
+        XCTAssertEqual(metadata.suggestions["s1"]?.by, "AI")
+        XCTAssertTrue(ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after)).isEmpty)
     }
 
     func testEndmatterSurvivesResolvingTheLastReferencedMark() throws {
@@ -292,5 +294,60 @@ extension SuggestionResolutionTests {
             at: marks[0].range, in: source, action: .reject), "rejected · kept old over new")
         XCTAssertEqual(SuggestionResolver.resolutionSummary(
             at: marks[1].range, in: source, action: .accept), "dismissed · note")
+    }
+}
+
+// MARK: - Atomic resolution (the one-undo chimera, live screenshot 2026-07-14)
+
+extension SuggestionResolutionTests {
+
+    func testCombinedResolutionIsOneEditAndOneUndoRestoresEverything() throws {
+        let source = maintained
+        let document = MarkdownConverter.parse(source)
+        let mark = SuggestionResolver.marks(in: document).first {
+            if case .insertion = $0.kind { return true }
+            return false
+        }!
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+
+        // Applying the ONE edit does both things…
+        let after = applying(edit, to: source)
+        XCTAssertFalse(after.contains("{++alpha++}"), "mark resolved")
+        XCTAssertTrue(after.contains("alpha"), "accepted text stays")
+        XCTAssertTrue(after.contains("status: resolved"), "…and the record landed")
+        XCTAssertEqual(ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after)).count, 1)
+
+        // …and the inverse single splice restores the original byte-exactly
+        // (what the session's undo stack stores).
+        let bytes = Array(source.utf8)
+        let original = String(decoding: bytes[
+            edit.range.offset..<(edit.range.offset + edit.range.length)], as: UTF8.self)
+        let inverse = SourceEdit(
+            range: ByteRange(offset: edit.range.offset, length: edit.replacement.utf8.count),
+            replacement: original)
+        XCTAssertEqual(applying(inverse, to: after), source, "one ⌘Z = full restore")
+    }
+
+    func testMarkWinsOverStaleResolvedMetadata() throws {
+        // The chimera state (mark present + record says resolved): the mark
+        // must stay actionable and its record must NOT show as history.
+        let chimera = """
+        Body {++alpha++}{#s1} here.
+
+        ---
+        suggestions:
+          s1:
+            by: AI
+            status: resolved
+            resolved: "accepted · alpha"
+
+        """
+        let document = MarkdownConverter.parse(chimera)
+        let items = SuggestionResolver.reviewItems(in: document)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertFalse(items[0].isResolved, "live mark is actionable — mark wins")
+        XCTAssertTrue(ReviewEndmatter.resolvedRecords(in: document).isEmpty,
+                      "a record whose mark still lives isn't history yet")
     }
 }

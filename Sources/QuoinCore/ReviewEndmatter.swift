@@ -292,12 +292,16 @@ public struct ResolvedRecord: Hashable, Sendable {
 
 extension ReviewEndmatter {
 
-    /// Every resolved entry in the document's metadata, newest last.
+    /// Every resolved entry in the document's metadata, newest last. A
+    /// record whose mark is STILL IN THE BODY isn't history yet (an undo
+    /// restored the mark; the mark wins) — it's excluded until the mark
+    /// resolves again.
     public static func resolvedRecords(in document: QuoinDocument) -> [ResolvedRecord] {
         guard let metadata = document.reviewMetadata else { return [] }
+        let liveIDs = Set(SuggestionResolver.marks(in: document).compactMap(\.id))
         let all = metadata.comments.merging(metadata.suggestions) { a, _ in a }
         return all
-            .filter { $0.value.status == "resolved" }
+            .filter { $0.value.status == "resolved" && !liveIDs.contains($0.key) }
             .map { ResolvedRecord(
                 id: $0.key, by: $0.value.by, at: $0.value.at,
                 summary: $0.value.resolved ?? "resolved") }
