@@ -123,7 +123,13 @@ public enum MarkdownConverter {
         edit: SourceEdit,
         newSource: String
     ) -> QuoinDocument? {
-        guard previous.footnotes.isEmpty,
+        // suggestionCount counts every live critic mark: marks carry
+        // ABSOLUTE byte ranges inside their inlines, which block-range
+        // shifting can't reach — a fast-path edit before a mark left its
+        // stored range (and content hash) stale, so panel actions hit the
+        // drift refusal. Any live mark → full parse re-anchors them all.
+        guard previous.stats.suggestionCount == 0,
+              previous.footnotes.isEmpty,
               let blockIndex = previous.blocks.firstIndex(where: {
                   $0.range.offset <= edit.range.offset && edit.range.upperBound <= $0.range.upperBound
               })
@@ -217,7 +223,11 @@ public enum MarkdownConverter {
             blocks: blocks,
             outline: shiftedOutline,
             stats: stats,
-            sourceHash: SHA256Hex.hash(of: newSource)
+            sourceHash: SHA256Hex.hash(of: newSource),
+            // The edit is strictly inside a fenced body — endmatter is
+            // untouched, so its parsed metadata carries over verbatim
+            // (dropping it made review history vanish per keystroke).
+            reviewMetadata: previous.reviewMetadata
         )
     }
 
@@ -238,7 +248,8 @@ public enum MarkdownConverter {
         edit: SourceEdit,
         newSource: String
     ) -> QuoinDocument? {
-        guard !edit.replacement.contains("\n"),
+        guard previous.stats.suggestionCount == 0, // same staleness rule as the fenced path
+              !edit.replacement.contains("\n"),
               previous.footnotes.isEmpty,
               let blockIndex = previous.blocks.firstIndex(where: {
                   $0.range.offset <= edit.range.offset && edit.range.upperBound <= $0.range.upperBound
@@ -324,7 +335,10 @@ public enum MarkdownConverter {
             blocks: blocks,
             outline: shiftedOutline,
             stats: stats,
-            sourceHash: SHA256Hex.hash(of: newSource)
+            sourceHash: SHA256Hex.hash(of: newSource),
+            // Same carry-over as the fenced path: the edited block is a
+            // plain paragraph, never the endmatter.
+            reviewMetadata: previous.reviewMetadata
         )
     }
 

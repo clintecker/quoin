@@ -229,6 +229,60 @@ final class MarkdownConverterTests: XCTestCase {
         XCTAssertEqual(document.footnotes, full.footnotes, file: file, line: line)
         XCTAssertEqual(document.stats, full.stats, file: file, line: line)
         XCTAssertEqual(document.sourceHash, full.sourceHash, file: file, line: line)
+        XCTAssertEqual(document.reviewMetadata, full.reviewMetadata, file: file, line: line)
+    }
+
+    func testLiveMarksForceTheFullParse() throws {
+        // Marks carry ABSOLUTE byte ranges inside their inlines; the fast
+        // path's block-range shifting can't reach them, so an edit before a
+        // mark left its stored range (and content hash) stale — panel
+        // actions then hit the drift refusal and silently no-op'd. Any live
+        // mark must take the full parse (found by scratch probe I).
+        let source = """
+        Plain lead here.
+
+        Body {++x++}{#s1} here.
+
+        ---
+        suggestions:
+          s1: { by: AI, at: "2026-01-01T00:00:00Z" }
+
+        """
+        let previous = MarkdownConverter.parse(source)
+        XCTAssertNotNil(previous.reviewMetadata)
+        let edit = SourceEdit(range: ByteRange(offset: 3, length: 0), replacement: "q")
+
+        let incremental = try MarkdownConverter.parseAfterEdit(previous: previous, edit: edit)
+        XCTAssertEqual(incremental.strategy, .full)
+        assertEquivalentToFullParse(incremental.document)
+    }
+
+    func testFastPathCarriesReviewMetadataWhenOnlyHistoryRemains() throws {
+        // Endmatter with resolved records but no live marks: the fast path
+        // fires (nothing to re-anchor) and must carry reviewMetadata — it
+        // once rebuilt the document without it, so one keystroke made the
+        // Review panel's history vanish.
+        let source = """
+        Plain lead here.
+
+        Body all done here.
+
+        ---
+        suggestions:
+          s1:
+            by: AI
+            status: resolved
+            resolved: "accepted · x"
+
+        """
+        let previous = MarkdownConverter.parse(source)
+        XCTAssertNotNil(previous.reviewMetadata)
+        XCTAssertEqual(previous.stats.suggestionCount, 0)
+        let edit = SourceEdit(range: ByteRange(offset: 3, length: 0), replacement: "q")
+
+        let incremental = try MarkdownConverter.parseAfterEdit(previous: previous, edit: edit)
+        XCTAssertEqual(incremental.strategy, .plainParagraphFastPath)
+        assertEquivalentToFullParse(incremental.document)
     }
 
     // MARK: - Stats
