@@ -9,11 +9,67 @@ import QuoinCore
 /// the text. The renderer tags block ranges with `QuoinAttribute
 /// .blockDecoration`; geometry comes from the laid-out fragment frames, so
 /// the shapes track reflow exactly.
+/// The open block's mode chrome — border, ✓ done chip, and label — derived
+/// ONCE from the measured box, so they can never disagree (editor-modes
+/// plan, Phase 2.2). Consumers (the draw pass, chip hit-testing, the
+/// tooltip rect, the preview panel anchor, the accessibility element) all
+/// read this one value.
+struct EditingChrome: Equatable {
+    /// The stroked accent frame (the measured union expanded 4pt).
+    let borderRect: CGRect
+    /// The ✓ done capsule at the frame's top-right.
+    let chipRect: CGRect
+    let accent: NSColor
+
+    static let chipLabelText = "✓ done"
+    static func chipLabel(accent: NSColor) -> NSAttributedString {
+        NSAttributedString(string: chipLabelText, attributes: [
+            .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
+            .foregroundColor: accent,
+        ])
+    }
+
+    init(box: CGRect, accent: NSColor) {
+        let rect = box.insetBy(dx: -4, dy: -4)
+        borderRect = rect
+        let size = Self.chipLabel(accent: accent).size()
+        chipRect = CGRect(
+            x: rect.maxX - size.width - 6 - 10,
+            y: rect.minY + 5,
+            width: size.width + 12,
+            height: size.height + 4
+        )
+        self.accent = accent
+    }
+}
+
 final class QuoinTextView: NSTextView {
 
     /// Internal for tests (the incremental-maintenance equivalence check).
     var decorationRuns: [(range: NSRange, decoration: BlockDecoration)] = []
     private var runsAreStale = true
+
+    /// One decoration run with its geometry, measured in the single
+    /// per-draw measure pass (editor-modes plan, Phase 2.1): every
+    /// consumer draws/derives from this snapshot instead of re-querying
+    /// fragment frames itself. Viewport-scoped by construction — only
+    /// visible(±slack) runs are measured, preserving TextKit 2's laziness.
+    struct MeasuredRun {
+        let range: NSRange
+        let decoration: BlockDecoration
+        /// Union of fragment frames (view coords), width-adjusted for
+        /// full-width chrome.
+        let box: CGRect
+        /// Per-fragment frames (view coords) — table rules draw per line.
+        let frames: [CGRect]
+        /// Widest laid-out line, for chip-width fitting.
+        let textWidth: CGFloat
+    }
+    /// The most recent measure pass's output. Internal for tests.
+    private(set) var measuredRuns: [MeasuredRun] = []
+    /// The open block's chrome, derived from the measured editingFrame run;
+    /// nil when no block is open. Internal for tests.
+    private(set) var editingChrome: EditingChrome?
 
     /// Set by the coordinator: a double-click landed on the character at
     /// this index. Returns true when it consumed the gesture (an embed flip)
@@ -321,17 +377,43 @@ final class QuoinTextView: NSTextView {
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        refreshRunsIfNeeded()
-        // No open block → no ✓ done target, no preview panel. Cleared from
-        // the RUN list, not the dirty rect: a partial redraw that misses
-        // the chip must not disable a chip that is still on screen.
-        if !decorationRuns.contains(where: {
-            if case .editingFrame = $0.decoration.kind { return true }
-            return false
-        }) {
-            doneChipRect = nil
-            reportEditingFrameGeometry(nil)
+        measureVisibleRuns()
+        for run in measuredRuns {
+            guard run.box.insetBy(dx: -8, dy: -8).intersects(rect) else { continue }
+            draw(run)
         }
+    }
+
+    /// The chip must sit ON TOP of the glyphs: it lived in drawBackground
+    /// once, where a long unwrapped code line reaching the frame's top-right
+    /// painted straight over it (editor-modes review, Seam 5). The border
+    /// stays behind the text (background); only the chip rides above.
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let chrome = editingChrome,
+              chrome.chipRect.insetBy(dx: -8, dy: -8).intersects(dirtyRect),
+              let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+        // ✓ done wears the same chip shape as its siblings (‹/› edit,
+        // ⧉ copy): capsule fill, radius 6, 2×6 padding.
+        context.addPath(CGPath(
+            roundedRect: chrome.chipRect, cornerWidth: 6, cornerHeight: 6, transform: nil))
+        context.setFillColor(chrome.accent.withAlphaComponent(0.12).cgColor)
+        context.fillPath()
+        EditingChrome.chipLabel(accent: chrome.accent)
+            .draw(at: CGPoint(x: chrome.chipRect.minX + 6, y: chrome.chipRect.minY + 2))
+    }
+
+    /// The measure pass (editor-modes plan, Phase 2.1): ONE geometry query
+    /// per draw produces the snapshot every consumer reads — the draw pass,
+    /// the chip's hit-test/tooltip, the preview panel anchor, and the
+    /// accessibility element. Nothing else touches fragment frames for
+    /// block chrome. Internal for tests (DecorationGeometryTests).
+    func measureVisibleRuns() {
+        refreshRunsIfNeeded()
+        measuredRuns.removeAll(keepingCapacity: true)
+        defer { deriveEditingChrome() }
         guard !decorationRuns.isEmpty,
               let layoutManager = textLayoutManager,
               let contentManager = layoutManager.textContentManager
@@ -396,21 +478,54 @@ final class QuoinTextView: NSTextView {
                 }
             }
 
-            let box = union.offsetBy(dx: origin.x, dy: origin.y)
-            guard box.insetBy(dx: -8, dy: -8).intersects(rect) else { continue }
-            draw(
-                run.decoration,
-                box: box,
+            measuredRuns.append(MeasuredRun(
+                range: run.range,
+                decoration: run.decoration,
+                box: union.offsetBy(dx: origin.x, dy: origin.y),
                 frames: frames.map { $0.offsetBy(dx: origin.x, dy: origin.y) },
                 textWidth: textWidth
-            )
+            ))
         }
     }
 
-    private func draw(_ decoration: BlockDecoration, box: CGRect, frames: [CGRect], textWidth: CGFloat) {
+    /// Chrome derivation from the snapshot — border, chip, tooltip, panel
+    /// anchor all from one box. Cleared from the RUN list, not the dirty
+    /// rect: a partial redraw that misses the chip must not disable a chip
+    /// that is still on screen.
+    private func deriveEditingChrome() {
+        let frameRun = measuredRuns.first {
+            if case .editingFrame = $0.decoration.kind { return true }
+            return false
+        }
+        // The run LIST (unculled) decides existence; the measured run
+        // (viewport-scoped) decides geometry. An open block scrolled far
+        // off-screen keeps its chrome state but reports no geometry.
+        let openBlockExists = decorationRuns.contains {
+            if case .editingFrame = $0.decoration.kind { return true }
+            return false
+        }
+        guard openBlockExists else {
+            editingChrome = nil
+            doneChipRect = nil
+            reportEditingFrameGeometry(nil)
+            return
+        }
+        guard let frameRun,
+              case .editingFrame(let accent) = frameRun.decoration.kind else { return }
+        let chrome = EditingChrome(box: frameRun.box, accent: accent)
+        editingChrome = chrome
+        doneChipRect = chrome.chipRect
+        reportEditingFrameGeometry(chrome.borderRect)
+    }
+
+    private func draw(_ run: MeasuredRun) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
         defer { context.restoreGState() }
+        let decoration = run.decoration
+        let box = run.box
+        let frames = run.frames
+        let textWidth = run.textWidth
 
         switch decoration.kind {
         case .codeCanvas(let fill):
@@ -465,13 +580,15 @@ final class QuoinTextView: NSTextView {
             context.fillPath()
 
         case .editingFrame(let accent):
-            // The open block's mode chrome: 1.5pt frame with the drawn
-            // ✓ done chip at its top-right (mode indicators are never
-            // hover-gated). Drawn ink only — the revealed source under it
-            // stays 1:1 with the file. The stroke turns amber while the
-            // live preview is paused (ambient status at the locus's edge).
+            // The open block's mode chrome: 1.5pt frame, geometry from the
+            // shared EditingChrome (derived in the measure pass — the chip,
+            // tooltip, panel anchor, and AX element read the SAME value).
+            // Drawn ink only — the revealed source under it stays 1:1 with
+            // the file. The stroke turns amber while the live preview is
+            // paused (ambient status at the locus's edge). The ✓ done chip
+            // draws in draw(_:), ABOVE the glyphs (review Seam 5).
             let stroke = editingFrameTintOverride ?? accent
-            let rect = box.insetBy(dx: -4, dy: -4)
+            let rect = EditingChrome(box: box, accent: accent).borderRect
             context.addPath(CGPath(
                 roundedRect: rect.insetBy(dx: 0.75, dy: 0.75),
                 cornerWidth: 8, cornerHeight: 8, transform: nil
@@ -479,26 +596,6 @@ final class QuoinTextView: NSTextView {
             context.setStrokeColor(stroke.withAlphaComponent(0.8).cgColor)
             context.setLineWidth(1.5)
             context.strokePath()
-            // ✓ done wears the same chip shape as its siblings (‹/› edit,
-            // ⧉ copy): capsule fill, radius 6, 2×6 padding.
-            let label = NSAttributedString(string: "✓ done", attributes: [
-                .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
-                .foregroundColor: accent,
-            ])
-            let size = label.size()
-            let chip = CGRect(
-                x: rect.maxX - size.width - 6 - 10,
-                y: rect.minY + 5,
-                width: size.width + 12,
-                height: size.height + 4
-            )
-            context.addPath(CGPath(roundedRect: chip, cornerWidth: 6, cornerHeight: 6, transform: nil))
-            context.setFillColor(accent.withAlphaComponent(0.12).cgColor)
-            context.fillPath()
-            label.draw(at: CGPoint(x: chip.minX + 6, y: chip.minY + 2))
-            doneChipRect = chip
-            // Side-by-side preview panel tracks this frame.
-            reportEditingFrameGeometry(rect)
 
         case .tableRules(let width, let header, let body):
             let lineWidth = min(width + 24, box.width)
@@ -513,5 +610,36 @@ final class QuoinTextView: NSTextView {
         }
     }
 
+    // MARK: - Accessibility (editor-modes plan, Phase 2.3)
+
+    /// The ✓ done chip is drawn ink with private hit-testing — invisible to
+    /// VoiceOver until given a real accessibility element. Rebuilt on each
+    /// query from the current chrome so its frame tracks reflow.
+    override func accessibilityChildren() -> [Any]? {
+        var children = super.accessibilityChildren() ?? []
+        if let chrome = editingChrome, let window {
+            let element = DoneChipAccessibilityElement()
+            element.setAccessibilityRole(.button)
+            element.setAccessibilityLabel("Done editing")
+            element.setAccessibilityHelp("Commits the block and returns it to its rendered form")
+            element.setAccessibilityParent(self)
+            let windowRect = convert(chrome.chipRect, to: nil)
+            element.setAccessibilityFrame(window.convertToScreen(windowRect))
+            element.onPress = { [weak self] in self?.onDoneChipClick?() }
+            children.append(element)
+        }
+        return children
+    }
+
+}
+
+/// AX proxy for the drawn ✓ done chip: pressable by VoiceOver, routed to
+/// the same close path as a physical click.
+private final class DoneChipAccessibilityElement: NSAccessibilityElement {
+    var onPress: (() -> Void)?
+    override func accessibilityPerformPress() -> Bool {
+        onPress?()
+        return true
+    }
 }
 #endif

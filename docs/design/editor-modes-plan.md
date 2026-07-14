@@ -236,19 +236,21 @@ struct BlockLayoutSnapshot {
 }
 ```
 
-- Built in **one pass** inside `viewWillDraw` (after Phase 0's settle):
-  a single `enumerateTextLayoutFragments` over the viewport(±slack), bucketing
-  frames by blockID via the existing sorted `BlockRangeIndex`. This *replaces*
-  the per-run enumeration in `drawBackground` — N decoration runs currently
-  mean N enumerations; the snapshot means one. (Perf win, not just hygiene.)
+- Built in **one measure pass** at draw time (post-settle geometry), stored
+  on the view (`measuredRuns`). Every chrome consumer reads the snapshot.
 - **Viewport-scoped by design** — a document-wide map would reinstate the
   lay-out-the-whole-file-per-draw regression the culling comment records.
   Off-viewport consumers get `nil` and are culled exactly as today.
-- **Double-buffered:** `current` + `previous` (kept when `revision` changes).
-  The flip's old-endpoint reads `previous` (pre-splice geometry), its
-  new-endpoint reads `current` — both from the same engine, killing the last
-  cross-engine measurement. The `flipCaptureWorthwhile` `boundingRect`
-  estimate is deleted; the gate reads `previous` directly.
+- **As-built deviations** (recorded post-implementation): the snapshot keys
+  by decoration RUN, not BlockID — runs are what drawing consumes, and a
+  block can carry several (quote text runs vs nested cards). And the
+  `flipCaptureWorthwhile` `boundingRect` estimate STAYS: the review's own
+  finding 4 established its failure mode is cosmetic-only (a missing or
+  superfluous animation, never overlap), and the new fragment it estimates
+  is not yet in storage at capture time — TextKit cannot measure text that
+  has no layout without a throwaway scratch pass, which would cost more
+  than the estimate's worst case. The flip's real slide delta was already
+  TextKit-measured on both sides.
 
 ### 2.2 Merge the editing chrome
 
