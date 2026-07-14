@@ -374,6 +374,22 @@ activation flips, undo), apply edits through the **patch path** and through a
 **byte- and attribute-identical**. This single property subsumes T1/T2/T6:
 any separator, offset, or base-length disagreement fails it. Add to CI.
 
+### Phase 3 as built (recorded post-implementation)
+
+3.1/3.3/3.4/3.5 landed as specified. 3.2 landed as **relocation + shared
+derivations rather than a literal single-entry merge**: the per-keystroke
+patch construction moved into the package
+(`AttributedRenderer.activeBlockEditUpdate`, beside `activationFlipUpdate`),
+so both patch producers live next to the render loop, share the ONE
+separator policy, styler config, and preview retention, and are
+headlessly provable. 3.6's corpus (39 flip + 30 keystroke equivalences
+across all renderer fixtures, attachments compared by presence, held
+preview threaded identically on both sides) then enforces the plan's real
+goal — the paths CANNOT drift — as a permanent CI property rather than by
+code unification. Collapsing the remaining three call sites into a single
+`project()` entry is now an optional refactor with no correctness stake;
+do it if/when the suggestions input mode (S3) wants one seam to hook.
+
 **Exit criteria:** one projector + one styler pass (grep: no
 `MarkdownSourceStyler(` outside the projector); patches-only hot path
 (perf budgets in `PerformanceTests` unchanged or better); equivalence

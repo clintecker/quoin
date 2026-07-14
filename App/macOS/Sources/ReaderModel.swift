@@ -3,14 +3,6 @@ import SwiftUI
 import QuoinCore
 import QuoinRender
 
-private struct ActiveBlockRenderPatch {
-    let storagePatch: RenderStoragePatch
-    let blockRanges: [BlockID: NSRange]
-    let activeEditableRange: NSRange
-    let activeSourceText: String
-    let oldActiveBlockID: BlockID
-}
-
 /// Owns the `DocumentSession` for one window and republishes its snapshots
 /// as rendered output for SwiftUI — including the editor's syntax-reveal
 /// state (active block + caret), which lives here because it must survive
@@ -268,7 +260,7 @@ final class ReaderModel {
         }
     }
 
-    private func rerender(spliceHint: RenderSpliceHint? = nil, activeBlockPatch: ActiveBlockRenderPatch? = nil) {
+    private func rerender(spliceHint: RenderSpliceHint? = nil, activeBlockPatch: AttributedRenderer.ActiveBlockEditUpdate? = nil) {
         QuoinPerformanceTrace.measure(
             "model.rerender",
             metadata: "bytes=\(document.source.utf8.count) blocks=\(document.blocks.count) active=\(activeBlockID != nil) patched=\(activeBlockPatch != nil)"
@@ -718,129 +710,27 @@ final class ReaderModel {
         rerender(spliceHint: spliceHint, activeBlockPatch: activeBlockPatch)
     }
 
+    /// Thin wrapper: the per-keystroke patch construction lives in the
+    /// renderer (editor-modes plan 3.2 — package-testable, proven by the
+    /// equivalence corpus); the model contributes only its editing state
+    /// and the splice-hint gate.
     private func makeActiveBlockRenderPatch(
         oldDocument: QuoinDocument,
         oldRendered: RenderedDocument,
         oldActiveBlockID: BlockID?,
         newDocument: QuoinDocument,
         requiresSimpleEditHint: Bool
-    ) -> ActiveBlockRenderPatch? {
-        guard requiresSimpleEditHint,
-              oldDocument.footnotes.isEmpty,
-              newDocument.footnotes.isEmpty,
-              oldDocument.blocks.count == newDocument.blocks.count,
-              let oldActiveBlockID,
-              let activeBlockID,
-              let caretInActiveBlock,
-              let oldIndex = oldDocument.blocks.firstIndex(where: { $0.id == oldActiveBlockID }),
-              let newIndex = newDocument.blocks.firstIndex(where: { $0.id == activeBlockID }),
-              oldIndex == newIndex,
-              let oldEditableRange = oldRendered.activeEditableRange,
-              let oldBlockRange = oldRendered.blockRanges[oldActiveBlockID],
-              let newSlice = newDocument.source.substring(in: newDocument.blocks[newIndex].range),
-              isActiveBlockPatchable(oldDocument.blocks[oldIndex].kind),
-              isActiveBlockPatchable(newDocument.blocks[newIndex].kind),
-              // This patch replaces the fragment WITHOUT its separator, so
-              // it is valid only when the separator the render loop WOULD
-              // emit is identical before and after the edit — characters
-              // AND styling (a revealed slice's trailing newline flips the
-              // clamp; a kind change flips the width). One derivation, one
-              // comparison: the SeparatorPolicy output itself (editor-modes
-              // plan 3.1; subsumes the old character-signature and the 0.3
-              // clamp guard). Any difference falls back to the full render.
-              separatorUnchangedAcrossEdit(
-                  oldDocument: oldDocument, oldIndex: oldIndex, newDocument: newDocument,
-                  newIndex: newIndex, newSlice: newSlice)
-        else { return nil }
-
-        var ranges: [BlockID: NSRange] = [:]
-        let revealed = QuoinPerformanceTrace.measure(
-            "render.activeBlockPatch.fragment",
-            metadata: "block_utf8=\(newDocument.blocks[newIndex].range.length)"
-        ) {
-            renderer.renderEditableSourceFragment(
-                newSlice, caretOffset: caretInActiveBlock,
-                block: newDocument.blocks[newIndex], document: newDocument,
-                heldPreview: &heldPreview)
-        }
-        // The patch replaces the whole OLD fragment (block range minus its
-        // trailing separator). The fragment IS the editable source (see
-        // RevealedFragment's location-0 invariant); the mermaid/math live
-        // preview lives in the SIDE PANEL, refreshed through heldPreview
-        // above, not in the text flow.
-        let separatorLength = oldIndex < oldDocument.blocks.count - 1
-            ? renderer.separatorLength(
-                after: oldDocument.blocks[oldIndex].kind,
-                before: oldDocument.blocks[oldIndex + 1].kind)
-            : 0
-        let oldFragmentLength = oldBlockRange.length - separatorLength
-        guard oldFragmentLength >= 0 else { return nil }
-        let oldFragmentRange = NSRange(location: oldBlockRange.location, length: oldFragmentLength)
-        let replacement = revealed.attributed
-        let delta = replacement.length - oldFragmentLength
-
-        for index in newDocument.blocks.indices {
-            let newBlock = newDocument.blocks[index]
-            let oldBlock = oldDocument.blocks[index]
-            if index == newIndex {
-                ranges[newBlock.id] = NSRange(
-                    location: oldBlockRange.location,
-                    length: oldBlockRange.length + delta
-                )
-            } else {
-                guard oldBlock.id == newBlock.id,
-                      let oldRange = oldRendered.blockRanges[oldBlock.id]
-                else { return nil }
-                let shift = index > newIndex ? delta : 0
-                ranges[newBlock.id] = NSRange(
-                    location: oldRange.location + shift,
-                    length: oldRange.length
-                )
-            }
-        }
-
-        return ActiveBlockRenderPatch(
-            storagePatch: RenderStoragePatch(oldRange: oldFragmentRange, replacement: replacement),
-            blockRanges: ranges,
-            // editableRange.location is 0 by invariant (RevealedFragment).
-            activeEditableRange: NSRange(
-                location: oldBlockRange.location,
-                length: revealed.editableRange.length),
-            activeSourceText: newSlice,
-            oldActiveBlockID: oldActiveBlockID
+    ) -> AttributedRenderer.ActiveBlockEditUpdate? {
+        guard requiresSimpleEditHint else { return nil }
+        return renderer.activeBlockEditUpdate(
+            oldDocument: oldDocument,
+            oldRendered: oldRendered,
+            oldActiveBlockID: oldActiveBlockID,
+            newDocument: newDocument,
+            newActiveBlockID: activeBlockID,
+            caret: caretInActiveBlock,
+            heldPreview: &heldPreview
         )
-    }
-
-    private func isActiveBlockPatchable(_ kind: BlockKind) -> Bool {
-        switch kind {
-        case .tableOfContents, .list, .blockQuote, .callout:
-            return false
-        default:
-            return true
-        }
-    }
-
-    /// True when the render loop would emit an IDENTICAL separator (bytes
-    /// and styling) after the active block before and after this edit —
-    /// the per-keystroke patch's validity condition, asked of the single
-    /// SeparatorPolicy derivation rather than re-derived here.
-    private func separatorUnchangedAcrossEdit(
-        oldDocument: QuoinDocument, oldIndex: Int,
-        newDocument: QuoinDocument, newIndex: Int, newSlice: String
-    ) -> Bool {
-        let oldIsLast = oldIndex == oldDocument.blocks.count - 1
-        let newIsLast = newIndex == newDocument.blocks.count - 1
-        if oldIsLast || newIsLast { return oldIsLast && newIsLast }
-        let oldSlice = oldDocument.source.substring(in: oldDocument.blocks[oldIndex].range) ?? ""
-        let oldSeparator = renderer.separator(
-            after: oldDocument.blocks[oldIndex].kind,
-            before: oldDocument.blocks[oldIndex + 1].kind,
-            revealedSlice: oldSlice)
-        let newSeparator = renderer.separator(
-            after: newDocument.blocks[newIndex].kind,
-            before: newDocument.blocks[newIndex + 1].kind,
-            revealedSlice: newSlice)
-        return oldSeparator.isEqual(to: newSeparator)
     }
 
     // MARK: - Image drop

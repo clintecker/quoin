@@ -417,6 +417,149 @@ public struct AttributedRenderer {
         return blockSeparator(after: kind, before: nextKind)
     }
 
+    /// Everything a host needs to apply a bounded ACTIVE-BLOCK edit (a
+    /// keystroke in the revealed source) as one storage patch instead of a
+    /// full re-render. Moved here from the app model (editor-modes plan,
+    /// 3.2) so the equivalence corpus can prove the patch path against the
+    /// full render headlessly.
+    public struct ActiveBlockEditUpdate {
+        public let storagePatch: RenderStoragePatch
+        public let blockRanges: [BlockID: NSRange]
+        public let activeEditableRange: NSRange
+        public let activeSourceText: String
+        /// The pre-edit active id (content-hashed ids change with content);
+        /// the host evicts both ids from its fragment cache.
+        public let oldActiveBlockID: BlockID
+    }
+
+    /// The per-keystroke fast path: re-renders JUST the active fragment and
+    /// shifts every block range by the one delta. Returns nil whenever any
+    /// validity condition fails — the caller falls back to the full render,
+    /// which is always correct.
+    public func activeBlockEditUpdate(
+        oldDocument: QuoinDocument,
+        oldRendered: RenderedDocument,
+        oldActiveBlockID: BlockID?,
+        newDocument: QuoinDocument,
+        newActiveBlockID: BlockID?,
+        caret: Int?,
+        heldPreview: inout HeldPreview?
+    ) -> ActiveBlockEditUpdate? {
+        guard oldDocument.footnotes.isEmpty,
+              newDocument.footnotes.isEmpty,
+              oldDocument.blocks.count == newDocument.blocks.count,
+              let oldActiveBlockID,
+              let newActiveBlockID,
+              let caret,
+              let oldIndex = oldDocument.blocks.firstIndex(where: { $0.id == oldActiveBlockID }),
+              let newIndex = newDocument.blocks.firstIndex(where: { $0.id == newActiveBlockID }),
+              oldIndex == newIndex,
+              oldRendered.activeEditableRange != nil,
+              let oldBlockRange = oldRendered.blockRanges[oldActiveBlockID],
+              let newSlice = newDocument.source.substring(in: newDocument.blocks[newIndex].range),
+              isActiveBlockPatchable(oldDocument.blocks[oldIndex].kind),
+              isActiveBlockPatchable(newDocument.blocks[newIndex].kind),
+              // This patch replaces the fragment WITHOUT its separator, so
+              // it is valid only when the separator the render loop WOULD
+              // emit is identical before and after the edit — characters
+              // AND styling. One derivation, one comparison: the
+              // SeparatorPolicy output itself (plan 3.1). Any difference
+              // falls back to the full render.
+              separatorUnchangedAcrossEdit(
+                  oldDocument: oldDocument, oldIndex: oldIndex,
+                  newDocument: newDocument, newIndex: newIndex, newSlice: newSlice)
+        else { return nil }
+
+        let revealed = QuoinPerformanceTrace.measure(
+            "render.activeBlockPatch.fragment",
+            metadata: "block_utf8=\(newDocument.blocks[newIndex].range.length)"
+        ) {
+            renderEditableSourceFragment(
+                newSlice, caretOffset: caret,
+                block: newDocument.blocks[newIndex], document: newDocument,
+                heldPreview: &heldPreview)
+        }
+        // The patch replaces the whole OLD fragment (block range minus its
+        // trailing separator). The fragment IS the editable source (see
+        // RevealedFragment's location-0 invariant); the mermaid/math live
+        // preview lives in the SIDE PANEL, refreshed through heldPreview
+        // above, not in the text flow.
+        let sepLength = oldIndex < oldDocument.blocks.count - 1
+            ? separatorLength(
+                after: oldDocument.blocks[oldIndex].kind,
+                before: oldDocument.blocks[oldIndex + 1].kind)
+            : 0
+        let oldFragmentLength = oldBlockRange.length - sepLength
+        guard oldFragmentLength >= 0 else { return nil }
+        let oldFragmentRange = NSRange(location: oldBlockRange.location, length: oldFragmentLength)
+        let replacement = revealed.attributed
+        let delta = replacement.length - oldFragmentLength
+
+        var ranges: [BlockID: NSRange] = [:]
+        for index in newDocument.blocks.indices {
+            let newBlock = newDocument.blocks[index]
+            let oldBlock = oldDocument.blocks[index]
+            if index == newIndex {
+                ranges[newBlock.id] = NSRange(
+                    location: oldBlockRange.location,
+                    length: oldBlockRange.length + delta
+                )
+            } else {
+                guard oldBlock.id == newBlock.id,
+                      let oldRange = oldRendered.blockRanges[oldBlock.id]
+                else { return nil }
+                let shift = index > newIndex ? delta : 0
+                ranges[newBlock.id] = NSRange(
+                    location: oldRange.location + shift,
+                    length: oldRange.length
+                )
+            }
+        }
+
+        return ActiveBlockEditUpdate(
+            storagePatch: RenderStoragePatch(oldRange: oldFragmentRange, replacement: replacement),
+            blockRanges: ranges,
+            // editableRange.location is 0 by invariant (RevealedFragment).
+            activeEditableRange: NSRange(
+                location: oldBlockRange.location,
+                length: revealed.editableRange.length),
+            activeSourceText: newSlice,
+            oldActiveBlockID: oldActiveBlockID
+        )
+    }
+
+    private func isActiveBlockPatchable(_ kind: BlockKind) -> Bool {
+        switch kind {
+        case .tableOfContents, .list, .blockQuote, .callout:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// True when the render loop would emit an IDENTICAL separator (bytes
+    /// and styling) after the active block before and after this edit —
+    /// the per-keystroke patch's validity condition, asked of the single
+    /// SeparatorPolicy derivation.
+    private func separatorUnchangedAcrossEdit(
+        oldDocument: QuoinDocument, oldIndex: Int,
+        newDocument: QuoinDocument, newIndex: Int, newSlice: String
+    ) -> Bool {
+        let oldIsLast = oldIndex == oldDocument.blocks.count - 1
+        let newIsLast = newIndex == newDocument.blocks.count - 1
+        if oldIsLast || newIsLast { return oldIsLast && newIsLast }
+        let oldSlice = oldDocument.source.substring(in: oldDocument.blocks[oldIndex].range) ?? ""
+        let oldSeparator = separator(
+            after: oldDocument.blocks[oldIndex].kind,
+            before: oldDocument.blocks[oldIndex + 1].kind,
+            revealedSlice: oldSlice)
+        let newSeparator = separator(
+            after: newDocument.blocks[newIndex].kind,
+            before: newDocument.blocks[newIndex + 1].kind,
+            revealedSlice: newSlice)
+        return oldSeparator.isEqual(to: newSeparator)
+    }
+
     /// Everything a host needs to apply an activate/deactivate flip as
     /// bounded storage patches instead of a full re-render.
     public struct ActivationFlipUpdate {
