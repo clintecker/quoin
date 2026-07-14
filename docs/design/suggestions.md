@@ -167,6 +167,65 @@ capsule chips):
 - Deliberately NOT copied from RoughDraft: avatars, the "I'm done" agent
   handoff button (S4 decides the agent story), in-canvas card shadows.
 
+## 3.6 Creating a review without editing the prose (2026-07-14 user ask; S3 concretized)
+
+The reframe that makes this coherent: **a review never changes the prose.**
+CriticMarkup marks WRAP the text they concern — `{--vague--}` still contains
+"vague", byte-exact — and the endmatter is appended after the last byte of
+the body. Creating a review annotates the file; only RESOLVING a suggestion
+changes what the document says. So "review without editing" means: the
+reviewer never types a sigil and the prose survives byte-identical until
+someone clicks Accept. (A sidecar/in-memory review layer is explicitly
+rejected: the file IS the review — portable, agent-readable, git-diffable.
+That's the entire reason RDFM exists.)
+
+Two input tiers, shippable independently:
+
+**S3a — selection gestures (M).** Works in ordinary editing mode; no new
+global state.
+- Select text → context menu / Format menu / keyboard:
+  - **Add Comment…** (⇧⌘M): selection becomes `{==sel==}{>>body<<}{#cN}` —
+    the anchored-comment shape the panel already renders as one card. A
+    small popover at the selection takes the body (Return commits, Esc
+    cancels); empty body cancels. No selection = document-level comment
+    (endmatter-only entry, body: field).
+  - **Suggest Replacement…** (⇧⌘R when a selection exists): popover
+    pre-filled with the selection → `{~~old~>new~~}{#sN}`.
+  - **Suggest Deletion**: `{--sel--}{#sN}`, instant.
+  - **Highlight**: `{==sel==}{#sN}`, instant.
+- Each gesture is ONE atomic SourceEdit (mark splice + appended endmatter
+  entry), exactly the combinedResolutionEdit pattern run in reverse — one
+  undo removes the whole annotation. Entries are written with `by:` and
+  `at:` (this is what forces the deferred required-when-writing work): `at`
+  is resolution time, `by` comes from a new "Review as:" setting defaulting
+  to the macOS account name, with `AI` reserved for agents.
+- Constraints enforced at creation: selection must be intra-block (v1 rule)
+  and must not cross a mark, code span, or math span — the gesture is
+  disabled with a tooltip when it would produce an unparseable nest.
+
+**S3b — Review Mode: typing becomes suggestions (L; the #58 toggle).**
+Google-Docs suggest mode, file-native. A toolbar/status toggle (and menu
+item); while ON, the ordinary edit intents transform at the ReaderModel
+chokepoint (applyEdit(relativeRange:replacement:)):
+- Insertion → `{++text++}{#sN}`; deletion → `{--text--}{#sN}`; replacing a
+  selection → `{~~old~>new~~}{#sN}`.
+- **Coalescing is the hard part** (why S3b is L): consecutive keystrokes
+  must GROW one mark, not mint one per character. Rule: if the caret sits
+  inside or immediately after a mark this session created (tracked by id +
+  revision, not bytes), the edit applies INSIDE the mark body; backspace
+  inside your own fresh insertion shrinks it (never nests a deletion);
+  crossing a mark boundary or moving the caret away seals the mark.
+- Caret math: inserting "x" as `{++x++}{#s7}` must land the caret after
+  "x" INSIDE the body — the reveal system's source coordinates already
+  express this; the transform computes caretDelta into the replacement.
+- Mode must be LOUD: status-bar chip ("Suggesting"), accent-tinted caret
+  or editor border, and the review badge counts up live. Escape hatch:
+  the toggle is per-window, never persisted ON across launch.
+
+Sequencing: S3a first (it exercises the by:/at: writer and the creation
+constraints with zero typing-pipeline risk), then S3b on top — by then
+every splice shape S3b emits is already round-trip-tested.
+
 ## 4. Staged plan
 
 - **S1 — read-only marks (M).** CriticScanner + `Inline.suggestion` +
