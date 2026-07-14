@@ -48,6 +48,32 @@ public enum SuggestionResolver {
         return SourceEdit(range: range, replacement: replacement)
     }
 
+    /// The human-readable record a resolution writes into the endmatter
+    /// (`resolved:`): what happened, to what text.
+    public static func resolutionSummary(
+        at range: ByteRange, in source: String, action: Action
+    ) -> String? {
+        let bytes = Array(source.utf8)
+        guard range.offset >= 0, range.length > 0,
+              range.offset + range.length <= bytes.count else { return nil }
+        let slice = String(decoding: bytes[range.offset..<(range.offset + range.length)], as: UTF8.self)
+        let segments = CriticScanner.scan(slice)
+        guard segments.count == 1, case .mark(let mark) = segments[0] else { return nil }
+        func clip(_ text: String) -> String {
+            text.count <= 60 ? text : String(text.prefix(59)) + "…"
+        }
+        switch (mark.payload, action) {
+        case (.insertion(let body), .accept): return "accepted · \(clip(body))"
+        case (.insertion(let body), .reject): return "rejected · \(clip(body))"
+        case (.deletion(let body), .accept): return "accepted · removed \(clip(body))"
+        case (.deletion(let body), .reject): return "rejected · kept \(clip(body))"
+        case (.substitution(let old, let new), .accept): return "accepted · \(clip(old)) → \(clip(new))"
+        case (.substitution(let old, let new), .reject): return "rejected · kept \(clip(old)) over \(clip(new))"
+        case (.comment(let text), _): return "dismissed · \(clip(text))"
+        case (.highlight(let body), _): return "resolved · \(clip(body))"
+        }
+    }
+
     /// The `{#id}` of the mark at `range`, when the bytes there parse as
     /// exactly one whole mark. Used to maintain the endmatter on resolution.
     public static func markID(at range: ByteRange, in source: String) -> String? {

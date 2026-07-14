@@ -55,10 +55,15 @@ public enum ReviewEndmatter {
         let tail = String(source[delimiterRange.upperBound...])
         guard let metadata = parse(yaml: tail), !metadata.isEmpty else { return nil }
         let body = String(source[..<delimiterRange.lowerBound])
-        // Referenced from the body, or carrying a document-level comment
-        // (an entry with a body and no parent).
+        // Referenced from the body, carrying a document-level comment
+        // (an entry with a body and no parent), or holding RESOLUTION
+        // RECORDS (status: resolved) — Quoin's history extension: once the
+        // last inline {#id} resolves, the records must keep the endmatter
+        // recognized or they'd leak into prose.
         let documentLevel = metadata.comments.values.contains { $0.body != nil && $0.re == nil }
-        guard body.contains("{#") || documentLevel else { return nil }
+        let hasRecords = metadata.comments.values.contains { $0.status == "resolved" }
+            || metadata.suggestions.values.contains { $0.status == "resolved" }
+        guard body.contains("{#") || documentLevel || hasRecords else { return nil }
         let offset = source.utf8.distance(from: source.utf8.startIndex,
                                           to: delimiterRange.lowerBound.samePosition(in: source.utf8)!)
         return Detected(
@@ -265,6 +270,105 @@ extension ReviewEndmatter {
                 keptLines.append(line)
             }
         }
+        var replacement = "\n---\n" + keptLines.joined(separator: "\n")
+        if !replacement.hasSuffix("\n") { replacement += "\n" }
+        return SourceEdit(range: detected.range, replacement: replacement)
+    }
+}
+
+// MARK: - Resolution records (history — suggestions S2, 2026-07-14 ask)
+
+/// A resolved review item, read back from endmatter entries carrying
+/// `status: resolved` — the RDFM-native history: resolutions live in the
+/// file, portable and agent-readable, instead of vanishing.
+public struct ResolvedRecord: Hashable, Sendable {
+    public let id: String
+    public let by: String?
+    public let at: String?
+    /// The `resolved:` summary Quoin writes: "accepted · <text>",
+    /// "rejected · <old> → <new>", "dismissed · <comment>".
+    public let summary: String
+}
+
+extension ReviewEndmatter {
+
+    /// Every resolved entry in the document's metadata, newest last.
+    public static func resolvedRecords(in document: QuoinDocument) -> [ResolvedRecord] {
+        guard let metadata = document.reviewMetadata else { return [] }
+        let all = metadata.comments.merging(metadata.suggestions) { a, _ in a }
+        return all
+            .filter { $0.value.status == "resolved" }
+            .map { ResolvedRecord(
+                id: $0.key, by: $0.value.by, at: $0.value.at,
+                summary: $0.value.resolved ?? "resolved") }
+            .sorted { ($0.at ?? $0.id) < ($1.at ?? $1.id) }
+    }
+
+    /// The endmatter edit that RECORDS a resolution instead of deleting the
+    /// entry (the "things that have been acted on just disappear" redline):
+    /// the entry keeps its author/time and gains `status: resolved` +
+    /// `resolved: <summary>`. Reply threads stay — they're part of the
+    /// record. Other entries keep their lines byte-exactly. Returns nil when
+    /// the id has no entry (an un-referenced mark resolves unrecorded).
+    public static func resolutionRecordEdit(
+        resolving id: String, summary: String, in source: String
+    ) -> SourceEdit? {
+        guard let detected = detect(in: source),
+              detected.metadata.entry(for: id) != nil else { return nil }
+
+        var keptLines: [String] = []
+        var inTargetEntry = false
+        var wroteRecord = false
+        func emitRecord(indentOnly: Bool = false) {
+            guard inTargetEntry, !wroteRecord else { return }
+            keptLines.append("    status: resolved")
+            let escaped = summary
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            keptLines.append("    resolved: \"\(escaped)\"")
+            wroteRecord = true
+            inTargetEntry = false
+        }
+        for rawLine in detected.yaml.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let indent = line.prefix(while: { $0 == " " }).count
+            if indent == 0 {
+                emitRecord()
+                keptLines.append(line)
+                continue
+            }
+            if indent == 2, let colon = trimmed.firstIndex(of: ":") {
+                emitRecord() // leaving the previous entry
+                let entryID = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
+                if entryID == id {
+                    inTargetEntry = true
+                    // Normalize a flow-form entry to block form so the
+                    // record fields can append beneath it.
+                    let rest = String(trimmed[trimmed.index(after: colon)...])
+                        .trimmingCharacters(in: .whitespaces)
+                    if rest.hasPrefix("{"), rest.hasSuffix("}") {
+                        keptLines.append("  \(entryID):")
+                        let inner = String(rest.dropFirst().dropLast())
+                        for pair in splitFlowPairs(inner) {
+                            keptLines.append("    \(pair)")
+                        }
+                    } else {
+                        keptLines.append(line)
+                    }
+                    continue
+                }
+            }
+            if inTargetEntry, indent >= 4 {
+                // Existing block-form fields of the target entry: keep,
+                // but drop any stale status/resolved (re-resolution).
+                if trimmed.hasPrefix("status:") || trimmed.hasPrefix("resolved:") { continue }
+                keptLines.append(line)
+                continue
+            }
+            keptLines.append(line)
+        }
+        emitRecord()
         var replacement = "\n---\n" + keptLines.joined(separator: "\n")
         if !replacement.hasSuffix("\n") { replacement += "\n" }
         return SourceEdit(range: detected.range, replacement: replacement)

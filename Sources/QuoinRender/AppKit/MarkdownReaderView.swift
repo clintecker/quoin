@@ -144,6 +144,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// (from `QuoinAttribute.suggestionRange`) + the chosen action. The host
     /// re-verifies the bytes still parse as that mark before splicing.
     public var onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil
+    /// Card→document flash: scroll to and ring the mark at this byte offset;
+    /// `flashGeneration` bumps to re-fire (same card clicked twice).
+    public var flashSuggestionOffset: Int? = nil
+    public var flashGeneration: Int = 0
+    /// Document→card linkage: the caret entered (byte range) or left (nil)
+    /// a rendered mark.
+    public var onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil
 
     public init(
         rendered: RenderedDocument,
@@ -175,7 +182,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onCaptureViewport: ((ViewportSnapshot) -> Void)? = nil,
         restoreViewport: ViewportSnapshot? = nil,
         onActiveCaretMoved: ((Int) -> Void)? = nil,
-        onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil
+        onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil,
+        flashSuggestionOffset: Int? = nil,
+        flashGeneration: Int = 0,
+        onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -207,6 +217,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.restoreViewport = restoreViewport
         self.onActiveCaretMoved = onActiveCaretMoved
         self.onSuggestionAction = onSuggestionAction
+        self.flashSuggestionOffset = flashSuggestionOffset
+        self.flashGeneration = flashGeneration
+        self.onSuggestionCaretLink = onSuggestionCaretLink
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -600,6 +613,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 window.makeFirstResponder(textView)
             }
             coordinator.wasActiveTab = isActiveTab
+        }
+
+        if let flashSuggestionOffset, flashGeneration != coordinator.appliedFlashGeneration {
+            coordinator.appliedFlashGeneration = flashGeneration
+            coordinator.flashSuggestionMark(byteOffset: flashSuggestionOffset, in: textView)
         }
 
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {

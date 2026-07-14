@@ -10,14 +10,46 @@ import QuoinCore
 /// resolved cards dim with actions gone.
 struct ReviewPanel: View {
     let items: [ReviewItem]
+    /// Resolutions read back from endmatter records (status: resolved) —
+    /// history, not live work (user redline: "acted-on things just
+    /// disappear").
+    let resolved: [ResolvedRecord]
+    /// The mark the caret is inside, when any: its card highlights.
+    let linked: ByteRange?
     let onResolve: (ByteRange, SuggestionResolver.Action) -> Void
     let onFocus: (ByteRange) -> Void
+
+    @State private var showResolved = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(items.enumerated()), id: \.element) { _, item in
-                    ReviewCard(item: item, onResolve: onResolve, onFocus: onFocus)
+                    ReviewCard(item: item, linked: item.markRange == linked,
+                               onResolve: onResolve, onFocus: onFocus)
+                }
+                if items.isEmpty {
+                    Text("Nothing left to review")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                if !resolved.isEmpty {
+                    DisclosureGroup(isExpanded: $showResolved) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(resolved, id: \.self) { record in
+                                ResolvedRow(record: record)
+                            }
+                        }
+                        .padding(.top, 6)
+                    } label: {
+                        Text("RESOLVED · \(resolved.count)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .kerning(0.5)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.top, 6)
                 }
             }
             .padding(12)
@@ -25,8 +57,37 @@ struct ReviewPanel: View {
     }
 }
 
+/// One line of history: what happened, by whom, when.
+private struct ResolvedRow: View {
+    let record: ResolvedRecord
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
+                Image(systemName: record.summary.hasPrefix("rejected")
+                    ? "xmark.circle" : "checkmark.circle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Text(record.by == "AI" ? "Agent" : (record.by ?? record.id))
+                    .font(.system(size: 11, weight: .semibold))
+                if let at = record.at {
+                    Text(at.prefix(10))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Text(record.summary)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 15)
+        }
+        .opacity(0.8)
+    }
+}
+
 private struct ReviewCard: View {
     let item: ReviewItem
+    var linked: Bool = false
     let onResolve: (ByteRange, SuggestionResolver.Action) -> Void
     let onFocus: (ByteRange) -> Void
 
@@ -48,7 +109,8 @@ private struct ReviewCard: View {
                 .fill(Color(nsColor: .textBackgroundColor)))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                .strokeBorder(linked ? Color.accentColor : Color.primary.opacity(0.12),
+                              lineWidth: linked ? 1.5 : 1))
         .opacity(item.isResolved ? 0.55 : 1)
         .contentShape(Rectangle())
         .onTapGesture { onFocus(item.markRange) }

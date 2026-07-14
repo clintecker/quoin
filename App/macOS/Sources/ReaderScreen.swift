@@ -35,6 +35,11 @@ struct ReaderScreen: View {
     private enum InspectorMode: String { case outline, review }
     @State private var inspectorMode: InspectorMode = .outline
     @State private var userPickedInspectorMode = false
+    /// Card→document flash command (generation-fired, like scrollTarget).
+    @State private var flashSuggestionOffset: Int?
+    @State private var flashGeneration = 0
+    /// Document→card linkage: the mark the caret is inside.
+    @State private var linkedMark: ByteRange?
     @State private var isExportVisible = false
     /// Focus mode: everything but the paragraph you're on recedes.
     @AppStorage("QuoinFocusMode") private var isFocusMode = false
@@ -67,6 +72,9 @@ struct ReaderScreen: View {
     /// the parsed marks + metadata join).
     private var reviewItems: [ReviewItem] {
         SuggestionResolver.reviewItems(in: model.document)
+    }
+    private var resolvedRecords: [ResolvedRecord] {
+        ReviewEndmatter.resolvedRecords(in: model.document)
     }
     private var reviewCounts: (suggestions: Int, comments: Int) {
         let items = reviewItems.filter { !$0.isResolved }
@@ -131,7 +139,10 @@ struct ReaderScreen: View {
                 onCaptureViewport: { snapshot in model.savedViewport = snapshot },
                 restoreViewport: model.savedViewport,
                 onActiveCaretMoved: { offset in model.noteActiveCaretMoved(offset) },
-                onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) }
+                onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) },
+                flashSuggestionOffset: flashSuggestionOffset,
+                flashGeneration: flashGeneration,
+                onSuggestionCaretLink: { range in linkedMark = range }
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -197,7 +208,7 @@ struct ReaderScreen: View {
         }
         .inspector(isPresented: $isOutlineVisible) {
             VStack(spacing: 0) {
-                if !reviewItems.isEmpty {
+                if !reviewItems.isEmpty || !resolvedRecords.isEmpty {
                     Picker("", selection: Binding(
                         get: { inspectorMode },
                         set: { inspectorMode = $0; userPickedInspectorMode = true }
@@ -212,16 +223,22 @@ struct ReaderScreen: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
                 }
-                if inspectorMode == .review, !reviewItems.isEmpty {
+                if inspectorMode == .review, !reviewItems.isEmpty || !resolvedRecords.isEmpty {
                     ReviewPanel(
                         items: reviewItems,
+                        resolved: resolvedRecords,
+                        linked: linkedMark,
                         onResolve: { range, action in
                             model.resolveSuggestion(markRange: range, action: action)
                         },
                         onFocus: { range in
+                            // Scroll the mark's block up AND ring the mark
+                            // itself (the "which one is this about" flash).
                             if let id = model.blockID(containingByteOffset: range.offset) {
                                 jump(to: id)
                             }
+                            flashSuggestionOffset = range.offset
+                            flashGeneration += 1
                         }
                     )
                 } else {
@@ -234,7 +251,7 @@ struct ReaderScreen: View {
                 }
             }
             .inspectorColumnWidth(min: 180, ideal: 240, max: 340)
-            .onChange(of: reviewItems.isEmpty) { _, empty in
+            .onChange(of: reviewItems.isEmpty && resolvedRecords.isEmpty) { _, empty in
                 if empty { inspectorMode = .outline }
             }
             .onAppear {

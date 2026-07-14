@@ -39,6 +39,7 @@ extension MarkdownReaderView {
         /// and pin the flipped block on screen across the height change.
         var lastActiveBlockID: BlockID?
         var appliedScrollGeneration = 0
+        var appliedFlashGeneration = 0
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
         var appliedCaretGeneration: Int = -1
@@ -626,6 +627,8 @@ extension MarkdownReaderView {
 
             // Focus mode follows the caret across blocks.
             refreshFocusDimmingOnSelectionChange(in: textView)
+            // Review panel linkage: caret-in-mark highlights its card.
+            reportSuggestionCaretLink(in: textView)
 
             // Span-level syntax reveal: as the caret moves inside the
             // active block, re-style it so only the caret's span shows its
@@ -1083,6 +1086,74 @@ extension MarkdownReaderView {
         /// Done Editing (embeds and the open block), and Copy Markdown
         /// Source (any block whose source the host can provide). Inserted
         /// above AppKit's standard items.
+        /// Card→document affordance (user ask: "draw a line or something"):
+        /// scrolls the mark into view and FLASHES an accent ring around its
+        /// rendered runs — the native gesture for "this is the one",
+        /// pane-to-pane lines being fragile theater. The ring is a
+        /// pass-through overlay that fades and removes itself.
+        func flashSuggestionMark(byteOffset: Int, in textView: NSTextView) {
+            guard let storage = textView.textContentStorage?.textStorage,
+                  let layoutManager = textView.textLayoutManager,
+                  let contentStorage = textView.textContentStorage else { return }
+            var charRange: NSRange?
+            storage.enumerateAttribute(
+                QuoinAttribute.suggestionRange,
+                in: NSRange(location: 0, length: storage.length)
+            ) { value, range, stop in
+                if let boxed = value as? NSValue, boxed.rangeValue.location == byteOffset {
+                    charRange = charRange.map { NSUnionRange($0, range) } ?? range
+                }
+            }
+            guard let charRange,
+                  let textRange = nsTextRange(charRange, in: contentStorage) else { return }
+            layoutManager.ensureLayout(for: textRange)
+            scrollCaretIntoViewIfNeeded(charRange.location, in: textView)
+
+            var union: CGRect?
+            layoutManager.enumerateTextLayoutFragments(
+                from: textRange.location, options: [.ensuresLayout]
+            ) { fragment in
+                if fragment.rangeInElement.location.compare(textRange.endLocation) != .orderedAscending {
+                    return false
+                }
+                union = union.map { $0.union(fragment.layoutFragmentFrame) } ?? fragment.layoutFragmentFrame
+                return true
+            }
+            guard var rect = union else { return }
+            rect = rect.offsetBy(dx: textView.textContainerOrigin.x, dy: textView.textContainerOrigin.y)
+                .insetBy(dx: -4, dy: -2)
+
+            let ring = FlashRingView(frame: rect)
+            ring.strokeColor = parent.theme.accent
+            textView.addSubview(ring)
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.9
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                ring.animator().alphaValue = 0
+            }, completionHandler: { [weak ring] in
+                ring?.removeFromSuperview()
+            })
+        }
+
+        /// Reverse linkage (document→card): the caret entering/leaving a
+        /// rendered mark reports its byte range, deduped.
+        private var lastReportedSuggestionLink: ByteRange??
+        func reportSuggestionCaretLink(in textView: NSTextView) {
+            guard parent.onSuggestionCaretLink != nil,
+                  let storage = textView.textContentStorage?.textStorage else { return }
+            let caret = textView.selectedRange().location
+            var link: ByteRange?
+            if caret >= 0, caret < storage.length,
+               let boxed = storage.attribute(
+                   QuoinAttribute.suggestionRange, at: caret, effectiveRange: nil) as? NSValue {
+                let range = boxed.rangeValue
+                link = ByteRange(offset: range.location, length: range.length)
+            }
+            guard lastReportedSuggestionLink != .some(link) else { return }
+            lastReportedSuggestionLink = .some(link)
+            parent.onSuggestionCaretLink?(link)
+        }
+
         @objc private func contextResolveSuggestion(_ sender: NSMenuItem) {
             guard let payload = sender.representedObject as? [Any],
                   let boxed = payload.first as? NSValue,
@@ -2072,6 +2143,25 @@ extension MarkdownReaderView {
             }
         }
 
+    }
+}
+#endif
+
+
+#if canImport(AppKit)
+/// The card→mark flash: a pass-through accent ring that fades out.
+final class FlashRingView: NSView {
+    var strokeColor: PlatformColor = .controlAccentColor
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.addPath(CGPath(
+            roundedRect: bounds.insetBy(dx: 1, dy: 1),
+            cornerWidth: 5, cornerHeight: 5, transform: nil))
+        context.setStrokeColor(strokeColor.cgColor)
+        context.setLineWidth(2)
+        context.strokePath()
     }
 }
 #endif

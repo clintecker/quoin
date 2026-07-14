@@ -207,3 +207,90 @@ extension SuggestionResolutionTests {
         XCTAssertNil(ReviewEndmatter.maintenanceEdit(afterResolving: "nope", in: source))
     }
 }
+
+// MARK: - Resolution records (history — "acted-on things just disappear")
+
+extension SuggestionResolutionTests {
+
+    func testResolutionRecordKeepsTheEntryWithStatusAndSummary() throws {
+        let edit = try XCTUnwrap(ReviewEndmatter.resolutionRecordEdit(
+            resolving: "s1", summary: "accepted · alpha", in: maintained))
+        let after = applying(edit, to: maintained)
+        // The flow-form entry normalizes to block form and gains the record.
+        XCTAssertTrue(after.contains("  s1:"))
+        XCTAssertTrue(after.contains("    by: AI"))
+        XCTAssertTrue(after.contains("    status: resolved"))
+        XCTAssertTrue(after.contains("    resolved: \"accepted · alpha\""))
+        // Other entries keep their original lines byte-exactly.
+        XCTAssertTrue(after.contains("c1: { by: user, at: \"2026-04-28T12:00:00Z\" }"))
+        XCTAssertTrue(after.contains("body: \"A reply.\""))
+        // And it reads back as history.
+        let records = ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after))
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].id, "s1")
+        XCTAssertEqual(records[0].summary, "accepted · alpha")
+        XCTAssertEqual(records[0].by, "AI")
+    }
+
+    func testEndmatterSurvivesResolvingTheLastReferencedMark() throws {
+        // The history version of the YAML-leak scenario: record the only
+        // comment's resolution, remove its mark — the endmatter must STAY
+        // recognized (records keep it alive) instead of leaking into prose.
+        let source = """
+        Body {>>only note<<}{#c1} here.
+
+        ---
+        comments:
+          c1: { by: user, at: "2026-04-28T12:00:00Z" }
+
+        """
+        let record = try XCTUnwrap(ReviewEndmatter.resolutionRecordEdit(
+            resolving: "c1", summary: "dismissed · only note", in: source))
+        var after = applying(record, to: source)
+        // Now remove the mark itself (what resolveSuggestion does second).
+        let document = MarkdownConverter.parse(after)
+        let mark = SuggestionResolver.marks(in: document)[0]
+        let markEdit = try XCTUnwrap(SuggestionResolver.edit(
+            resolving: mark.range, in: after, action: .accept))
+        after = applying(markEdit, to: after)
+
+        let final = MarkdownConverter.parse(after)
+        XCTAssertNotNil(final.reviewMetadata, "records keep the endmatter recognized")
+        XCTAssertEqual(ReviewEndmatter.resolvedRecords(in: final).count, 1)
+        XCTAssertFalse(after.contains("{>>"), "the mark itself is gone")
+        XCTAssertEqual(SuggestionResolver.marks(in: final).count, 0)
+    }
+
+    func testReResolutionReplacesAStaleRecord() throws {
+        let source = """
+        Body {++x++}{#s1}.
+
+        ---
+        suggestions:
+          s1:
+            by: AI
+            status: resolved
+            resolved: "stale"
+
+        """
+        let edit = try XCTUnwrap(ReviewEndmatter.resolutionRecordEdit(
+            resolving: "s1", summary: "accepted · x", in: source))
+        let after = applying(edit, to: source)
+        XCTAssertFalse(after.contains("stale"))
+        XCTAssertTrue(after.contains("resolved: \"accepted · x\""))
+        XCTAssertEqual(after.components(separatedBy: "status: resolved").count - 1, 1,
+                       "exactly one status line")
+    }
+
+    func testResolutionSummaries() throws {
+        let source = "A {~~old~>new~~} b {>>note<<} c.\n"
+        let document = MarkdownConverter.parse(source)
+        let marks = SuggestionResolver.marks(in: document)
+        XCTAssertEqual(SuggestionResolver.resolutionSummary(
+            at: marks[0].range, in: source, action: .accept), "accepted · old → new")
+        XCTAssertEqual(SuggestionResolver.resolutionSummary(
+            at: marks[0].range, in: source, action: .reject), "rejected · kept old over new")
+        XCTAssertEqual(SuggestionResolver.resolutionSummary(
+            at: marks[1].range, in: source, action: .accept), "dismissed · note")
+    }
+}

@@ -535,15 +535,18 @@ final class ReaderModel {
             reportFailure("That suggestion changed since it was rendered — try again.")
             return
         }
-        // Endmatter maintenance (redlined 2026-07-14): the resolved mark's
-        // metadata entry (+ its reply thread) leaves with it, and the whole
-        // endmatter block goes when it empties — otherwise the orphaned
-        // YAML leaks into the prose once the last {#id} is gone. Applied
-        // FIRST (it sits at higher offsets, so the mark edit is unaffected);
-        // two pipeline edits = two undo steps, documented.
+        // Resolution is RECORDED, not erased (user redline: "acted-on
+        // things just disappear"): the endmatter entry keeps author/time and
+        // gains status: resolved + a summary — RDFM-native history the
+        // review panel's Resolved section reads back. Applied FIRST (higher
+        // offsets, so the mark edit is unaffected); two pipeline edits = two
+        // undo steps. A mark with no {#id} resolves unrecorded.
         if let id = SuggestionResolver.markID(at: markRange, in: document.source),
-           let maintenance = ReviewEndmatter.maintenanceEdit(afterResolving: id, in: document.source) {
-            applyAbsolute(maintenance, caretUTF8: nil)
+           let summary = SuggestionResolver.resolutionSummary(
+               at: markRange, in: document.source, action: action),
+           let record = ReviewEndmatter.resolutionRecordEdit(
+               resolving: id, summary: summary, in: document.source) {
+            applyAbsolute(record, caretUTF8: nil)
         }
         applyAbsolute(edit, caretUTF8: markRange.offset)
     }
