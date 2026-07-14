@@ -787,7 +787,11 @@ public struct AttributedRenderer {
     /// stay (all range bookkeeping assumes constant separators), so the
     /// separator is instead styled to near-zero height while the block is
     /// revealed.
-    static func revealNeedsClampedSeparator(_ slice: String) -> Bool {
+    /// Public because patch producers must agree with the render loop on
+    /// clamp state: the per-keystroke patch replaces the fragment WITHOUT its
+    /// separator, so it must bail to a full render when an edit flips this —
+    /// the separator's characters are constant, but its style isn't.
+    public static func revealNeedsClampedSeparator(_ slice: String) -> Bool {
         slice.hasSuffix("\n")
     }
 

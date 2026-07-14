@@ -638,6 +638,11 @@ extension MarkdownReaderView {
                 if relativeCaret != lastStyledCaret {
                     lastStyledCaret = relativeCaret
                     restyleActiveBlock(caretAt: relativeCaret, in: textView)
+                    // Keep the host's caret copy fresh (editor-modes plan,
+                    // 0.4): a model-initiated re-render mid-edit must style
+                    // the reveal at the caret's REAL position, not the one
+                    // captured at activation.
+                    parent.onActiveCaretMoved?(relativeCaret)
                 }
             }
             // Images: clicking the attachment (length-1 selection) opens

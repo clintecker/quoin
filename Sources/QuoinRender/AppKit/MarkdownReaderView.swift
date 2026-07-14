@@ -130,6 +130,12 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// Fires when this editor is torn down (tab switch), reporting its final
     /// scroll + selection so the host can stash it in the persistent model.
     public var onCaptureViewport: ((ViewportSnapshot) -> Void)? = nil
+    /// Caret moved WITHIN the active block's revealed source (relative
+    /// offset). Bookkeeping only: the host keeps its copy of the caret fresh
+    /// so a model-initiated re-render (async image decode) styles the reveal
+    /// at the caret's real position — with a stale copy, the revealed span
+    /// snapped back to wherever the caret was at activation.
+    public var onActiveCaretMoved: ((Int) -> Void)? = nil
     /// Scroll + selection to restore once, when this editor is (re)built for a
     /// tab the user is returning to. Applied only when no block is being
     /// edited — an active block's caret is restored by the model's own path.
@@ -163,7 +169,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onEmptyDocumentInsert: ((String) -> Void)? = nil,
         isActiveTab: Bool = true,
         onCaptureViewport: ((ViewportSnapshot) -> Void)? = nil,
-        restoreViewport: ViewportSnapshot? = nil
+        restoreViewport: ViewportSnapshot? = nil,
+        onActiveCaretMoved: ((Int) -> Void)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -193,6 +200,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.isActiveTab = isActiveTab
         self.onCaptureViewport = onCaptureViewport
         self.restoreViewport = restoreViewport
+        self.onActiveCaretMoved = onActiveCaretMoved
     }
 
     public func makeCoordinator() -> Coordinator {

@@ -110,7 +110,8 @@ struct ReaderScreen: View {
                 focusSentenceScope: isSentenceFocus,
                 onEmptyDocumentInsert: { text in model.insertIntoEmptyDocument(text) },
                 onCaptureViewport: { snapshot in model.savedViewport = snapshot },
-                restoreViewport: model.savedViewport
+                restoreViewport: model.savedViewport,
+                onActiveCaretMoved: { offset in model.noteActiveCaretMoved(offset) }
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.

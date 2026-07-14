@@ -53,6 +53,20 @@ final class ReaderModel {
     /// with `rendered`, so it stays observed rather than ignored.
     private(set) var document: QuoinDocument = .empty
 
+    /// Caret moved within the active block (view-side restyle already ran).
+    /// Keeps this model's caret copy fresh so a model-initiated re-render
+    /// mid-edit (async image decode) styles the reveal at the caret's real
+    /// position — with a stale copy, the revealed span snapped back to the
+    /// activation-time caret (editor-modes plan, 0.4). Writes the backing
+    /// storage directly: this is bookkeeping, not a UI state change — going
+    /// through the observed property would re-evaluate the SwiftUI body on
+    /// every arrow key. Every flow that DOES need the view to react also
+    /// bumps `caretGeneration`, which stays observed.
+    func noteActiveCaretMoved(_ relativeCaret: Int) {
+        guard activeBlockID != nil else { return }
+        _caretInActiveBlock = relativeCaret
+    }
+
     @ObservationIgnored var onFileRenamed: ((URL) -> Void)?
     /// The tab's last scroll + selection, stashed when its editor is torn down
     /// on a tab switch and handed back when the tab is shown again (#22). Lives
@@ -710,7 +724,16 @@ final class ReaderModel {
               let newSlice = newDocument.source.substring(in: newDocument.blocks[newIndex].range),
               separatorSignature(oldDocument.blocks[oldIndex].kind) == separatorSignature(newDocument.blocks[newIndex].kind),
               isActiveBlockPatchable(oldDocument.blocks[oldIndex].kind),
-              isActiveBlockPatchable(newDocument.blocks[newIndex].kind)
+              isActiveBlockPatchable(newDocument.blocks[newIndex].kind),
+              // The separator's CHARACTERS are constant across a keystroke,
+              // but its clamped-vs-normal STYLE follows the slice's trailing
+              // newline — which typing changes. This patch replaces the
+              // fragment WITHOUT its separator, so a clamp flip must fall
+              // back to the full render (which restyles the separator), or a
+              // phantom empty paragraph appears (editor-modes plan, 0.3).
+              AttributedRenderer.revealNeedsClampedSeparator(
+                  oldDocument.source.substring(in: oldDocument.blocks[oldIndex].range) ?? "")
+                  == AttributedRenderer.revealNeedsClampedSeparator(newSlice)
         else { return nil }
 
         var ranges: [BlockID: NSRange] = [:]
