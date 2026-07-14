@@ -45,15 +45,20 @@ final class PreviewPanelLoopTests: XCTestCase {
         })
         let renderer = AttributedRenderer()
         var cache: [BlockID: NSAttributedString] = [:]
+        // Held-preview retention is the caller's state (editor-modes 1.1) —
+        // the test threads it across projections exactly as the model does.
+        var held: AttributedRenderer.HeldPreview?
 
         func projection(_ doc: QuoinDocument, active: BlockID?) -> RenderedDocument {
-            let next = renderer.render(doc, activeBlockID: active, activeCaret: 0, cache: &cache)
+            let next = renderer.render(
+                doc, activeBlockID: active, activeCaret: 0, cache: &cache,
+                heldPreview: &held)
             return RenderedDocument(
                 attributed: next.attributed, blockRanges: next.blockRanges,
                 activeBlockID: next.activeBlockID,
                 activeEditableRange: next.activeEditableRange,
                 activeSourceText: next.activeSourceText,
-                previewPanel: active != nil ? renderer.activePreviewPanel() : nil)
+                previewPanel: active != nil ? AttributedRenderer.previewPanel(for: held) : nil)
         }
 
         let (_, textView) = makeStack()

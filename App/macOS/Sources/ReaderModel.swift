@@ -76,6 +76,11 @@ final class ReaderModel {
     @ObservationIgnored private var session: DocumentSession?
     @ObservationIgnored private var snapshotTask: Task<Void, Never>?
     @ObservationIgnored private var renderer = AttributedRenderer()
+    /// The active reveal's held last-good preview (mermaid/math). SESSION
+    /// state owned here — the renderer takes it as an explicit inout and
+    /// holds nothing (editor-modes plan, 1.1). Reset on every activation
+    /// change so a stale artifact can never appear over foreign source.
+    @ObservationIgnored private var heldPreview: AttributedRenderer.HeldPreview?
     @ObservationIgnored private var renameTask: Task<Void, Never>?
     @ObservationIgnored private var actionFailureTask: Task<Void, Never>?
     @ObservationIgnored private var editPipelineTask: Task<Void, Never>?
@@ -281,11 +286,16 @@ final class ReaderModel {
                     storagePatch: patch.storagePatch,
                     revision: nextRevision(),
                     patchBaseLength: baseLength,
-                    previewPanel: renderer.activePreviewPanel(),
-                    revealVerbatimCode: renderer.activeRevealVerbatimCode()
+                    previewPanel: AttributedRenderer.previewPanel(for: heldPreview),
+                    revealVerbatimCode: presentation(
+                        for: document, activeBlockID: activeBlockID
+                    ).activeFlavor.map { $0 != .prose } ?? false
                 )
             } else {
-                let next = renderer.render(document, activeBlockID: activeBlockID, activeCaret: caretInActiveBlock, cache: &fragmentCache)
+                let next = renderer.render(
+                    document, activeBlockID: activeBlockID,
+                    activeCaret: caretInActiveBlock, cache: &fragmentCache,
+                    heldPreview: &heldPreview)
                 liveAttributed = NSMutableAttributedString(attributedString: next.attributed)
                 rendered = RenderedDocument(
                     attributed: liveAttributed,
@@ -342,7 +352,7 @@ final class ReaderModel {
         // Each editing session holds its own last-good preview; a stale
         // artifact from the previous session must never appear over a
         // different block's source.
-        renderer.resetActivePreview()
+        heldPreview = nil
         if let id, let block = document.blocks.first(where: { $0.id == id }),
            let slice = document.source.substring(in: block.range) {
             let sourceLength = slice.utf16.count
@@ -412,7 +422,8 @@ final class ReaderModel {
     private func applyActivationFlipPatch(from oldID: BlockID?, to newID: BlockID?) -> Bool {
         guard let update = renderer.activationFlipUpdate(
             document: document, current: rendered,
-            from: oldID, to: newID, caret: caretInActiveBlock
+            from: oldID, to: newID, caret: caretInActiveBlock,
+            heldPreview: &heldPreview
         ) else { return false }
 
         guard let baseLength = applyToLiveAttributed(update.storagePatches) else { return false }
@@ -431,8 +442,10 @@ final class ReaderModel {
             storagePatches: update.storagePatches,
             revision: nextRevision(),
             patchBaseLength: baseLength,
-            previewPanel: newID != nil ? renderer.activePreviewPanel() : nil,
-            revealVerbatimCode: newID != nil && renderer.activeRevealVerbatimCode()
+            previewPanel: newID != nil ? AttributedRenderer.previewPanel(for: heldPreview) : nil,
+            revealVerbatimCode: presentation(
+                for: document, activeBlockID: newID
+            ).activeFlavor.map { $0 != .prose } ?? false
         )
         return true
     }
@@ -743,7 +756,8 @@ final class ReaderModel {
         ) {
             renderer.renderEditableSourceFragment(
                 newSlice, caretOffset: caretInActiveBlock,
-                block: newDocument.blocks[newIndex], document: newDocument)
+                block: newDocument.blocks[newIndex], document: newDocument,
+                heldPreview: &heldPreview)
         }
         // The patch replaces the whole OLD fragment (block range minus its
         // trailing separator) — not just the editable region: the

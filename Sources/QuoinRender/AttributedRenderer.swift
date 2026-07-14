@@ -178,11 +178,27 @@ public struct AttributedRenderer {
         return true
     }
 
+    /// Convenience for hosts without preview retention (exporters, tests):
+    /// a fresh reveal still renders its preview, but nothing is held across
+    /// calls.
     public func render(
         _ document: QuoinDocument,
         activeBlockID: BlockID? = nil,
         activeCaret: Int? = nil,
         cache: inout [BlockID: NSAttributedString]
+    ) -> RenderedDocument {
+        var held: HeldPreview?
+        return render(
+            document, activeBlockID: activeBlockID, activeCaret: activeCaret,
+            cache: &cache, heldPreview: &held)
+    }
+
+    public func render(
+        _ document: QuoinDocument,
+        activeBlockID: BlockID? = nil,
+        activeCaret: Int? = nil,
+        cache: inout [BlockID: NSAttributedString],
+        heldPreview: inout HeldPreview?
     ) -> RenderedDocument {
         let output = NSMutableAttributedString()
         var blockRanges: [BlockID: NSRange] = [:]
@@ -199,7 +215,9 @@ public struct AttributedRenderer {
                 // kinds). Only the caret's span reveals its delimiters
                 // (handoff span-level rule). Never cached — its fragment
                 // changes as the caret moves.
-                let revealed = renderEditableSource(slice, caretOffset: activeCaret, block: block, document: document)
+                let revealed = renderEditableSource(
+                    slice, caretOffset: activeCaret, block: block,
+                    document: document, heldPreview: &heldPreview)
                 activeEditableRange = NSRange(
                     location: start + revealed.editableRange.location,
                     length: revealed.editableRange.length)
@@ -254,8 +272,9 @@ public struct AttributedRenderer {
             activeBlockID: activeBlockID,
             activeEditableRange: activeEditableRange,
             activeSourceText: activeSourceText,
-            previewPanel: activeBlockID != nil ? activePreviewPanel() : nil,
-            revealVerbatimCode: activeBlockID != nil && activeRevealVerbatimCode()
+            previewPanel: activeBlockID != nil ? Self.previewPanel(for: heldPreview) : nil,
+            revealVerbatimCode: presentation(
+                for: document, activeBlockID: activeBlockID).activeFlavor.map { $0 != .prose } ?? false
         )
     }
 
@@ -269,41 +288,52 @@ public struct AttributedRenderer {
         public let editableRange: NSRange
     }
 
+    /// The held last-good preview for the CURRENT editing session
+    /// (preview-anchored reveal): while the open diagram/equation's source
+    /// is mid-edit and unparseable, the previous successful render stays
+    /// up — never blank, never flashing. SESSION state, owned by the model
+    /// (one entry suffices: one active block at a time; the model resets it
+    /// when a different block activates so a stale artifact can never
+    /// appear over foreign source) and threaded through render passes as
+    /// an explicit inout — the renderer holds no hidden mutable state
+    /// (editor-modes plan, 1.1).
+    public struct HeldPreview {
+        public var key: String
+        public var sourceText: String
+        public var sliceText: String
+        public var image: PlatformImage
+        public var paused: Bool
+    }
+
+    public func renderEditableSourceFragment(
+        _ slice: String, caretOffset: Int? = nil,
+        block: Block? = nil, document: QuoinDocument? = nil,
+        heldPreview: inout HeldPreview?
+    ) -> RevealedFragment {
+        renderEditableSource(
+            slice, caretOffset: caretOffset, block: block, document: document,
+            heldPreview: &heldPreview)
+    }
+
+    /// Convenience for hosts without preview retention (exporters, tests).
     public func renderEditableSourceFragment(
         _ slice: String, caretOffset: Int? = nil,
         block: Block? = nil, document: QuoinDocument? = nil
     ) -> RevealedFragment {
-        renderEditableSource(slice, caretOffset: caretOffset, block: block, document: document)
+        var held: HeldPreview?
+        return renderEditableSource(
+            slice, caretOffset: caretOffset, block: block, document: document,
+            heldPreview: &held)
     }
 
-    /// The held last-good preview for the CURRENT editing session
-    /// (preview-anchored reveal): while the open diagram/equation's source
-    /// is mid-edit and unparseable, the previous successful render stays
-    /// up — never blank, never flashing. One entry suffices (one active
-    /// block at a time); the model resets it when a different block
-    /// activates so a stale artifact can never appear over foreign source.
-    /// (Reference-boxed: the renderer is a struct whose render paths are
-    /// non-mutating.)
     /// Width reserved for the side-by-side preview panel (plus its gap):
     /// the revealed source's paragraphs take a matching tail indent.
     public static let previewPanelWidth: CGFloat = 320
     public static let previewPanelGap: CGFloat = 16
 
-    private final class ActivePreviewBox {
-        var value: (key: String, sourceText: String, sliceText: String,
-                    image: PlatformImage, paused: Bool)?
-    }
-    private let activePreviewBox = ActivePreviewBox()
-    private var activePreview: (key: String, sourceText: String, sliceText: String,
-                                image: PlatformImage, paused: Bool)? {
-        get { activePreviewBox.value }
-        nonmutating set { activePreviewBox.value = newValue }
-    }
-
-    /// The side-by-side panel for the block revealed by the most recent
-    /// `renderEditableSource` pass, or nil when none is showing.
-    public func activePreviewPanel() -> RenderedDocument.PreviewPanel? {
-        guard let held = activePreview else { return nil }
+    /// The side-by-side panel payload for a held preview.
+    public static func previewPanel(for held: HeldPreview?) -> RenderedDocument.PreviewPanel? {
+        guard let held else { return nil }
         let noun = held.key == "math" ? "equation" : "diagram"
         return RenderedDocument.PreviewPanel(
             image: held.image,
@@ -317,8 +347,8 @@ public struct AttributedRenderer {
     /// shared. Guards the flap-stick (ledger #6a) against leaking a held
     /// artifact onto an unrelated block when the renderer is used without
     /// the model's session resets (exporters, tests, sequential reveals).
-    private func heldPreviewApplies(toSlice slice: String) -> Bool {
-        guard let held = activePreview else { return false }
+    private static func heldPreviewApplies(_ held: HeldPreview?, toSlice slice: String) -> Bool {
+        guard let held else { return false }
         let a = Array(slice.utf16), b = Array(held.sliceText.utf16)
         if a == b { return true }
         let shorter = min(a.count, b.count)
@@ -332,16 +362,6 @@ public struct AttributedRenderer {
         // most of the text shared.
         return prefix + suffix >= shorter || Double(prefix + suffix) / Double(longer) >= 0.5
     }
-
-    public func resetActivePreview() {
-        activePreview = nil
-    }
-
-    /// Whether the last revealed block styles as fully verbatim — the
-    /// caret-move restyle must match (see RenderedDocument.revealVerbatimCode).
-    private final class RevealVerbatimBox { var value = false }
-    private let revealVerbatimBox = RevealVerbatimBox()
-    public func activeRevealVerbatimCode() -> Bool { revealVerbatimBox.value }
 
     /// One block's READ fragment, exactly as the full render loop would
     /// produce it (blockID/embed tagging included) — so an activate/
@@ -382,12 +402,27 @@ public struct AttributedRenderer {
     /// fragments change and everything else shifts. Returns nil when the
     /// projection state doesn't line up; the caller then does a full
     /// re-render, which is always correct.
+    /// Convenience for hosts without preview retention (tests).
     public func activationFlipUpdate(
         document: QuoinDocument,
         current: RenderedDocument,
         from oldID: BlockID?,
         to newID: BlockID?,
         caret: Int?
+    ) -> ActivationFlipUpdate? {
+        var held: HeldPreview?
+        return activationFlipUpdate(
+            document: document, current: current, from: oldID, to: newID,
+            caret: caret, heldPreview: &held)
+    }
+
+    public func activationFlipUpdate(
+        document: QuoinDocument,
+        current: RenderedDocument,
+        from oldID: BlockID?,
+        to newID: BlockID?,
+        caret: Int?,
+        heldPreview: inout HeldPreview?
     ) -> ActivationFlipUpdate? {
         // Footnote-bearing documents append footnote ranges after the block
         // loop; their bookkeeping isn't worth replicating here.
@@ -439,7 +474,9 @@ public struct AttributedRenderer {
             // but a revealed slice that ends with its own newline needs the
             // separator clamped to near-zero height or it lays out as a
             // phantom empty paragraph the reading projection never shows.
-            let revealed = renderEditableSourceFragment(slice, caretOffset: caret, block: block, document: document)
+            let revealed = renderEditableSourceFragment(
+                slice, caretOffset: caret, block: block, document: document,
+                heldPreview: &heldPreview)
             let replacement = NSMutableAttributedString(attributedString: revealed.attributed)
             if blockIndex < document.blocks.count - 1 {
                 let nextKind = document.blocks[blockIndex + 1].kind
@@ -565,16 +602,15 @@ public struct AttributedRenderer {
     /// just to copy its one paragraph style would defeat the render cache.
     private func renderEditableSource(
         _ slice: String, caretOffset: Int? = nil,
-        block: Block? = nil, document: QuoinDocument? = nil
+        block: Block? = nil, document: QuoinDocument? = nil,
+        heldPreview: inout HeldPreview?
     ) -> RevealedFragment {
         var styler = MarkdownSourceStyler(theme: theme)
-        switch block?.kind {
-        case .htmlBlock, .codeBlock, .mermaid, .mathBlock, .frontMatter:
-            // Verbatim blocks: their markup IS the content — never collapse.
+        // The flavor table (BlockPresentation) is the single derivation:
+        // verbatim and preview blocks' markup IS the content — never collapse.
+        let flavor = block.map { EditingFlavor.of($0.kind) } ?? .prose
+        if flavor != .prose {
             styler.collapsesNonLiteralSpans = false
-            revealVerbatimBox.value = true
-        default:
-            revealVerbatimBox.value = false
         }
         if case .codeBlock = block?.kind {
             // INDENTED code has no fences for the styler's per-match code
@@ -599,7 +635,7 @@ public struct AttributedRenderer {
                 transplantParagraphStyles(from: read, onto: styled, source: slice)
                 compressInteriorBlankLines(in: styled, caretOffset: caretOffset)
                 clampTrailingNewlinePhantom(in: styled, caretOffset: caretOffset)
-                return assembleRevealedFragment(source: styled, block: block)
+                return assembleRevealedFragment(source: styled, block: block, heldPreview: &heldPreview)
             default:
                 break
             }
@@ -608,7 +644,7 @@ public struct AttributedRenderer {
         // Fallback (embed kinds, or no block context): mirror the code
         // canvas's line metrics and the body's trailing gap.
         applyFallbackMetrics(to: styled, kind: block?.kind)
-        return assembleRevealedFragment(source: styled, block: block)
+        return assembleRevealedFragment(source: styled, block: block, heldPreview: &heldPreview)
     }
 
     /// Combines the styled source with its editing-mode chrome:
@@ -628,9 +664,11 @@ public struct AttributedRenderer {
     ///   `editableRange`. Prose reveal stays chrome-free (the caret IS
     ///   the mode there).
     private func assembleRevealedFragment(
-        source styled: NSMutableAttributedString, block: Block?
+        source styled: NSMutableAttributedString, block: Block?,
+        heldPreview: inout HeldPreview?
     ) -> RevealedFragment {
-        let panelShowing = updatePreviewPanel(for: block?.kind, slice: styled.string)
+        let panelShowing = Self.updatePreviewPanel(
+            for: block?.kind, slice: styled.string, theme: theme, held: &heldPreview)
         if panelShowing {
             // Make room for the panel: source wraps left of it.
             mutateParagraphStyles(in: styled, range: NSRange(location: 0, length: styled.length)) { style, _ in
@@ -638,7 +676,7 @@ public struct AttributedRenderer {
             }
         }
         let editableRange = NSRange(location: 0, length: styled.length)
-        if let block, isEmbedEditingKind(block.kind) || panelShowing {
+        if let block, presentationShowsChrome(block.kind) || panelShowing {
             styled.addAttribute(
                 QuoinAttribute.blockDecoration,
                 value: BlockDecoration(kind: .editingFrame(accent: theme.accent)),
@@ -654,7 +692,10 @@ public struct AttributedRenderer {
     /// unparseable source holds the last good image, paused; a kind flap
     /// holds it too when the slice is one edit away (lineage guard — a
     /// held artifact must never leak onto an unrelated block).
-    private func updatePreviewPanel(for kind: BlockKind?, slice: String) -> Bool {
+    private static func updatePreviewPanel(
+        for kind: BlockKind?, slice: String, theme: Theme,
+        held: inout HeldPreview?
+    ) -> Bool {
         let key: String
         let sourceText: String
         switch kind {
@@ -667,17 +708,17 @@ public struct AttributedRenderer {
         default:
             // Kind flap mid-edit: stick with the held panel (paused) while
             // the slice is recognizably the same editing session.
-            if var held = activePreview, heldPreviewApplies(toSlice: slice) {
-                held.paused = true
-                held.sliceText = slice
-                activePreview = held
+            if var flapped = held, heldPreviewApplies(held, toSlice: slice) {
+                flapped.paused = true
+                flapped.sliceText = slice
+                held = flapped
                 return true
             }
             return false
         }
 
-        if let held = activePreview, held.key == key, held.sourceText == sourceText,
-           !held.paused {
+        if let current = held, current.key == key, current.sourceText == sourceText,
+           !current.paused {
             return true // unchanged source: reuse, no re-render
         }
         let fresh: NSAttributedString? = switch kind {
@@ -689,14 +730,16 @@ public struct AttributedRenderer {
         default:
             nil
         }
-        if let fresh, let image = Self.attachmentImage(in: fresh) {
-            activePreview = (key, sourceText, slice, image, false)
+        if let fresh, let image = attachmentImage(in: fresh) {
+            held = HeldPreview(
+                key: key, sourceText: sourceText, sliceText: slice,
+                image: image, paused: false)
             return true
         }
-        if var held = activePreview, held.key == key, heldPreviewApplies(toSlice: slice) {
-            held.paused = true
-            held.sliceText = slice
-            activePreview = held
+        if var paused = held, paused.key == key, heldPreviewApplies(held, toSlice: slice) {
+            paused.paused = true
+            paused.sliceText = slice
+            held = paused
             return true
         }
         return false
@@ -713,20 +756,6 @@ public struct AttributedRenderer {
             }
         }
         return image
-    }
-
-    /// Kinds whose OPEN state shows the editing frame + ✓ done chip. The
-    /// embed set (they flip on double-click / the edit chip) plus front
-    /// matter (single-click, but its rendered chip form equally hides that
-    /// it's editable YAML). Prose is deliberately absent.
-    private func isEmbedEditingKind(_ kind: BlockKind) -> Bool {
-        switch kind {
-        case .codeBlock, .mermaid, .mathBlock, .table, .htmlBlock,
-             .tableOfContents, .frontMatter:
-            return true
-        default:
-            return false
-        }
     }
 
     /// A slice ending in a newline with NO separator after it (the

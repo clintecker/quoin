@@ -73,9 +73,12 @@ final class PreviewAnchoredRevealTests: XCTestCase {
         let block = try mermaidBlock(in: document)
         let slice = try XCTUnwrap(document.source.substring(in: block.range))
         let renderer = AttributedRenderer()
+        // Retention is the CALLER's state now (editor-modes plan 1.1): the
+        // test threads its own held preview, exactly as the model does.
+        var held: AttributedRenderer.HeldPreview?
         _ = renderer.renderEditableSourceFragment(
-            slice, caretOffset: 0, block: block, document: document)
-        let healthyImage = try XCTUnwrap(renderer.activePreviewPanel()).image
+            slice, caretOffset: 0, block: block, document: document, heldPreview: &held)
+        let healthyImage = try XCTUnwrap(AttributedRenderer.previewPanel(for: held)).image
 
         // One contiguous edit that breaks the parse, same session: mangle
         // the diagram-type header (the lenient parser skips mere garbage
@@ -88,9 +91,10 @@ final class PreviewAnchoredRevealTests: XCTestCase {
             throw XCTSkip("fixture unexpectedly parses; paused path not exercised")
         }
         let revealed = renderer.renderEditableSourceFragment(
-            brokenSlice, caretOffset: 0, block: brokenBlock, document: brokenDocument)
+            brokenSlice, caretOffset: 0, block: brokenBlock, document: brokenDocument,
+            heldPreview: &held)
 
-        let panel = try XCTUnwrap(renderer.activePreviewPanel(),
+        let panel = try XCTUnwrap(AttributedRenderer.previewPanel(for: held),
                                   "the last good render stays up — never blank")
         XCTAssertTrue(panel.image === healthyImage, "held image is the last GOOD one")
         XCTAssertNotNil(panel.statusMessage)
@@ -105,10 +109,11 @@ final class PreviewAnchoredRevealTests: XCTestCase {
         let brokenDocument = MarkdownConverter.parse("# Doc\n\n\(brokenSlice)\n\nTail.\n")
         let brokenBlock = try mermaidBlock(in: brokenDocument)
         let renderer = AttributedRenderer()
-        renderer.resetActivePreview()
+        var held: AttributedRenderer.HeldPreview?
         _ = renderer.renderEditableSourceFragment(
-            brokenSlice, caretOffset: 0, block: brokenBlock, document: brokenDocument)
-        XCTAssertNil(renderer.activePreviewPanel(),
+            brokenSlice, caretOffset: 0, block: brokenBlock, document: brokenDocument,
+            heldPreview: &held)
+        XCTAssertNil(AttributedRenderer.previewPanel(for: held),
                      "no held render → plain source, same as before the feature")
     }
 
@@ -118,10 +123,13 @@ final class PreviewAnchoredRevealTests: XCTestCase {
         let slice = try XCTUnwrap(document.source.substring(in: block.range))
         let renderer = AttributedRenderer()
 
-        _ = renderer.renderEditableSourceFragment(slice, caretOffset: 0, block: block, document: document)
-        let first = try XCTUnwrap(renderer.activePreviewPanel()).image
-        _ = renderer.renderEditableSourceFragment(slice, caretOffset: 20, block: block, document: document)
-        let second = try XCTUnwrap(renderer.activePreviewPanel()).image
+        var held: AttributedRenderer.HeldPreview?
+        _ = renderer.renderEditableSourceFragment(
+            slice, caretOffset: 0, block: block, document: document, heldPreview: &held)
+        let first = try XCTUnwrap(AttributedRenderer.previewPanel(for: held)).image
+        _ = renderer.renderEditableSourceFragment(
+            slice, caretOffset: 20, block: block, document: document, heldPreview: &held)
+        let second = try XCTUnwrap(AttributedRenderer.previewPanel(for: held)).image
         XCTAssertTrue(first === second,
                       "caret moves must not re-render the artifact")
     }
@@ -139,9 +147,10 @@ final class PreviewAnchoredRevealTests: XCTestCase {
         })
         let slice = try XCTUnwrap(document.source.substring(in: block.range))
         let renderer = AttributedRenderer()
+        var held: AttributedRenderer.HeldPreview?
         _ = renderer.renderEditableSourceFragment(
-            slice, caretOffset: 0, block: block, document: document)
-        let primedImage = try XCTUnwrap(renderer.activePreviewPanel()).image
+            slice, caretOffset: 0, block: block, document: document, heldPreview: &held)
+        let primedImage = try XCTUnwrap(AttributedRenderer.previewPanel(for: held)).image
 
         // Delete the trailing `$` — one real keystroke; the kind flaps.
         let flappedSlice = String(slice.dropLast())
@@ -155,9 +164,10 @@ final class PreviewAnchoredRevealTests: XCTestCase {
             throw XCTSkip("parser kept the unbalanced source a math block; flap not exercised")
         }
         let revealed = renderer.renderEditableSourceFragment(
-            flappedSlice, caretOffset: 5, block: flappedBlock, document: flappedDocument)
+            flappedSlice, caretOffset: 5, block: flappedBlock, document: flappedDocument,
+            heldPreview: &held)
 
-        let panel = try XCTUnwrap(renderer.activePreviewPanel(),
+        let panel = try XCTUnwrap(AttributedRenderer.previewPanel(for: held),
                                   "the panel sticks through the flap")
         XCTAssertTrue(panel.image === primedImage)
         XCTAssertNotNil(panel.statusMessage, "the flap reads as paused, not gone")
@@ -172,11 +182,13 @@ final class PreviewAnchoredRevealTests: XCTestCase {
         }
         XCTAssertTrue(hasFrame)
 
-        // Unrelated content never inherits the held panel.
-        renderer.resetActivePreview()
+        // Unrelated content never inherits the held panel: the model resets
+        // its held state on activation of a different block.
+        held = nil
         _ = renderer.renderEditableSourceFragment(
-            "A completely different paragraph.", caretOffset: 0, block: nil, document: nil)
-        XCTAssertNil(renderer.activePreviewPanel())
+            "A completely different paragraph.", caretOffset: 0, block: nil, document: nil,
+            heldPreview: &held)
+        XCTAssertNil(AttributedRenderer.previewPanel(for: held))
     }
 
     func testMathBlockGetsAPanelToo() throws {

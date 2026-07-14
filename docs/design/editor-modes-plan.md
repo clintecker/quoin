@@ -379,6 +379,27 @@ property green in CI; CLAUDE.md corrected.
 
 ---
 
+## Phase 4 — Documentation retool  (M, after Phase 3)
+
+Goal (user directive): the docs read like the app ships — current, honest,
+and pointing at the right sources of truth.
+
+- **README + docs/ accuracy sweep** against actual shipped behavior after
+  Phases 0–3 (editing model, modes, invariants; kill stale claims).
+- **Screenshots**: regenerate via the CI screenshot pipeline + gallery
+  fixtures so every image shows the current rendering; verify the
+  `ci-screenshots` branch pipeline still reflects reality.
+- **Support matrix**: one accurate table of what renders natively vs
+  degrades, kept small.
+- **MermaidKit + Vinculum prominence**: present both as the first-party
+  engines they are, and DEFER to their repositories' documentation
+  (COVERAGE.md / COMMANDS.md / gallery branches) for feature detail instead
+  of duplicating matrices in Quoin's docs — Quoin documents the
+  *integration*, the engines document *themselves*.
+- **Cross-reference hygiene**: architecture.md + CLAUDE.md updated to the
+  post-refactor machinery (subsumes Phase 3.4's CLAUDE.md embed-paragraph
+  correction); editor-modes.md marked implemented.
+
 ## Sequencing, risk, and rollback
 
 | Phase | Size | Risk | Rollback story |
