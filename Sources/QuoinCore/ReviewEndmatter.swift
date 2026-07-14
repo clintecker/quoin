@@ -441,25 +441,42 @@ extension ReviewEndmatter {
     public static func appendedRecordEdit(
         summary: String, asComment: Bool, reusing existingID: String?, in source: String
     ) -> SourceEdit? {
-        let escaped = escapedScalar(summary)
+        appendedEntryEdit(
+            fieldLines: ["status: resolved", "resolved: \"\(escapedScalar(summary))\""],
+            asComment: asComment, reusing: existingID, in: source)?.edit
+    }
+
+    /// The next free `c…`/`s…` id: collision-checked against BOTH maps and
+    /// every inline `{#…}` reference.
+    static func allocateID(asComment: Bool, in source: String) -> String {
         let prefix = asComment ? "c" : "s"
+        let taken: Set<String>
+        if let detected = detect(in: source) {
+            taken = Set(detected.metadata.comments.keys)
+                .union(detected.metadata.suggestions.keys)
+        } else {
+            taken = []
+        }
+        var n = 1
+        while taken.contains("\(prefix)\(n)") || source.contains("{#\(prefix)\(n)}") { n += 1 }
+        return "\(prefix)\(n)"
+    }
+
+    /// The shared entry appender: writes a block-form entry with the given
+    /// indent-4 field lines (already escaped) under the section, creating
+    /// the endmatter at EOF when the document has none. Resolution records
+    /// and CREATED annotations (S3a: `by:`/`at:`, no `status:`) both ride
+    /// this one writer.
+    static func appendedEntryEdit(
+        fieldLines: [String], asComment: Bool, reusing existingID: String?, in source: String
+    ) -> (edit: SourceEdit, id: String)? {
         let section = asComment ? "comments" : "suggestions"
+        let id = existingID ?? allocateID(asComment: asComment, in: source)
+        let entry = "  \(id):\n" + fieldLines.map { "    \($0)\n" }.joined()
 
         if let detected = detect(in: source) {
-            let id: String
-            if let existingID {
-                id = existingID
-            } else {
-                // Next free id across BOTH maps and any inline refs.
-                let taken = Set(detected.metadata.comments.keys)
-                    .union(detected.metadata.suggestions.keys)
-                var n = 1
-                while taken.contains("\(prefix)\(n)") || source.contains("{#\(prefix)\(n)}") { n += 1 }
-                id = "\(prefix)\(n)"
-            }
             // Normalized for the same CRLF-grapheme reason as parse().
             var yaml = detected.yaml.replacingOccurrences(of: "\r\n", with: "\n")
-            let entry = "  \(id):\n    status: resolved\n    resolved: \"\(escaped)\"\n"
             // LINE-anchored section header: a bare substring search could
             // match an indent-4 `suggestions:` field inside some entry and
             // reparent that entry's fields onto the new record.
@@ -477,23 +494,25 @@ extension ReviewEndmatter {
                 if !yaml.hasSuffix("\n") { yaml += "\n" }
                 yaml += "\(section):\n" + entry
             }
-            return SourceEdit(range: detected.range, replacement: "\n---\n" + yaml)
+            return (SourceEdit(range: detected.range, replacement: "\n---\n" + yaml), id)
         }
 
         // No endmatter yet: create one at EOF.
-        let id: String
-        if let existingID {
-            id = existingID
-        } else {
-            var n = 1
-            while source.contains("{#\(prefix)\(n)}") { n += 1 }
-            id = "\(prefix)\(n)"
-        }
         let needsNewline = source.hasSuffix("\n") ? "" : "\n"
-        let block = "\(needsNewline)\n---\n\(section):\n  \(id):\n    status: resolved\n    resolved: \"\(escaped)\"\n"
-        return SourceEdit(
+        let block = "\(needsNewline)\n---\n\(section):\n" + entry
+        return (SourceEdit(
             range: ByteRange(offset: source.utf8.count, length: 0),
-            replacement: block)
+            replacement: block), id)
+    }
+
+    /// A bare YAML scalar is safe for simple values; anything else gets
+    /// quoted + escaped.
+    static func fieldValue(_ value: String) -> String {
+        let bareSafe = value.allSatisfy {
+            $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" || $0 == "_" || $0 == "."
+        }
+        return bareSafe && !value.isEmpty && !value.contains("  ")
+            ? value : "\"\(escapedScalar(value))\""
     }
 }
 

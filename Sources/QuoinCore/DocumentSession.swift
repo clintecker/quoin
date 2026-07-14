@@ -383,6 +383,30 @@ public actor DocumentSession {
         return try applyEdit(edit, publishSnapshot: publishSnapshot)
     }
 
+    /// CREATE an annotation (S3a selection gestures): comment, suggested
+    /// replacement/deletion/insertion, or highlight — one atomic edit
+    /// (mark + endmatter entry), computed in-actor with the same
+    /// guarantees as `applyResolution`. `expectedSlice` is the text the
+    /// user SAW selected: if the bytes at `range` no longer match (an
+    /// edit landed since the gesture), the annotation refuses instead of
+    /// wrapping the wrong text.
+    @discardableResult
+    public func applyAnnotation(
+        kind: ReviewAuthoring.Kind, range: ByteRange, expectedSlice: String,
+        reviewer: String, publishSnapshot: Bool = true
+    ) throws -> QuoinDocument? {
+        let bytes = Array(document.source.utf8)
+        guard range.offset >= 0, range.offset + range.length <= bytes.count,
+              String(decoding: bytes[range.offset..<(range.offset + range.length)],
+                     as: UTF8.self) == expectedSlice
+        else { return nil }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        guard let edit = ReviewAuthoring.annotationEdit(
+            kind: kind, range: range, in: document.source,
+            reviewer: reviewer, timestamp: timestamp) else { return nil }
+        return try applyEdit(edit, publishSnapshot: publishSnapshot)
+    }
+
     @discardableResult
     public func undo() throws -> QuoinDocument? {
         guard let edit = undoStack.popLast() else { return nil }

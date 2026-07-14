@@ -226,6 +226,32 @@ Sequencing: S3a first (it exercises the by:/at: writer and the creation
 constraints with zero typing-pipeline risk), then S3b on top — by then
 every splice shape S3b emits is already round-trip-tested.
 
+**Design review before implementation (2026-07-14):**
+- Rendered-selection → source mapping already exists and is battle-tested:
+  `EditMapping.sourceOffset(forRenderedOffset:)` (greedy two-pointer,
+  entity/link-tail aware). A selection is two mapped points. Endpoints that
+  land inside a hidden delimiter run snap OUTWARD over the emphasis
+  characters (`*_~=` + backtick) so whole-span selections wrap complete
+  syntax, never half a `**`.
+- Creation validates by SELF-CALIBRATION, the fast paths' philosophy: build
+  the candidate source, parse it, and require exactly the expected new mark
+  at the expected offset with the expected payload — otherwise refuse.
+  This one rule subsumes the constraint list: code/math opacity (a mark
+  inside a code span parses as literal → refused), block-spanning
+  selections (unbalanced across slices → refused), nested marks and sigil
+  collisions (early close → payload mismatch → refused).
+- The annotation edit is computed IN-ACTOR at apply time
+  (`DocumentSession.applyAnnotation`, mirroring `applyResolution`) with an
+  `expectedSlice` byte re-validation — the stale-offset corruption class
+  is unrepresentable at birth, not patched later.
+- Shortcuts: ⇧⌘M (Add Comment…) and ⇧⌘R (Suggest Replacement…) are free in
+  the conflict-audited map. ⇧⌘H is TAKEN by Format ▸ Highlight (`==`), so
+  the review-highlight gesture lives in the menus/context menu only.
+- Entry writer: `appendedEntryEdit` shares id allocation with
+  `appendedRecordEdit` and writes block-form `by:`/`at:` (no `status:`);
+  `at:` is stamped by the session at apply time and threaded as a pure
+  parameter so the core writers stay deterministic and testable.
+
 ## 4. Staged plan
 
 - **S1 — read-only marks (M).** CriticScanner + `Inline.suggestion` +
