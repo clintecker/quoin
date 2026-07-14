@@ -39,10 +39,10 @@ struct ReaderScreen: View {
     @State private var flashSuggestionOffset: Int?
     @State private var flashGeneration = 0
     /// Where the flash may fall back to (block containing the offset) and
-    /// whether it centers the viewport (card clicks yes; resolution pulses
-    /// never move the document).
+    /// how it scrolls (card clicks always center; resolution pulses center
+    /// only when the change is offscreen).
     @State private var flashBlockID: BlockID?
-    @State private var flashCenters = true
+    @State private var flashScroll: MarkdownReaderView.FlashScrollBehavior = .center
     /// Document→card linkage: the mark the caret is inside.
     @State private var linkedMark: ByteRange?
     @State private var isExportVisible = false
@@ -148,7 +148,7 @@ struct ReaderScreen: View {
                 flashSuggestionOffset: flashSuggestionOffset,
                 flashGeneration: flashGeneration,
                 flashBlockID: flashBlockID,
-                flashCentersViewport: flashCenters,
+                flashScroll: flashScroll,
                 onSuggestionCaretLink: { range in linkedMark = range },
                 onOpenReview: {
                     isOutlineVisible = true
@@ -271,7 +271,7 @@ struct ReaderScreen: View {
                             // user redline).
                             flashSuggestionOffset = range.offset
                             flashBlockID = model.blockID(containingByteOffset: range.offset)
-                            flashCenters = true
+                            flashScroll = .center
                             flashGeneration += 1
                         }
                     )
@@ -301,7 +301,7 @@ struct ReaderScreen: View {
                 guard let offset = model.resolutionFlashOffset else { return }
                 flashSuggestionOffset = offset
                 flashBlockID = model.blockID(containingByteOffset: offset)
-                flashCenters = false
+                flashScroll = .centerIfOffscreen
                 flashGeneration += 1
             }
             .onAppear {

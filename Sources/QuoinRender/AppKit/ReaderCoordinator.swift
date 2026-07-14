@@ -1103,7 +1103,8 @@ extension MarkdownReaderView {
         /// pass-through overlay that fades and removes itself.
         func flashSuggestionMark(
             byteOffset: Int, fallbackBlockID: BlockID? = nil,
-            centersViewport: Bool = true, in textView: NSTextView
+            scroll: MarkdownReaderView.FlashScrollBehavior = .center,
+            in textView: NSTextView
         ) {
             guard let storage = textView.textContentStorage?.textStorage,
                   let layoutManager = textView.textLayoutManager,
@@ -1143,9 +1144,15 @@ extension MarkdownReaderView {
             // Center the linked text: the mark's TOP lands as close to the
             // viewport's vertical center as document bounds allow (user
             // redline: the old minimal scroll left it hugging the top edge).
-            // Resolution pulses skip this — a button click must never move
-            // the document.
-            if centersViewport, let scrollView = textView.enclosingScrollView {
+            // Resolution pulses scroll ONLY when the change is offscreen —
+            // a visible change must not move under the click, an offscreen
+            // one must come to the user (second redline).
+            let shouldScroll: Bool
+            switch scroll {
+            case .center: shouldScroll = true
+            case .centerIfOffscreen: shouldScroll = !textView.visibleRect.intersects(rect)
+            }
+            if shouldScroll, let scrollView = textView.enclosingScrollView {
                 let clip = scrollView.contentView
                 let visibleHeight = clip.bounds.height
                 let maxOrigin = max(0, textView.bounds.height - visibleHeight)

@@ -152,10 +152,15 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// the RESOLUTION pulse: the mark is gone after accept/reject, so the
     /// ring lands on the block the splice happened in.
     public var flashBlockID: BlockID? = nil
-    /// Card clicks center the flashed text; resolution pulses must NOT
-    /// move the viewport (the user just clicked a button — viewport
-    /// invariant).
-    public var flashCentersViewport: Bool = true
+    /// Card clicks always center the flashed text; resolution pulses keep
+    /// the viewport still when the change is already visible, and scroll
+    /// to it exactly like a card click when it is offscreen (user redline:
+    /// the pulse must be SEEN).
+    public enum FlashScrollBehavior {
+        case center
+        case centerIfOffscreen
+    }
+    public var flashScroll: FlashScrollBehavior = .center
     /// Document→card linkage: the caret entered (byte range) or left (nil)
     /// a rendered mark.
     public var onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil
@@ -203,7 +208,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         flashSuggestionOffset: Int? = nil,
         flashGeneration: Int = 0,
         flashBlockID: BlockID? = nil,
-        flashCentersViewport: Bool = true,
+        flashScroll: FlashScrollBehavior = .center,
         onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil,
         onOpenReview: (() -> Void)? = nil,
         activeFragmentProvider: ((_ caretOffset: Int) -> NSAttributedString?)? = nil
@@ -241,7 +246,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.flashSuggestionOffset = flashSuggestionOffset
         self.flashGeneration = flashGeneration
         self.flashBlockID = flashBlockID
-        self.flashCentersViewport = flashCentersViewport
+        self.flashScroll = flashScroll
         self.onSuggestionCaretLink = onSuggestionCaretLink
         self.onOpenReview = onOpenReview
         self.activeFragmentProvider = activeFragmentProvider
@@ -644,7 +649,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
             coordinator.appliedFlashGeneration = flashGeneration
             coordinator.flashSuggestionMark(
                 byteOffset: flashSuggestionOffset, fallbackBlockID: flashBlockID,
-                centersViewport: flashCentersViewport, in: textView)
+                scroll: flashScroll, in: textView)
         }
 
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {
