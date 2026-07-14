@@ -351,3 +351,30 @@ extension SuggestionResolutionTests {
                       "a record whose mark still lives isn't history yet")
     }
 }
+
+// MARK: - Session-level atomicity (reported: two undos per resolution)
+
+extension SuggestionResolutionTests {
+    func testOneUndoRestoresAResolutionThroughTheRealSession() async throws {
+        let source = maintained
+        let session = DocumentSession(source: source, fileURL: nil)
+        let document = MarkdownConverter.parse(source)
+        let mark = SuggestionResolver.marks(in: document).first {
+            if case .insertion = $0.kind { return true }
+            return false
+        }!
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+
+        let resolved = try await session.applyEdit(edit, baseRevision: nil)
+        XCTAssertFalse(resolved.source.contains("{++alpha++}"))
+        XCTAssertTrue(resolved.source.contains("status: resolved"))
+
+        let restored = try await session.undo()
+        XCTAssertEqual(restored?.source, source,
+                       "ONE undo must restore prose AND metadata — they are one edit")
+        // And nothing further to undo: it was ONE stack entry.
+        let empty = try await session.undo()
+        XCTAssertNil(empty, "exactly one undo entry per resolution")
+    }
+}
