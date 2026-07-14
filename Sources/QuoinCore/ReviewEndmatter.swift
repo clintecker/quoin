@@ -108,7 +108,15 @@ public enum ReviewEndmatter {
                 currentID = nil
                 if trimmed == "comments:" { section = "comments"; sawSection = true }
                 else if trimmed == "suggestions:" { section = "suggestions"; sawSection = true }
-                else { section = nil }
+                else {
+                    // STRICT: review endmatter contains ONLY the review
+                    // sections. Any other top-level line (prose, a closing
+                    // code fence, front-matter keys) means this `---` is not
+                    // endmatter — being lenient here made a fenced spec
+                    // EXAMPLE parse as real endmatter and truncate the fence
+                    // (caught by RDFMConformanceTests' spec golden).
+                    return nil
+                }
                 continue
             }
             guard section != nil else { continue }
