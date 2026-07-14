@@ -1425,7 +1425,150 @@ extension MarkdownReaderView {
                 parent.onActivateBlock?(nil, nil, nil)
                 return true
             }
+            // Tab / ⇧Tab on a list-item line of the revealed source:
+            // indent / outdent as ONE byte edit (task #60). Non-list lines
+            // fall through to the ordinary tab insertion.
+            if commandSelector == #selector(NSTextView.insertTab(_:)) {
+                return indentListLines(outdent: false, in: textView)
+            }
+            if commandSelector == #selector(NSTextView.insertBacktab(_:)) {
+                return indentListLines(outdent: true, in: textView)
+            }
+            // Home/End while EDITING move the caret to the line ends (user
+            // redline, #60); reading mode keeps the system scroll behavior.
+            if parent.rendered.activeEditableRange != nil {
+                if commandSelector == #selector(NSResponder.scrollToBeginningOfDocument(_:)) {
+                    textView.moveToBeginningOfLine(nil)
+                    return true
+                }
+                if commandSelector == #selector(NSResponder.scrollToEndOfDocument(_:)) {
+                    textView.moveToEndOfLine(nil)
+                    return true
+                }
+            }
             return false
+        }
+
+        /// The width of a list marker at the start of `line` — leading
+        /// spaces, then `-`/`*`/`+` or `12.`/`12)`, then a space — measured
+        /// as marker + one space (the column where the item's content
+        /// starts, which is exactly one nesting step). Nil for non-list
+        /// lines.
+        static func listMarkerWidth(of line: Substring) -> Int? {
+            var rest = line.drop(while: { $0 == " " })
+            if let first = rest.first, "-*+".contains(first) {
+                rest = rest.dropFirst()
+            } else {
+                let digits = rest.prefix(while: \.isNumber)
+                guard !digits.isEmpty, digits.count <= 9 else { return nil }
+                rest = rest.dropFirst(digits.count)
+                guard let punct = rest.first, punct == "." || punct == ")" else { return nil }
+                rest = rest.dropFirst()
+                guard rest.first == " " || rest.isEmpty else { return nil }
+                return digits.count + 2
+            }
+            guard rest.first == " " || rest.isEmpty else { return nil }
+            return 2
+        }
+
+        /// Indents (or outdents) every list-item line the selection touches
+        /// inside the active block's revealed source, as ONE relative byte
+        /// edit through the ordinary intent pipeline — the caret keeps its
+        /// position in the text. Returns false when the caret line isn't a
+        /// list item, so Tab falls through to plain insertion.
+        private func indentListLines(outdent: Bool, in textView: NSTextView) -> Bool {
+            guard let onEdit = parent.onEditIntent,
+                  !awaitingEditEcho,
+                  let active = parent.rendered.activeEditableRange,
+                  let sourceText = parent.rendered.activeSourceText else { return false }
+            let selection = textView.selectedRange()
+            guard selection.location >= active.location,
+                  NSMaxRange(selection) <= NSMaxRange(active) else { return false }
+            let relSelection = NSRange(location: selection.location - active.location,
+                                       length: selection.length)
+            guard let edit = Self.listIndentEdit(
+                sourceText: sourceText, selection: relSelection, outdent: outdent
+            ) else { return false }
+            if let (byteRange, replacement, caretDelta) = edit.byteEdit(inText: sourceText) {
+                onEdit(byteRange, replacement, caretDelta)
+                beginAwaitingEditEcho()
+            }
+            return true
+        }
+
+        /// The pure computation behind Tab/⇧Tab list indenting: which
+        /// UTF-16 line span to replace, with what, and where the caret
+        /// lands within the replacement. Nil when any touched line isn't a
+        /// list-item line (Tab falls through to plain insertion); a no-op
+        /// outdent returns an empty edit (`isNoop`), which swallows the key.
+        struct ListIndentEdit {
+            let utf16Range: Range<Int>
+            let replacement: String
+            let caretUTF16: Int
+            let isNoop: Bool
+
+            func byteEdit(inText sourceText: String) -> (ByteRange, String, Int?)? {
+                guard !isNoop,
+                      let byteRange = EditMapping.utf8Range(
+                        inText: sourceText, utf16Range: utf16Range) else { return nil }
+                return (byteRange, replacement,
+                        EditMapping.utf8Offset(inText: replacement, utf16Offset: caretUTF16))
+            }
+        }
+
+        static func listIndentEdit(
+            sourceText: String, selection: NSRange, outdent: Bool
+        ) -> ListIndentEdit? {
+            let sourceNS = sourceText as NSString
+            guard NSMaxRange(selection) <= sourceNS.length else { return nil }
+            let linesRange = sourceNS.lineRange(for: selection)
+            let lines = sourceNS.substring(with: linesRange)
+            // lineRange includes the trailing newline; splitting with it
+            // would add a phantom empty "line" that fails the marker check.
+            let hadNewline = lines.hasSuffix("\n")
+            let body = hadNewline ? String(lines.dropLast()) : lines
+
+            // Every touched line must be a list-item line — a mixed
+            // selection (item + continuation paragraph) falls through.
+            let split = body.split(separator: "\n", omittingEmptySubsequences: false)
+            let widths = split.map { listMarkerWidth(of: $0) }
+            guard !widths.isEmpty, widths.allSatisfy({ $0 != nil }) else { return nil }
+
+            var replacementLines: [String] = []
+            var caretShift = 0  // UTF-16 shift of the caret within linesRange
+            var lineStart = 0   // running UTF-16 offset of the line inside `lines`
+            let caretInLines = selection.location - linesRange.location
+            for (line, width) in zip(split, widths) {
+                let step = width ?? 2
+                let delta: Int
+                if outdent {
+                    let leading = line.prefix(while: { $0 == " " }).count
+                    delta = -min(leading, step)
+                    replacementLines.append(String(line.dropFirst(-delta)))
+                } else {
+                    delta = step
+                    replacementLines.append(String(repeating: " ", count: step) + line)
+                }
+                // The caret keeps its place in the TEXT: shift it by every
+                // change at or before it. On the caret's own line an outdent
+                // can only consume the spaces left of the caret.
+                if caretInLines >= lineStart {
+                    if delta > 0 {
+                        caretShift += delta
+                    } else {
+                        caretShift -= min(caretInLines - lineStart, -delta)
+                    }
+                }
+                lineStart += line.utf16.count + 1
+            }
+            let replacement = replacementLines.joined(separator: "\n")
+                + (hadNewline ? "\n" : "")
+            let caretUTF16 = max(0, min(caretInLines + caretShift, replacement.utf16.count))
+            return ListIndentEdit(
+                utf16Range: linesRange.location..<NSMaxRange(linesRange),
+                replacement: replacement,
+                caretUTF16: caretUTF16,
+                isNoop: replacement == lines)
         }
 
         func blockID(atCharIndex index: Int) -> BlockID? {
