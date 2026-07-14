@@ -164,6 +164,10 @@ public indirect enum BlockKind: Hashable, Sendable {
     case callout(kind: CalloutKind, children: [Block])
     /// Leading YAML front matter, rendered as a compact metadata chip.
     case frontMatter(yaml: String)
+    /// RDFM review endmatter (`---` + comments:/suggestions: YAML at EOF) —
+    /// metadata for the document's marks; renders as a compact chip like
+    /// front matter (suggestions design, S2).
+    case reviewEndmatter(yaml: String)
     /// A `[TOC]` block — renders the linked heading outline inline.
     case tableOfContents
     case thematicBreak
@@ -257,6 +261,9 @@ public struct QuoinDocument: Sendable {
     public let stats: DocumentStats
     /// SHA-256 of the source, used to recognize self-inflicted file events.
     public let sourceHash: String
+    /// RDFM review endmatter metadata (author/time/threads per `{#id}`),
+    /// nil when the document carries none (suggestions design, S2).
+    public let reviewMetadata: ReviewMetadata?
 
     public init(
         source: String,
@@ -264,7 +271,8 @@ public struct QuoinDocument: Sendable {
         outline: [HeadingInfo],
         footnotes: [Footnote] = [],
         stats: DocumentStats,
-        sourceHash: String
+        sourceHash: String,
+        reviewMetadata: ReviewMetadata? = nil
     ) {
         self.source = source
         self.blocks = blocks
@@ -272,6 +280,7 @@ public struct QuoinDocument: Sendable {
         self.footnotes = footnotes
         self.stats = stats
         self.sourceHash = sourceHash
+        self.reviewMetadata = reviewMetadata
     }
 
     public static let empty = QuoinDocument(source: "", blocks: [], outline: [], stats: DocumentStats(), sourceHash: "")

@@ -69,6 +69,8 @@ public enum PlainTextExporter {
                 out.append(indent + kind.title.uppercased() + "\n" + body.joined(separator: "\n\n"))
             case .frontMatter(let yaml):
                 out.append(yaml.split(separator: "\n").map { indent + $0 }.joined(separator: "\n"))
+            case .reviewEndmatter(let yaml):
+                out.append(yaml.split(separator: "\n").map { indent + $0 }.joined(separator: "\n"))
             case .tableOfContents:
                 break // navigation aid, not content
             case .thematicBreak:

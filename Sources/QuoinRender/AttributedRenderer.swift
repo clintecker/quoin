@@ -1148,6 +1148,12 @@ public struct AttributedRenderer {
             content = renderCallout(kind: kind, children: children, depth: depth, document: document)
         case .frontMatter(let yaml):
             content = renderFrontMatter(yaml: yaml)
+        case .reviewEndmatter(let yaml):
+            // Review metadata chip (RDFM endmatter): same condensed-chip
+            // treatment as front matter — the review RAIL surfaces the
+            // metadata meaningfully; the chip just keeps the YAML tidy and
+            // editable (block activation reveals it).
+            content = renderFrontMatter(yaml: "review · " + yaml)
         case .tableOfContents:
             content = renderTOC(outline: document.outline)
         case .thematicBreak:
@@ -1946,24 +1952,32 @@ public struct AttributedRenderer {
             attrs[.baselineOffset] = theme.bodySize * 0.33
             return NSAttributedString(string: "\(index)", attributes: attrs)
 
-        case .suggestion(let kind, _, _):
+        case .suggestion(let kind, let markRange, _):
             // CriticMarkup marks (docs/design/suggestions.md, S1 read-only):
             // pending suggestions render as tracked changes — never silently
             // collapsed (RDFM normative rule). Accept/reject chips arrive in
             // S2; the reveal shows the literal mark syntax.
+            func tagged(_ rendered: NSAttributedString) -> NSAttributedString {
+                let output = NSMutableAttributedString(attributedString: rendered)
+                output.addAttribute(
+                    QuoinAttribute.suggestionRange,
+                    value: NSValue(range: NSRange(location: markRange.offset, length: markRange.length)),
+                    range: NSRange(location: 0, length: output.length))
+                return output
+            }
             switch kind {
             case .insertion(let children):
                 var attrs = attributes
                 attrs[.backgroundColor] = theme.suggestionInsertFill
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 attrs[.underlineColor] = theme.suggestionInsertInk.withAlphaComponent(0.5)
-                return renderInlines(children, base: attrs)
+                return tagged(renderInlines(children, base: attrs))
             case .deletion(let children):
                 var attrs = attributes
                 attrs[.backgroundColor] = theme.suggestionDeleteFill
                 attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
                 attrs[.foregroundColor] = theme.ink.withAlphaComponent(0.55)
-                return renderInlines(children, base: attrs)
+                return tagged(renderInlines(children, base: attrs))
             case .substitution(let old, let new):
                 let output = NSMutableAttributedString()
                 var oldAttrs = attributes
@@ -1979,7 +1993,7 @@ public struct AttributedRenderer {
                 newAttrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 newAttrs[.underlineColor] = theme.suggestionInsertInk.withAlphaComponent(0.5)
                 output.append(renderInlines(new, base: newAttrs))
-                return output
+                return tagged(output)
             case .comment(let text):
                 // Annotation, not document text: a compact bubble chip. The
                 // full comment shows in the tooltip; S2 gives it a real UI.
@@ -1991,12 +2005,12 @@ public struct AttributedRenderer {
                 attrs[.toolTip] = text as NSString
                 #endif
                 let label = text.count <= 24 ? text : String(text.prefix(23)) + "…"
-                return NSAttributedString(string: " 💬 \(label) ", attributes: attrs)
+                return tagged(NSAttributedString(string: " 💬 \(label) ", attributes: attrs))
             case .highlight(let children):
                 var attrs = attributes
                 attrs[.backgroundColor] = theme.suggestionHighlightFill
                 attrs[.foregroundColor] = theme.textColor
-                return renderInlines(children, base: attrs)
+                return tagged(renderInlines(children, base: attrs))
             }
 
         case .softBreak:

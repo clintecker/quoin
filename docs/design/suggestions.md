@@ -146,6 +146,27 @@ right-to-left (offset-stable), one undo group.
   does this as editor-input interception; ours is a byte-level transform).
   The hard sub-problem is caret math (inserted bytes ≠ typed bytes).
 
+## 3.5 Review UI direction (2026-07-14, inspired by RoughDraft — not copied)
+
+Reference screenshots (RoughDraft's review window) establish the *shape*;
+Quoin renders it in its own design language (Graphite, hairlines, 40% ink,
+capsule chips):
+
+- **Review rail**: when a document carries marks, cards appear in the right
+  margin (where the live-preview panel lives — same floating-view machinery,
+  same geometry source: the measure pass + `suggestionRange` attributes).
+  Each card anchors vertically to its mark, stacked without overlap.
+- **Card anatomy**: author + relative time (from RDFM endmatter metadata;
+  absent metadata → just the kind), body (comment text, or `Replace:
+  "old" → "new"` in the suggestion tints), and ✓ accept / ✕ reject as the
+  same capsule chips as `✓ done`. Reply/resolve arrive in S4.
+- **Linkage**: caret-in-mark or hover highlights its card (accent hairline);
+  clicking a card scrolls to its mark (`scrollTarget` machinery).
+- **Counts** in the status bar ("3 suggestions · 2 comments"); Review menu
+  carries Accept All / Reject All (one undo group, right-to-left).
+- Deliberately NOT copied from RoughDraft: avatars, the "I'm done" agent
+  handoff button (S4 decides the agent story), in-canvas card shadows.
+
 ## 4. Staged plan
 
 - **S1 — read-only marks (M).** CriticScanner + `Inline.suggestion` +

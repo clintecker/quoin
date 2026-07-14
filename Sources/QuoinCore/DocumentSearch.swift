@@ -47,6 +47,8 @@ public struct DocumentSearch: Sendable {
                     texts.append(BlockText(blockID: block.id, text: html))
                 case .frontMatter(let yaml):
                     texts.append(BlockText(blockID: block.id, text: yaml))
+                case .reviewEndmatter(let yaml):
+                    texts.append(BlockText(blockID: block.id, text: yaml))
                 case .thematicBreak, .tableOfContents:
                     break
                 }

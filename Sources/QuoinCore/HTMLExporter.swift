@@ -85,6 +85,8 @@ public enum HTMLExporter {
                 out += "<aside class=\"callout callout-\(kind.rawValue)\"><p class=\"callout-title\">\(kind.title)</p>\n\(inner)</aside>\n"
             case .frontMatter(let yaml):
                 out += "<pre class=\"front-matter\"><code>\(escape(yaml))</code></pre>\n"
+            case .reviewEndmatter(let yaml):
+                out += "<pre class=\"review-endmatter\"><code>\(escape(yaml))</code></pre>\n"
             case .tableOfContents:
                 out += "<nav class=\"toc\">\n<ul>\n"
                 for heading in document.outline {

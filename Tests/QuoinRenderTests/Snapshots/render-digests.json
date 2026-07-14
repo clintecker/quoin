@@ -21396,6 +21396,36 @@
 
         ],
         "t" : "coexist in one paragraph."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "deco" : "chip(#F2F2F4)",
+        "f" : "10.50/0.00m",
+        "fg" : "#1D1D1F8C",
+        "p" : "lh1.40 ps4.00 psb2.00 fh8.00 hi8.00 ti-8.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "review · comments:   ·   c1: { by: user, at: \"2026-04-28T12:00:00Z\" }   ·   c2:   ·   body: \"Q3 numbers, specifically.\"   ·   by: AI   ·   at: \"2026-04-28T12:05:00Z\"   ·   re: c1   ·   suggestions:   ·   s1: { by: AI, at: \"2026-04-28T12:01:00Z\" }"
+      },
+      {
+        "deco" : "chip(#F2F2F4)",
+        "f" : "10.50/0.00m",
+        "fg" : "accent",
+        "link" : "quoin-edit://block",
+        "p" : "lh1.40 ps4.00 psb2.00 fh8.00 hi8.00 ti-8.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "   ·   ‹/› edit"
       }
     ]
   },

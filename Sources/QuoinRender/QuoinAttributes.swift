@@ -39,6 +39,11 @@ public enum QuoinAttribute {
     /// would be returned forever once the block's content-hash `BlockID`
     /// stabilizes; the renderer drops such fragments from the cache.
     public static let pendingContent = NSAttributedString.Key("quoin.pendingContent")
+    /// A rendered CriticMarkup run's whole-mark SOURCE byte range, boxed as
+    /// NSValue(range:) — accept/reject reads it back at the click point and
+    /// re-verifies against the CURRENT source before splicing (suggestions
+    /// design, S2).
+    public static let suggestionRange = NSAttributedString.Key("quoin.suggestionRange")
 }
 
 /// Custom URL schemes used for in-document interaction via the text view's

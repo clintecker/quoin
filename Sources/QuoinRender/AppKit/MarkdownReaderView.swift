@@ -140,6 +140,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// tab the user is returning to. Applied only when no block is being
     /// edited — an active block's caret is restored by the model's own path.
     public var restoreViewport: ViewportSnapshot? = nil
+    /// Accept/reject a CriticMarkup mark: the whole-mark SOURCE byte range
+    /// (from `QuoinAttribute.suggestionRange`) + the chosen action. The host
+    /// re-verifies the bytes still parse as that mark before splicing.
+    public var onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil
 
     public init(
         rendered: RenderedDocument,
@@ -170,7 +174,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         isActiveTab: Bool = true,
         onCaptureViewport: ((ViewportSnapshot) -> Void)? = nil,
         restoreViewport: ViewportSnapshot? = nil,
-        onActiveCaretMoved: ((Int) -> Void)? = nil
+        onActiveCaretMoved: ((Int) -> Void)? = nil,
+        onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -201,6 +206,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.onCaptureViewport = onCaptureViewport
         self.restoreViewport = restoreViewport
         self.onActiveCaretMoved = onActiveCaretMoved
+        self.onSuggestionAction = onSuggestionAction
     }
 
     public func makeCoordinator() -> Coordinator {

@@ -1,0 +1,192 @@
+import Foundation
+
+// MARK: - RDFM review endmatter (suggestions design §2, S2)
+
+/// Metadata for one comment or suggestion, keyed by its `{#id}` reference.
+public struct ReviewEntry: Hashable, Sendable {
+    /// Author label; the literal `AI` marks agent authorship (RDFM).
+    public var by: String?
+    /// ISO-8601 timestamp, kept as its source string (rendering decides
+    /// how much precision to show).
+    public var at: String?
+    /// Parent id — a threaded reply (reply bodies live entirely in
+    /// endmatter; root bodies stay inline for anchor portability).
+    public var re: String?
+    /// `resolved` when the thread is closed.
+    public var status: String?
+    /// Resolution summary, when present.
+    public var resolved: String?
+    /// Endmatter-only body (replies and document-level comments).
+    public var body: String?
+}
+
+public struct ReviewMetadata: Hashable, Sendable {
+    public var comments: [String: ReviewEntry]
+    public var suggestions: [String: ReviewEntry]
+
+    public var isEmpty: Bool { comments.isEmpty && suggestions.isEmpty }
+
+    public func entry(for id: String) -> ReviewEntry? {
+        comments[id] ?? suggestions[id]
+    }
+}
+
+/// Detects and parses the RDFM YAML endmatter: the LAST `\n---\n` in the
+/// document whose tail parses as a `comments:`/`suggestions:` map — and only
+/// when the body actually references it (`{#` somewhere before it) or it
+/// carries a document-level comment. That ambiguity heuristic (from the RDFM
+/// reference implementation) protects ordinary documents that merely end
+/// with a thematic break. The YAML subset is deliberately tiny — two-level
+/// maps with scalar string values, double-quoted or bare — parsed by hand
+/// (the one-dependency policy; front matter set the precedent of carrying
+/// raw YAML).
+public enum ReviewEndmatter {
+
+    public struct Detected: Sendable {
+        /// Byte range of the endmatter INCLUDING its leading `\n---\n`
+        /// delimiter — the body ends where this starts.
+        public let range: ByteRange
+        public let yaml: String
+        public let metadata: ReviewMetadata
+    }
+
+    public static func detect(in source: String) -> Detected? {
+        guard let delimiterRange = source.range(of: "\n---\n", options: .backwards) else { return nil }
+        let tail = String(source[delimiterRange.upperBound...])
+        guard let metadata = parse(yaml: tail), !metadata.isEmpty else { return nil }
+        let body = String(source[..<delimiterRange.lowerBound])
+        // Referenced from the body, or carrying a document-level comment
+        // (an entry with a body and no parent).
+        let documentLevel = metadata.comments.values.contains { $0.body != nil && $0.re == nil }
+        guard body.contains("{#") || documentLevel else { return nil }
+        let offset = source.utf8.distance(from: source.utf8.startIndex,
+                                          to: delimiterRange.lowerBound.samePosition(in: source.utf8)!)
+        return Detected(
+            range: ByteRange(offset: offset, length: source.utf8.count - offset),
+            yaml: tail,
+            metadata: metadata)
+    }
+
+    /// Parses the RDFM endmatter YAML subset:
+    ///
+    /// ```yaml
+    /// comments:
+    ///   c1: { by: user, at: "2026-04-28T12:00:00Z" }
+    ///   c2:
+    ///     body: "I can add one."
+    ///     by: AI
+    ///     re: c1
+    /// suggestions:
+    ///   s1: { by: AI }
+    /// ```
+    ///
+    /// Returns nil unless at least one `comments:`/`suggestions:` section
+    /// exists — the caller's ordinary-`---` disambiguator.
+    static func parse(yaml: String) -> ReviewMetadata? {
+        var comments: [String: ReviewEntry] = [:]
+        var suggestions: [String: ReviewEntry] = [:]
+        var section: String?      // "comments" | "suggestions"
+        var currentID: String?
+        var sawSection = false
+
+        func assign(_ entry: ReviewEntry, id: String) {
+            if section == "comments" { comments[id] = entry }
+            else if section == "suggestions" { suggestions[id] = entry }
+        }
+        func current() -> ReviewEntry? {
+            guard let id = currentID else { return nil }
+            return section == "comments" ? comments[id] : suggestions[id]
+        }
+
+        for rawLine in yaml.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            let indent = line.prefix(while: { $0 == " " }).count
+
+            if indent == 0 {
+                currentID = nil
+                if trimmed == "comments:" { section = "comments"; sawSection = true }
+                else if trimmed == "suggestions:" { section = "suggestions"; sawSection = true }
+                else { section = nil }
+                continue
+            }
+            guard section != nil else { continue }
+
+            if indent == 2, let colon = trimmed.firstIndex(of: ":") {
+                let id = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
+                guard !id.isEmpty, !id.contains(" ") else { return nil }
+                var entry = ReviewEntry()
+                let rest = String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                if rest.hasPrefix("{"), rest.hasSuffix("}") {
+                    // Flow form: { by: user, at: "…" }
+                    let inner = String(rest.dropFirst().dropLast())
+                    for pair in splitFlowPairs(inner) {
+                        guard let (key, value) = keyValue(pair) else { return nil }
+                        set(&entry, key: key, value: value)
+                    }
+                } else if !rest.isEmpty {
+                    return nil // an id line carries either a flow map or nothing
+                }
+                currentID = id
+                assign(entry, id: id)
+                continue
+            }
+
+            if indent >= 4, currentID != nil {
+                guard let (key, value) = keyValue(trimmed), var entry = current() else { return nil }
+                set(&entry, key: key, value: value)
+                assign(entry, id: currentID!)
+                continue
+            }
+            return nil // anything else isn't our subset
+        }
+        guard sawSection else { return nil }
+        return ReviewMetadata(comments: comments, suggestions: suggestions)
+    }
+
+    private static func set(_ entry: inout ReviewEntry, key: String, value: String) {
+        switch key {
+        case "by": entry.by = value
+        case "at": entry.at = value
+        case "re": entry.re = value
+        case "status": entry.status = value
+        case "resolved": entry.resolved = value
+        case "body": entry.body = value
+        default: break // unknown keys are preserved in the raw yaml, ignored here
+        }
+    }
+
+    private static func keyValue(_ text: String) -> (String, String)? {
+        guard let colon = text.firstIndex(of: ":") else { return nil }
+        let key = String(text[..<colon]).trimmingCharacters(in: .whitespaces)
+        var value = String(text[text.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty else { return nil }
+        if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
+            value = String(value.dropFirst().dropLast())
+                .replacingOccurrences(of: "\\\"", with: "\"")
+                .replacingOccurrences(of: "\\\\", with: "\\")
+        }
+        return (key, value)
+    }
+
+    /// Splits `by: user, at: "a, b"` on commas OUTSIDE quotes.
+    private static func splitFlowPairs(_ text: String) -> [String] {
+        var pairs: [String] = []
+        var current = ""
+        var inQuotes = false
+        var previous: Character = " "
+        for ch in text {
+            if ch == "\"" && previous != "\\" { inQuotes.toggle() }
+            if ch == "," && !inQuotes {
+                pairs.append(current)
+                current = ""
+            } else {
+                current.append(ch)
+            }
+            previous = ch
+        }
+        if !current.trimmingCharacters(in: .whitespaces).isEmpty { pairs.append(current) }
+        return pairs.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+}

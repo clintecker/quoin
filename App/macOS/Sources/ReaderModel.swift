@@ -515,6 +515,21 @@ final class ReaderModel {
 
     /// The shared edit pipeline: serialize through the session, then adopt
     /// the new document with caret/projection bookkeeping.
+    /// Accept or reject a CriticMarkup mark (suggestions design, S2): the
+    /// splice is computed from the CURRENT source's bytes at the mark's
+    /// range — if the document changed since the projection was built and
+    /// those bytes no longer parse as one whole mark, refuse with a banner
+    /// rather than splice blind. Rides the ordinary edit path: undoable,
+    /// autosaved, stale-base protected.
+    func resolveSuggestion(markRange: ByteRange, action: SuggestionResolver.Action) {
+        guard let edit = SuggestionResolver.edit(
+            resolving: markRange, in: document.source, action: action) else {
+            reportFailure("That suggestion changed since it was rendered — try again.")
+            return
+        }
+        applyAbsolute(edit, caretUTF8: markRange.offset)
+    }
+
     private func applyAbsolute(_ edit: SourceEdit, caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil) {
         guard let session else { return }
         let absolute = edit.range

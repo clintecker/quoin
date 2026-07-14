@@ -21,7 +21,7 @@ public enum EditingFlavor: Equatable, Sendable {
         switch kind {
         case .mermaid, .mathBlock:
             return .preview
-        case .codeBlock, .htmlBlock, .frontMatter:
+        case .codeBlock, .htmlBlock, .frontMatter, .reviewEndmatter:
             return .verbatim
         default:
             return .prose
@@ -100,7 +100,7 @@ public func presentation(
 func presentationShowsChrome(_ kind: BlockKind) -> Bool {
     switch kind {
     case .codeBlock, .mermaid, .mathBlock, .table, .htmlBlock,
-         .tableOfContents, .frontMatter:
+         .tableOfContents, .frontMatter, .reviewEndmatter:
         return true
     default:
         return false

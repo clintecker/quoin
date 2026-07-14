@@ -32,3 +32,14 @@ literal. A substitution without an arrow {~~like this~~} stays literal.
 
 Math is opaque: $a {++b++} c$ stays math, while {++this edit++} and $x^2$
 coexist in one paragraph.
+
+---
+comments:
+  c1: { by: user, at: "2026-04-28T12:00:00Z" }
+  c2:
+    body: "Q3 numbers, specifically."
+    by: AI
+    at: "2026-04-28T12:05:00Z"
+    re: c1
+suggestions:
+  s1: { by: AI, at: "2026-04-28T12:01:00Z" }

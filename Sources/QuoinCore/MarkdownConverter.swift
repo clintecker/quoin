@@ -44,6 +44,21 @@ public enum MarkdownConverter {
             baseOffset = front.byteLength
             parseInput = String(decoding: Array(source.utf8)[baseOffset...], as: UTF8.self)
         }
+        // RDFM review endmatter is split off the TAIL the same way (the
+        // last `\n---\n` whose YAML parses as review metadata AND is
+        // referenced from the body — an ordinary trailing hrule never
+        // matches). cmark never sees it; its block is appended after.
+        var endmatter: ReviewEndmatter.Detected?
+        if let detected = ReviewEndmatter.detect(in: parseInput) {
+            endmatter = ReviewEndmatter.Detected(
+                range: ByteRange(offset: baseOffset + detected.range.offset,
+                                 length: detected.range.length),
+                yaml: detected.yaml,
+                metadata: detected.metadata)
+            parseInput = String(
+                decoding: Array(parseInput.utf8)[..<detected.range.offset],
+                as: UTF8.self)
+        }
 
         let document = Markdown.Document(parsing: parseInput)
         var builder = Builder(source: source, parseInput: parseInput, baseOffset: baseOffset)
@@ -59,6 +74,12 @@ public enum MarkdownConverter {
             ))
         }
         blocks.append(contentsOf: builder.convert(children: document.children))
+        if let endmatter {
+            blocks.append(builder.makeBlock(
+                kind: .reviewEndmatter(yaml: endmatter.yaml),
+                range: endmatter.range
+            ))
+        }
         let footnotes = builder.gatherFootnotes()
         builder.finalizeStats()
         return QuoinDocument(
@@ -67,7 +88,8 @@ public enum MarkdownConverter {
             outline: builder.outline,
             footnotes: footnotes,
             stats: builder.stats,
-            sourceHash: SHA256Hex.hash(of: source)
+            sourceHash: SHA256Hex.hash(of: source),
+            reviewMetadata: endmatter?.metadata
         )
     }
 

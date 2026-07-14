@@ -1083,9 +1083,40 @@ extension MarkdownReaderView {
         /// Done Editing (embeds and the open block), and Copy Markdown
         /// Source (any block whose source the host can provide). Inserted
         /// above AppKit's standard items.
+        @objc private func contextResolveSuggestion(_ sender: NSMenuItem) {
+            guard let payload = sender.representedObject as? [Any],
+                  let boxed = payload.first as? NSValue,
+                  let accept = payload.last as? Bool else { return }
+            let range = boxed.rangeValue
+            parent.onSuggestionAction?(
+                ByteRange(offset: range.location, length: range.length),
+                accept ? .accept : .reject)
+        }
+
         func populateContextMenu(_ menu: NSMenu, atCharIndex index: Int) {
             guard let id = blockID(atCharIndex: index) else { return }
             var items: [NSMenuItem] = []
+            // Right-click on a rendered suggestion mark: resolve it here
+            // (suggestions design S2; the review rail adds card buttons).
+            if parent.onSuggestionAction != nil,
+               let storage = textView?.textContentStorage?.textStorage,
+               index < storage.length,
+               let boxed = storage.attribute(
+                   QuoinAttribute.suggestionRange, at: index, effectiveRange: nil) as? NSValue {
+                let accept = NSMenuItem(
+                    title: "Accept Suggestion",
+                    action: #selector(contextResolveSuggestion(_:)), keyEquivalent: "")
+                accept.target = self
+                accept.representedObject = [boxed, true] as [Any]
+                items.append(accept)
+                let reject = NSMenuItem(
+                    title: "Reject Suggestion",
+                    action: #selector(contextResolveSuggestion(_:)), keyEquivalent: "")
+                reject.target = self
+                reject.representedObject = [boxed, false] as [Any]
+                items.append(reject)
+                items.append(NSMenuItem.separator())
+            }
             let isActive = id == parent.rendered.activeBlockID
             if isActive || isEmbedBlock(atCharIndex: index) {
                 let item = NSMenuItem(

@@ -44,6 +44,10 @@ final class RevealDeltaRatchetTests: XCTestCase {
         "blockQuote": 205,
         "thematicBreak": 90,
         "html": 85,
+        // Review endmatter: the chip condenses N metadata entries to one
+        // line; the reveal unfolds the full YAML. Scales with entry count —
+        // the fixture's three-entry endmatter measures 281.
+        "endmatter": 320,
         // Attachment-backed reveals (equations, images, diagrams): with the
         // preview-anchored reveal the artifact STAYS rendered and the
         // source unfolds beneath it, so the delta is now the source
@@ -134,7 +138,12 @@ final class RevealDeltaRatchetTests: XCTestCase {
         case .list: return exceptions["list", default: defaultBudget]
         case .blockQuote, .callout: return exceptions["blockQuote", default: defaultBudget]
         case .thematicBreak: return exceptions["thematicBreak", default: defaultBudget]
-        case .htmlBlock, .frontMatter: return exceptions["html", default: defaultBudget]
+        case .htmlBlock, .frontMatter:
+            return exceptions["html", default: defaultBudget]
+        case .reviewEndmatter:
+            // Condensed chip ↔ full YAML source: inherent expansion, like
+            // front matter but multi-entry.
+            return exceptions["endmatter", default: defaultBudget]
         default: return defaultBudget
         }
     }
