@@ -38,6 +38,11 @@ struct ReaderScreen: View {
     /// Card→document flash command (generation-fired, like scrollTarget).
     @State private var flashSuggestionOffset: Int?
     @State private var flashGeneration = 0
+    /// Where the flash may fall back to (block containing the offset) and
+    /// whether it centers the viewport (card clicks yes; resolution pulses
+    /// never move the document).
+    @State private var flashBlockID: BlockID?
+    @State private var flashCenters = true
     /// Document→card linkage: the mark the caret is inside.
     @State private var linkedMark: ByteRange?
     @State private var isExportVisible = false
@@ -142,6 +147,8 @@ struct ReaderScreen: View {
                 onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) },
                 flashSuggestionOffset: flashSuggestionOffset,
                 flashGeneration: flashGeneration,
+                flashBlockID: flashBlockID,
+                flashCentersViewport: flashCenters,
                 onSuggestionCaretLink: { range in linkedMark = range },
                 onOpenReview: {
                     isOutlineVisible = true
@@ -258,12 +265,13 @@ struct ReaderScreen: View {
                             model.resolveAllSuggestions(action: action)
                         },
                         onFocus: { range in
-                            // Scroll the mark's block up AND ring the mark
-                            // itself (the "which one is this about" flash).
-                            if let id = model.blockID(containingByteOffset: range.offset) {
-                                jump(to: id)
-                            }
+                            // The flash handler centers the mark in the
+                            // viewport and rings it — a block-level jump
+                            // here would fight that scroll (it top-aligned;
+                            // user redline).
                             flashSuggestionOffset = range.offset
+                            flashBlockID = model.blockID(containingByteOffset: range.offset)
+                            flashCenters = true
                             flashGeneration += 1
                         }
                     )
@@ -286,6 +294,15 @@ struct ReaderScreen: View {
                 if was, !isEmpty, !userPickedInspectorMode {
                     inspectorMode = .review
                 }
+            }
+            // Resolution applied: pulse the splice location in place — the
+            // "something happened, and HERE" cue (user ask). Never scrolls.
+            .onChange(of: model.resolutionFlashGeneration) {
+                guard let offset = model.resolutionFlashOffset else { return }
+                flashSuggestionOffset = offset
+                flashBlockID = model.blockID(containingByteOffset: offset)
+                flashCenters = false
+                flashGeneration += 1
             }
             .onAppear {
                 if !reviewItems.isEmpty, !userPickedInspectorMode {

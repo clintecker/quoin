@@ -34,9 +34,18 @@ struct ReviewPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 if items.filter(\.isSuggestion).count > 1, let onResolveAll {
-                    HStack(spacing: 6) {
-                        capsuleAll("✓ Accept All") { onResolveAll(.accept) }
-                        capsuleAll("✕ Reject All") { onResolveAll(.reject) }
+                    // Narrow inspector: full labels wrap ugly at minimum
+                    // width (user redline) — fall back to short forms with
+                    // tooltips.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            capsuleAll("✓ Accept All") { onResolveAll(.accept) }
+                            capsuleAll("✕ Reject All") { onResolveAll(.reject) }
+                        }
+                        HStack(spacing: 6) {
+                            capsuleAll("✓ All", help: "Accept All") { onResolveAll(.accept) }
+                            capsuleAll("✕ All", help: "Reject All") { onResolveAll(.reject) }
+                        }
                     }
                 }
                 ForEach(Array(items.enumerated()), id: \.element) { _, item in
@@ -81,15 +90,20 @@ struct ReviewPanel: View {
         }
     }
 
-    private func capsuleAll(_ title: String, action: @escaping () -> Void) -> some View {
+    private func capsuleAll(
+        _ title: String, help: String? = nil, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Text(title)
+                .lineLimit(1)
+                .fixedSize()
                 .font(.system(size: 10.5, weight: .medium))
                 .padding(.horizontal, 8).padding(.vertical, 2.5)
                 .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
+        .help(help ?? title)
     }
 }
 
@@ -262,26 +276,40 @@ private struct ReviewCard: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 6) {
-            if item.isSuggestion {
-                capsule("✓ Accept", prominent: true) {
-                    onResolve(item.markRange, .accept)
-                }
-                capsule("✕ Reject", prominent: false) {
-                    onResolve(item.markRange, .reject)
-                }
-            } else {
-                capsule("✕ Dismiss", prominent: false) {
-                    onResolve(item.markRange, .accept) // comments: removed either way
-                }
-            }
+        // Full labels when they fit; glyph-only capsules with tooltips at
+        // minimum inspector width (user redline: "✕ Reject" wrapped to two
+        // lines).
+        ViewThatFits(in: .horizontal) {
+            actionRow(compact: false)
+            actionRow(compact: true)
         }
         .padding(.top, 2)
     }
 
-    private func capsule(_ title: String, prominent: Bool, action: @escaping () -> Void) -> some View {
+    private func actionRow(compact: Bool) -> some View {
+        HStack(spacing: 6) {
+            if item.isSuggestion {
+                capsule(compact ? "✓" : "✓ Accept", help: "Accept", prominent: true) {
+                    onResolve(item.markRange, .accept)
+                }
+                capsule(compact ? "✕" : "✕ Reject", help: "Reject", prominent: false) {
+                    onResolve(item.markRange, .reject)
+                }
+            } else {
+                capsule(compact ? "✕" : "✕ Dismiss", help: "Dismiss", prominent: false) {
+                    onResolve(item.markRange, .accept) // comments: removed either way
+                }
+            }
+        }
+    }
+
+    private func capsule(
+        _ title: String, help: String, prominent: Bool, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Text(title)
+                .lineLimit(1)
+                .fixedSize()
                 .font(.system(size: 10.5, weight: .medium))
                 .padding(.horizontal, 8).padding(.vertical, 2.5)
                 .background(
@@ -290,5 +318,6 @@ private struct ReviewCard: View {
                 .foregroundStyle(prominent ? Color.accentColor : Color.secondary)
         }
         .buttonStyle(.plain)
+        .help(help)
     }
 }

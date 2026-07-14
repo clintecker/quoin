@@ -148,6 +148,14 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// `flashGeneration` bumps to re-fire (same card clicked twice).
     public var flashSuggestionOffset: Int? = nil
     public var flashGeneration: Int = 0
+    /// Fallback flash target when no rendered mark matches the offset —
+    /// the RESOLUTION pulse: the mark is gone after accept/reject, so the
+    /// ring lands on the block the splice happened in.
+    public var flashBlockID: BlockID? = nil
+    /// Card clicks center the flashed text; resolution pulses must NOT
+    /// move the viewport (the user just clicked a button — viewport
+    /// invariant).
+    public var flashCentersViewport: Bool = true
     /// Document→card linkage: the caret entered (byte range) or left (nil)
     /// a rendered mark.
     public var onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil
@@ -194,6 +202,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil,
         flashSuggestionOffset: Int? = nil,
         flashGeneration: Int = 0,
+        flashBlockID: BlockID? = nil,
+        flashCentersViewport: Bool = true,
         onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil,
         onOpenReview: (() -> Void)? = nil,
         activeFragmentProvider: ((_ caretOffset: Int) -> NSAttributedString?)? = nil
@@ -230,6 +240,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.onSuggestionAction = onSuggestionAction
         self.flashSuggestionOffset = flashSuggestionOffset
         self.flashGeneration = flashGeneration
+        self.flashBlockID = flashBlockID
+        self.flashCentersViewport = flashCentersViewport
         self.onSuggestionCaretLink = onSuggestionCaretLink
         self.onOpenReview = onOpenReview
         self.activeFragmentProvider = activeFragmentProvider
@@ -630,7 +642,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
 
         if let flashSuggestionOffset, flashGeneration != coordinator.appliedFlashGeneration {
             coordinator.appliedFlashGeneration = flashGeneration
-            coordinator.flashSuggestionMark(byteOffset: flashSuggestionOffset, in: textView)
+            coordinator.flashSuggestionMark(
+                byteOffset: flashSuggestionOffset, fallbackBlockID: flashBlockID,
+                centersViewport: flashCentersViewport, in: textView)
         }
 
         if let scrollTarget, scrollGeneration != coordinator.appliedScrollGeneration {

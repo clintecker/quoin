@@ -1101,7 +1101,10 @@ extension MarkdownReaderView {
         /// rendered runs — the native gesture for "this is the one",
         /// pane-to-pane lines being fragile theater. The ring is a
         /// pass-through overlay that fades and removes itself.
-        func flashSuggestionMark(byteOffset: Int, in textView: NSTextView) {
+        func flashSuggestionMark(
+            byteOffset: Int, fallbackBlockID: BlockID? = nil,
+            centersViewport: Bool = true, in textView: NSTextView
+        ) {
             guard let storage = textView.textContentStorage?.textStorage,
                   let layoutManager = textView.textLayoutManager,
                   let contentStorage = textView.textContentStorage else { return }
@@ -1114,10 +1117,14 @@ extension MarkdownReaderView {
                     charRange = charRange.map { NSUnionRange($0, range) } ?? range
                 }
             }
+            // No rendered mark at that offset — the RESOLUTION case (the
+            // mark was just spliced away): pulse the block it happened in.
+            if charRange == nil, let fallbackBlockID {
+                charRange = parent.rendered.blockRanges[fallbackBlockID]
+            }
             guard let charRange,
                   let textRange = nsTextRange(charRange, in: contentStorage) else { return }
             layoutManager.ensureLayout(for: textRange)
-            scrollCaretIntoViewIfNeeded(charRange.location, in: textView)
 
             var union: CGRect?
             layoutManager.enumerateTextLayoutFragments(
@@ -1132,6 +1139,27 @@ extension MarkdownReaderView {
             guard var rect = union else { return }
             rect = rect.offsetBy(dx: textView.textContainerOrigin.x, dy: textView.textContainerOrigin.y)
                 .insetBy(dx: -4, dy: -2)
+
+            // Center the linked text: the mark's TOP lands as close to the
+            // viewport's vertical center as document bounds allow (user
+            // redline: the old minimal scroll left it hugging the top edge).
+            // Resolution pulses skip this — a button click must never move
+            // the document.
+            if centersViewport, let scrollView = textView.enclosingScrollView {
+                let clip = scrollView.contentView
+                let visibleHeight = clip.bounds.height
+                let maxOrigin = max(0, textView.bounds.height - visibleHeight)
+                let target = max(0, min(rect.minY - visibleHeight / 2, maxOrigin))
+                if abs(clip.bounds.origin.y - target) > 1 {
+                    NSAnimationContext.runAnimationGroup { context in
+                        context.duration = 0.25
+                        context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        clip.animator().setBoundsOrigin(
+                            NSPoint(x: clip.bounds.origin.x, y: target))
+                    }
+                    scrollView.reflectScrolledClipView(clip)
+                }
+            }
 
             let ring = FlashRingView(frame: rect)
             ring.strokeColor = parent.theme.accent
@@ -1148,7 +1176,7 @@ extension MarkdownReaderView {
                     .priority: NSAccessibilityPriorityLevel.medium.rawValue,
                 ])
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.9
+                context.duration = 1.8 // user redline: 0.9 faded too fast
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 ring.animator().alphaValue = 0
             }, completionHandler: { [weak ring] in

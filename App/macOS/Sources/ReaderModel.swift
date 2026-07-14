@@ -532,11 +532,17 @@ final class ReaderModel {
     /// Accept All / Reject All: one atomic edit, one undo (design §3.5).
     /// Acts on suggestions only — comments/highlights are annotations.
     func resolveAllSuggestions(action: SuggestionResolver.Action) {
-        // Nothing to resolve is a quiet no-op, not a failure.
-        applySessionResolution(refusalMessage: nil) { session in
+        // Nothing to resolve is a quiet no-op, not a failure. No pulse:
+        // a batch changes the whole document, there is no one "where".
+        applySessionResolution(refusalMessage: nil, flashOffset: nil) { session in
             try await session.applyBulkResolution(action: action, publishSnapshot: false)
         }
     }
+
+    /// The "something happened, HERE" pulse (user ask): after a resolution
+    /// applies, the view rings the spliced location. Generation-fired.
+    private(set) var resolutionFlashOffset: Int?
+    private(set) var resolutionFlashGeneration = 0
 
     /// The active block's reveal fragment re-styled at a caret offset —
     /// the caret-move restyle's source of truth (same pipeline as the
@@ -569,7 +575,8 @@ final class ReaderModel {
         // second quick Accept splice at pre-first-resolution offsets and
         // corrupt the document (panel review BLOCKER).
         applySessionResolution(
-            refusalMessage: "That suggestion changed since it was rendered — try again."
+            refusalMessage: "That suggestion changed since it was rendered — try again.",
+            flashOffset: markRange.offset
         ) { session in
             try await session.applyResolution(
                 markRange: markRange, action: action, publishSnapshot: false)
@@ -585,6 +592,7 @@ final class ReaderModel {
     /// an edit-intent into the block; see resolveSuggestion).
     private func applySessionResolution(
         refusalMessage: String?,
+        flashOffset: Int? = nil,
         _ operation: @escaping @Sendable (DocumentSession) async throws -> QuoinDocument?
     ) {
         guard let session else { return }
@@ -606,6 +614,10 @@ final class ReaderModel {
                         self.restoreCaret(in: newDocument, atUTF8Offset: nil)
                     }
                     self.scheduleH1Rename(for: newDocument)
+                    if let flashOffset {
+                        self.resolutionFlashOffset = flashOffset
+                        self.resolutionFlashGeneration += 1
+                    }
                 } else if let refusalMessage {
                     self.reportFailure(refusalMessage)
                 }
