@@ -55,6 +55,17 @@ struct ReaderScreen: View {
 
     private var isKeyWindow: Bool { controlActiveState == .key }
 
+    /// The review rail's cards, recomputed per projection (cheap: a walk of
+    /// the parsed marks + metadata join).
+    private var reviewItems: [ReviewItem] {
+        SuggestionResolver.reviewItems(in: model.document)
+    }
+    private var reviewCounts: (suggestions: Int, comments: Int) {
+        let items = reviewItems.filter { !$0.isResolved }
+        let suggestions = items.filter(\.isSuggestion).count
+        return (suggestions, items.count - suggestions)
+    }
+
     var body: some View {
         // Split into layout → chrome → menu wiring: one flat modifier
         // chain here exceeds the type-checker's budget.
@@ -112,7 +123,8 @@ struct ReaderScreen: View {
                 onCaptureViewport: { snapshot in model.savedViewport = snapshot },
                 restoreViewport: model.savedViewport,
                 onActiveCaretMoved: { offset in model.noteActiveCaretMoved(offset) },
-                onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) }
+                onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) },
+                reviewItems: reviewItems
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -577,6 +589,17 @@ struct ReaderScreen: View {
                     .help("Jump to a section in the current path")
                 }
                 Spacer()
+                // Review counts (suggestions design §3.5): accent, mono,
+                // only while unresolved marks exist.
+                if reviewCounts.suggestions + reviewCounts.comments > 0 {
+                    Text([
+                        reviewCounts.suggestions > 0
+                            ? "\(reviewCounts.suggestions) suggestion\(reviewCounts.suggestions == 1 ? "" : "s")" : nil,
+                        reviewCounts.comments > 0
+                            ? "\(reviewCounts.comments) comment\(reviewCounts.comments == 1 ? "" : "s")" : nil,
+                    ].compactMap { $0 }.joined(separator: " · "))
+                        .foregroundStyle(Color.accentColor)
+                }
                 // Word-count goal (idea #3): quiet progress next to stats.
                 if wordGoal > 0 {
                     let fraction = min(1, Double(model.stats.wordCount) / Double(wordGoal))
