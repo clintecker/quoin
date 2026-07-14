@@ -27,6 +27,14 @@ struct ReaderScreen: View {
     @State private var editSourceToggleGeneration = 0
 
     @State private var isOutlineVisible = true
+    /// Inspector mode: the trailing panel hosts Outline or Review
+    /// (suggestions §3.5, redlined 2026-07-14: the in-canvas rail felt
+    /// weird and needed a very wide window — the inspector works at every
+    /// width). Auto-selects Review when a document carries marks and the
+    /// user hasn't chosen this session.
+    private enum InspectorMode: String { case outline, review }
+    @State private var inspectorMode: InspectorMode = .outline
+    @State private var userPickedInspectorMode = false
     @State private var isExportVisible = false
     /// Focus mode: everything but the paragraph you're on recedes.
     @AppStorage("QuoinFocusMode") private var isFocusMode = false
@@ -123,8 +131,7 @@ struct ReaderScreen: View {
                 onCaptureViewport: { snapshot in model.savedViewport = snapshot },
                 restoreViewport: model.savedViewport,
                 onActiveCaretMoved: { offset in model.noteActiveCaretMoved(offset) },
-                onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) },
-                reviewItems: reviewItems
+                onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) }
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -189,13 +196,52 @@ struct ReaderScreen: View {
             model.refreshTheme()
         }
         .inspector(isPresented: $isOutlineVisible) {
-            OutlinePanel(
-                outline: model.outline,
-                currentSectionID: currentSection?.id
-            ) { headingID in
-                jump(to: headingID)
+            VStack(spacing: 0) {
+                if !reviewItems.isEmpty {
+                    Picker("", selection: Binding(
+                        get: { inspectorMode },
+                        set: { inspectorMode = $0; userPickedInspectorMode = true }
+                    )) {
+                        Text("Outline").tag(InspectorMode.outline)
+                        Text("Review \(reviewItems.filter { !$0.isResolved }.count)")
+                            .tag(InspectorMode.review)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                }
+                if inspectorMode == .review, !reviewItems.isEmpty {
+                    ReviewPanel(
+                        items: reviewItems,
+                        onResolve: { range, action in
+                            model.resolveSuggestion(markRange: range, action: action)
+                        },
+                        onFocus: { range in
+                            if let id = model.blockID(containingByteOffset: range.offset) {
+                                jump(to: id)
+                            }
+                        }
+                    )
+                } else {
+                    OutlinePanel(
+                        outline: model.outline,
+                        currentSectionID: currentSection?.id
+                    ) { headingID in
+                        jump(to: headingID)
+                    }
+                }
             }
-            .inspectorColumnWidth(min: 180, ideal: 220, max: 320)
+            .inspectorColumnWidth(min: 180, ideal: 240, max: 340)
+            .onChange(of: reviewItems.isEmpty) { _, empty in
+                if empty { inspectorMode = .outline }
+            }
+            .onAppear {
+                if !reviewItems.isEmpty, !userPickedInspectorMode {
+                    inspectorMode = .review
+                }
+            }
         }
         .environment(\.outlineSectionPreview, { headingID in
             sectionPreview(for: headingID)

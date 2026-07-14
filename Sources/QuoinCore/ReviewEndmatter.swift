@@ -82,7 +82,7 @@ public enum ReviewEndmatter {
     ///
     /// Returns nil unless at least one `comments:`/`suggestions:` section
     /// exists — the caller's ordinary-`---` disambiguator.
-    static func parse(yaml: String) -> ReviewMetadata? {
+    public static func parse(yaml: String) -> ReviewMetadata? {
         var comments: [String: ReviewEntry] = [:]
         var suggestions: [String: ReviewEntry] = [:]
         var section: String?      // "comments" | "suggestions"
@@ -196,5 +196,77 @@ public enum ReviewEndmatter {
         }
         if !current.trimmingCharacters(in: .whitespaces).isEmpty { pairs.append(current) }
         return pairs.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+}
+
+// MARK: - Maintenance on resolution (suggestions S2, redlined 2026-07-14)
+
+extension ReviewEndmatter {
+
+    /// The endmatter's counterpart edit when the mark with `id` resolves:
+    /// removes that entry AND its reply thread (entries whose `re` points
+    /// into the removed set, transitively); when nothing remains, removes
+    /// the ENTIRE endmatter block — otherwise the detection heuristic
+    /// rightly stops firing once the last `{#id}` leaves the body, and the
+    /// orphaned YAML leaks into the prose as a paragraph (the live bug:
+    /// dismissing the only comment turned the endmatter into visible YAML
+    /// soup). Remaining entries keep their original lines byte-exactly.
+    public static func maintenanceEdit(afterResolving id: String, in source: String) -> SourceEdit? {
+        guard let detected = detect(in: source) else { return nil }
+        guard detected.metadata.entry(for: id) != nil else { return nil }
+
+        // Transitive removal set over `re` links.
+        var removed: Set<String> = [id]
+        var grew = true
+        while grew {
+            grew = false
+            for (entryID, entry) in detected.metadata.comments where !removed.contains(entryID) {
+                if let re = entry.re, removed.contains(re) { removed.insert(entryID); grew = true }
+            }
+            for (entryID, entry) in detected.metadata.suggestions where !removed.contains(entryID) {
+                if let re = entry.re, removed.contains(re) { removed.insert(entryID); grew = true }
+            }
+        }
+
+        let remainingCount = (detected.metadata.comments.count + detected.metadata.suggestions.count)
+            - removed.count
+        if remainingCount <= 0 {
+            return SourceEdit(range: detected.range, replacement: "")
+        }
+
+        // Line surgery: keep every line except removed entries' blocks and
+        // section headers whose entries are all gone.
+        var keptLines: [String] = []
+        var pendingHeader: String?
+        var skippingEntry = false
+        for rawLine in detected.yaml.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let indent = line.prefix(while: { $0 == " " }).count
+            if indent == 0 {
+                skippingEntry = false
+                if trimmed == "comments:" || trimmed == "suggestions:" {
+                    pendingHeader = line // emit only if it gains an entry
+                } else {
+                    if trimmed.isEmpty { keptLines.append(line) }
+                }
+                continue
+            }
+            if indent == 2, let colon = trimmed.firstIndex(of: ":") {
+                let entryID = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
+                skippingEntry = removed.contains(entryID)
+                if !skippingEntry {
+                    if let header = pendingHeader { keptLines.append(header); pendingHeader = nil }
+                    keptLines.append(line)
+                }
+                continue
+            }
+            if !skippingEntry {
+                keptLines.append(line)
+            }
+        }
+        var replacement = "\n---\n" + keptLines.joined(separator: "\n")
+        if !replacement.hasSuffix("\n") { replacement += "\n" }
+        return SourceEdit(range: detected.range, replacement: replacement)
     }
 }

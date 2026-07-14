@@ -758,6 +758,24 @@ public enum MarkdownConverter {
             return true
         }
 
+        /// Mid-paragraph boundary whitespace as inlines: spaces/tabs stay
+        /// text, a newline is a soft break (exactly what cmark would have
+        /// emitted had the segment not been re-parsed in isolation).
+        func boundaryWhitespace(_ run: Substring) -> [Inline] {
+            var result: [Inline] = []
+            var spaces = ""
+            for ch in run {
+                if ch == "\n" {
+                    if !spaces.isEmpty { result.append(.text(spaces)); spaces = "" }
+                    result.append(.softBreak)
+                } else {
+                    spaces.append(ch)
+                }
+            }
+            if !spaces.isEmpty { result.append(.text(spaces)) }
+            return result
+        }
+
         /// Turns critic-scanner segments into an inline list: text segments
         /// route through the math scanner + markdown re-parse exactly like an
         /// unmarked paragraph; each mark becomes an `Inline.suggestion` with
@@ -807,6 +825,14 @@ public enum MarkdownConverter {
                     stats.mathCount += 1
                     result.append(.math(latex: MathMacros.expand(latex, with: macroTable)))
                 case .text(let text):
+                    // cmark trims a fragment's leading/trailing whitespace,
+                    // but these segments are MID-PARAGRAPH boundaries (text
+                    // around a math span or a CriticMarkup mark) — dropping
+                    // the spaces glued "a $x$ b" into "a$x$b" (and, live,
+                    // "plain {++portable++} markdown" into
+                    // "plainportablemarkdown"). Re-attach them.
+                    result.append(contentsOf: boundaryWhitespace(text.prefix(
+                        while: { $0 == " " || $0 == "\t" || $0 == "\n" })))
                     let fragment = Markdown.Document(parsing: text)
                     for child in fragment.children {
                         if let para = child as? Markdown.Paragraph {
@@ -815,6 +841,12 @@ public enum MarkdownConverter {
                             let plain = child.format()
                             if !plain.isEmpty { result.append(.text(plain)) }
                         }
+                    }
+                    let trailing = text.reversed().prefix(
+                        while: { $0 == " " || $0 == "\t" || $0 == "\n" })
+                    // Avoid double-counting a segment that is ALL whitespace.
+                    if trailing.count < text.count {
+                        result.append(contentsOf: boundaryWhitespace(String(trailing.reversed())[...]))
                     }
                 }
             }

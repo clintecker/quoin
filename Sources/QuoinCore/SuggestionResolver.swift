@@ -48,6 +48,18 @@ public enum SuggestionResolver {
         return SourceEdit(range: range, replacement: replacement)
     }
 
+    /// The `{#id}` of the mark at `range`, when the bytes there parse as
+    /// exactly one whole mark. Used to maintain the endmatter on resolution.
+    public static func markID(at range: ByteRange, in source: String) -> String? {
+        let bytes = Array(source.utf8)
+        guard range.offset >= 0, range.length > 0,
+              range.offset + range.length <= bytes.count else { return nil }
+        let slice = String(decoding: bytes[range.offset..<(range.offset + range.length)], as: UTF8.self)
+        let segments = CriticScanner.scan(slice)
+        guard segments.count == 1, case .mark(let mark) = segments[0] else { return nil }
+        return mark.id
+    }
+
     /// Every unresolved mark in the document, in source order — the walk
     /// Accept All / Reject All and the review rail share.
     public static func marks(in document: QuoinDocument) -> [(kind: SuggestionKind, range: ByteRange, id: String?)] {

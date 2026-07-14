@@ -144,9 +144,6 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// (from `QuoinAttribute.suggestionRange`) + the chosen action. The host
     /// re-verifies the bytes still parse as that mark before splicing.
     public var onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil
-    /// The review rail's cards (marks + endmatter metadata), in source
-    /// order; empty hides the rail (suggestions design §3.5).
-    public var reviewItems: [ReviewItem] = []
 
     public init(
         rendered: RenderedDocument,
@@ -178,8 +175,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onCaptureViewport: ((ViewportSnapshot) -> Void)? = nil,
         restoreViewport: ViewportSnapshot? = nil,
         onActiveCaretMoved: ((Int) -> Void)? = nil,
-        onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil,
-        reviewItems: [ReviewItem] = []
+        onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -211,7 +207,6 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.restoreViewport = restoreViewport
         self.onActiveCaretMoved = onActiveCaretMoved
         self.onSuggestionAction = onSuggestionAction
-        self.reviewItems = reviewItems
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -489,8 +484,6 @@ public struct MarkdownReaderView: NSViewRepresentable {
             // #10); a projection can change the preview panel's CONTENT
             // behind an unchanged frame, so re-plan it here.
             coordinator.refreshPreviewPanelForProjectionChange()
-            // Review rail follows every projection (marks move with edits).
-            coordinator.updateReviewRail(in: textView)
             // VoiceOver hears the mode change (never announced by tint
             // alone): entering/leaving source editing.
             if flipPending {

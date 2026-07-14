@@ -134,3 +134,76 @@ final class SuggestionResolutionTests: XCTestCase {
         XCTAssertEqual(metadata.comments["c1"]?.body, "Overall: tighten the intro.")
     }
 }
+
+// MARK: - Endmatter maintenance (redlined 2026-07-14: the YAML-leak bug)
+
+extension SuggestionResolutionTests {
+
+    private var maintained: String {
+        """
+        Body {++alpha++}{#s1} and {>>note<<}{#c1} here.
+
+        ---
+        comments:
+          c1: { by: user, at: "2026-04-28T12:00:00Z" }
+          c2:
+            body: "A reply."
+            by: AI
+            re: c1
+        suggestions:
+          s1: { by: AI, at: "2026-04-28T12:01:00Z" }
+
+        """
+    }
+
+    private func applying(_ edit: SourceEdit, to source: String) -> String {
+        var bytes = Array(source.utf8)
+        bytes.replaceSubrange(
+            edit.range.offset..<(edit.range.offset + edit.range.length),
+            with: Array(edit.replacement.utf8))
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    func testResolvingRemovesTheEntryAndKeepsOthersByteExact() throws {
+        let edit = try XCTUnwrap(ReviewEndmatter.maintenanceEdit(afterResolving: "s1", in: maintained))
+        let after = applying(edit, to: maintained)
+        XCTAssertFalse(after.contains("s1:"))
+        XCTAssertFalse(after.contains("suggestions:"), "emptied section header goes too")
+        XCTAssertTrue(after.contains("c1: { by: user, at: \"2026-04-28T12:00:00Z\" }"),
+                      "surviving entries keep their original lines byte-exactly")
+        XCTAssertTrue(after.contains("body: \"A reply.\""))
+        // The endmatter still detects afterward (c1's ref remains in body).
+        XCTAssertNotNil(MarkdownConverter.parse(after).reviewMetadata)
+    }
+
+    func testResolvingRemovesReplyThreadTransitively() throws {
+        let edit = try XCTUnwrap(ReviewEndmatter.maintenanceEdit(afterResolving: "c1", in: maintained))
+        let after = applying(edit, to: maintained)
+        XCTAssertFalse(after.contains("c1:"))
+        XCTAssertFalse(after.contains("A reply."), "re: c1 goes with its parent")
+        XCTAssertTrue(after.contains("s1:"), "unrelated entries survive")
+    }
+
+    func testResolvingTheLastEntryRemovesTheWholeEndmatter() throws {
+        // The live bug: after dismissing the only referenced comment, the
+        // orphaned endmatter leaked into the prose as a YAML paragraph.
+        let source = """
+        Body {>>only note<<}{#c1} here.
+
+        ---
+        comments:
+          c1: { by: user, at: "2026-04-28T12:00:00Z" }
+
+        """
+        let edit = try XCTUnwrap(ReviewEndmatter.maintenanceEdit(afterResolving: "c1", in: source))
+        let after = applying(edit, to: source)
+        XCTAssertFalse(after.contains("---"))
+        XCTAssertFalse(after.contains("comments:"), "no YAML soup left behind")
+        XCTAssertTrue(after.hasPrefix("Body"))
+    }
+
+    func testMarkWithoutIdLeavesEndmatterAlone() throws {
+        let source = "Body {++plain++} here.\n\n---\ncomments:\n  c1: { by: user }\n"
+        XCTAssertNil(ReviewEndmatter.maintenanceEdit(afterResolving: "nope", in: source))
+    }
+}

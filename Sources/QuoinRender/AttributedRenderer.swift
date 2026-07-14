@@ -1149,11 +1149,19 @@ public struct AttributedRenderer {
         case .frontMatter(let yaml):
             content = renderFrontMatter(yaml: yaml)
         case .reviewEndmatter(let yaml):
-            // Review metadata chip (RDFM endmatter): same condensed-chip
-            // treatment as front matter — the review RAIL surfaces the
-            // metadata meaningfully; the chip just keeps the YAML tidy and
-            // editable (block activation reveals it).
-            content = renderFrontMatter(yaml: "review · " + yaml)
+            // Review metadata chip (RDFM endmatter): a SHORT summary — the
+            // review inspector surfaces the metadata meaningfully; the chip
+            // just marks that it exists and opens the YAML on activation.
+            // (v1 rendered the condensed YAML itself: a full-width mono
+            // soup strip — redlined 2026-07-14.)
+            let metadata = ReviewEndmatter.parse(yaml: yaml)
+            let comments = metadata?.comments.count ?? 0
+            let suggestions = metadata?.suggestions.count ?? 0
+            let summary = "review metadata · "
+                + [suggestions > 0 ? "\(suggestions) suggestion\(suggestions == 1 ? "" : "s")" : nil,
+                   comments > 0 ? "\(comments) comment\(comments == 1 ? "" : "s")" : nil]
+                    .compactMap { $0 }.joined(separator: " · ")
+            content = renderFrontMatter(yaml: summary)
         case .tableOfContents:
             content = renderTOC(outline: document.outline)
         case .thematicBreak:

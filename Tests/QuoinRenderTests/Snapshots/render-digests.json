@@ -882,7 +882,7 @@
         "q" : [
 
         ],
-        "t" : "Escaped Markdown punctuation: \\ backslash, ` backtick, * asterisk, _ underscore, { braces },"
+        "t" : "Escaped Markdown punctuation: \\ backslash, ` backtick, * asterisk, _ underscore, { braces }, "
       },
       {
         "fg" : "#333333",
@@ -900,7 +900,7 @@
         "q" : [
 
         ],
-        "t" : ","
+        "t" : ", "
       },
       {
         "fg" : "#333333",
@@ -12784,7 +12784,7 @@
         "q" : [
 
         ],
-        "t" : "Inline and block math in both"
+        "t" : "Inline and block math in both "
       },
       {
         "deco" : "quoteRule(#00000026)",
@@ -12805,7 +12805,7 @@
         "q" : [
 
         ],
-        "t" : "and"
+        "t" : " and "
       },
       {
         "deco" : "quoteRule(#00000026)",
@@ -12826,7 +12826,7 @@
         "q" : [
 
         ],
-        "t" : "delimiters; matrices, cases, aligned environments, greek, fractions, big operators."
+        "t" : " delimiters; matrices, cases, aligned environments, greek, fractions, big operators."
       },
       {
         "f" : "14.00/0.00",
@@ -12862,7 +12862,7 @@
         "q" : [
 
         ],
-        "t" : "Inline math:"
+        "t" : "Inline math: "
       },
       {
         "fg" : "#333333",
@@ -12880,7 +12880,7 @@
         "q" : [
 
         ],
-        "t" : ","
+        "t" : ", "
       },
       {
         "fg" : "#333333",
@@ -12898,7 +12898,7 @@
         "q" : [
 
         ],
-        "t" : ", and"
+        "t" : ", and "
       },
       {
         "fg" : "#333333",
@@ -13082,7 +13082,7 @@
         "q" : [
 
         ],
-        "t" : "Inline with backslash delimiters:"
+        "t" : "Inline with backslash delimiters: "
       },
       {
         "fg" : "#333333",
@@ -13100,7 +13100,7 @@
         "q" : [
 
         ],
-        "t" : ","
+        "t" : ", "
       },
       {
         "fg" : "#333333",
@@ -13118,7 +13118,7 @@
         "q" : [
 
         ],
-        "t" : ", and"
+        "t" : ", and "
       },
       {
         "fg" : "#333333",
@@ -13154,7 +13154,7 @@
         "q" : [
 
         ],
-        "t" : "Inline with dollar delimiters, if enabled:"
+        "t" : "Inline with dollar delimiters, if enabled: "
       },
       {
         "fg" : "#333333",
@@ -13172,7 +13172,7 @@
         "q" : [
 
         ],
-        "t" : "and"
+        "t" : " and "
       },
       {
         "fg" : "#333333",
@@ -14706,7 +14706,7 @@
         "q" : [
 
         ],
-        "t" : "Macro reuse test in a later paragraph:"
+        "t" : "Macro reuse test in a later paragraph: "
       },
       {
         "fg" : "#333333",
@@ -14724,7 +14724,7 @@
         "q" : [
 
         ],
-        "t" : "should render only if macro definitions persist across math items in the renderer configuration."
+        "t" : " should render only if macro definitions persist across math items in the renderer configuration."
       },
       {
         "f" : "14.00/0.00",
@@ -16340,7 +16340,7 @@
         "q" : [
 
         ],
-        "t" : "And math inside Markdown emphasis should behave predictably: **bold text with"
+        "t" : "And math inside Markdown emphasis should behave predictably: **bold text with "
       },
       {
         "fg" : "#333333",
@@ -16358,7 +16358,7 @@
         "q" : [
 
         ],
-        "t" : "**, *italic text with"
+        "t" : "**, *italic text with "
       },
       {
         "fg" : "#333333",
@@ -16376,7 +16376,7 @@
         "q" : [
 
         ],
-        "t" : "*, and `code with"
+        "t" : "*, and `code with "
       },
       {
         "fg" : "#333333",
@@ -16751,7 +16751,7 @@
         "q" : [
 
         ],
-        "t" : "A renderer that does incremental hydration should avoid race conditions where Mermaid alters the DOM while MathJax scans it. For example, the text before a diagram contains math"
+        "t" : "A renderer that does incremental hydration should avoid race conditions where Mermaid alters the DOM while MathJax scans it. For example, the text before a diagram contains math "
       },
       {
         "fg" : "#333333",
@@ -16883,7 +16883,7 @@
         "q" : [
 
         ],
-        "t" : "•  Inline baseline alignment: text before"
+        "t" : "•  Inline baseline alignment: text before "
       },
       {
         "fg" : "#333333",
@@ -16901,7 +16901,7 @@
         "q" : [
 
         ],
-        "t" : "text after."
+        "t" : " text after."
       },
       {
         "f" : "14.00/0.00",
@@ -16919,7 +16919,7 @@
         "q" : [
 
         ],
-        "t" : "•  Display centering and overflow:"
+        "t" : "•  Display centering and overflow: "
       },
       {
         "fg" : "#333333",
@@ -20820,7 +20820,7 @@
         "q" : [
 
         ],
-        "t" : "The launch is"
+        "t" : "The launch is "
       },
       {
         "bg" : "#DCF2DC",
@@ -20840,7 +20840,7 @@
         "q" : [
 
         ],
-        "t" : "scheduled. The old copy"
+        "t" : " scheduled. The old copy "
       },
       {
         "bg" : "#F9DCDC",
@@ -20860,7 +20860,7 @@
         "q" : [
 
         ],
-        "t" : "reads better. We"
+        "t" : " reads better. We "
       },
       {
         "bg" : "#F9DCDC",
@@ -20900,7 +20900,7 @@
         "q" : [
 
         ],
-        "t" : "ship this quarter."
+        "t" : " ship this quarter."
       },
       {
         "f" : "14.00/0.00",
@@ -20918,7 +20918,7 @@
         "q" : [
 
         ],
-        "t" : "Please revisit"
+        "t" : "Please revisit "
       },
       {
         "bg" : "#FCE9B8",
@@ -20947,7 +20947,7 @@
         "q" : [
 
         ],
-        "t" : "before publishing."
+        "t" : " before publishing."
       },
       {
         "f" : "14.00/0.00",
@@ -20983,7 +20983,7 @@
         "q" : [
 
         ],
-        "t" : "An insertion can carry"
+        "t" : "An insertion can carry "
       },
       {
         "bg" : "#DCF2DC",
@@ -21047,7 +21047,7 @@
         "q" : [
 
         ],
-        "t" : "spans. A deletion can strike"
+        "t" : " spans. A deletion can strike "
       },
       {
         "bg" : "#F9DCDC",
@@ -21127,7 +21127,7 @@
         "q" : [
 
         ],
-        "t" : "Anchored comment with an id:"
+        "t" : "Anchored comment with an id: "
       },
       {
         "bg" : "#FCE9B8",
@@ -21156,7 +21156,7 @@
         "q" : [
 
         ],
-        "t" : ". A suggestion with an id:"
+        "t" : ". A suggestion with an id: "
       },
       {
         "bg" : "#DCF2DC",
@@ -21339,7 +21339,7 @@
         "q" : [
 
         ],
-        "t" : "Math is opaque:"
+        "t" : "Math is opaque: "
       },
       {
         "fg" : "#333333",
@@ -21357,7 +21357,7 @@
         "q" : [
 
         ],
-        "t" : "stays math, while"
+        "t" : " stays math, while "
       },
       {
         "bg" : "#DCF2DC",
@@ -21377,7 +21377,7 @@
         "q" : [
 
         ],
-        "t" : "and"
+        "t" : " and "
       },
       {
         "fg" : "#333333",
@@ -21395,7 +21395,7 @@
         "q" : [
 
         ],
-        "t" : "coexist in one paragraph."
+        "t" : " coexist in one paragraph."
       },
       {
         "f" : "14.00/0.00",
@@ -21414,7 +21414,7 @@
         "q" : [
 
         ],
-        "t" : "review · comments:   ·   c1: { by: user, at: \"2026-04-28T12:00:00Z\" }   ·   c2:   ·   body: \"Q3 numbers, specifically.\"   ·   by: AI   ·   at: \"2026-04-28T12:05:00Z\"   ·   re: c1   ·   suggestions:   ·   s1: { by: AI, at: \"2026-04-28T12:01:00Z\" }"
+        "t" : "review metadata · 1 suggestion · 2 comments"
       },
       {
         "deco" : "chip(#F2F2F4)",
@@ -24567,7 +24567,7 @@
         "q" : [
 
         ],
-        "t" : "1.  First item with inline math"
+        "t" : "1.  First item with inline math "
       },
       {
         "fg" : "#333333",
@@ -24791,7 +24791,7 @@
         "q" : [
 
         ],
-        "t" : "A quoted paragraph can contain math"
+        "t" : "A quoted paragraph can contain math "
       },
       {
         "deco" : "quoteRule(#00000026)",
@@ -25282,7 +25282,7 @@
         "q" : [
 
         ],
-        "t" : ","
+        "t" : ", "
       },
       {
         "fg" : "#333333",

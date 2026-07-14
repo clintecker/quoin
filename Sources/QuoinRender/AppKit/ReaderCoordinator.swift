@@ -55,9 +55,6 @@ extension MarkdownReaderView {
         var hasRestoredViewport = false
         var suppressSelectionCallback = false
         var scrollObserver: NSObjectProtocol?
-        /// The review rail (suggestions S2c): owned like the preview panel,
-        /// hosted inside the text view so cards scroll with their marks.
-        var reviewRail: ReviewRailView?
         private var matchRanges: [NSRange] = []
         private var hasAppliedSearchHighlights = false
         private var lastReportedTopBlock: BlockID?
@@ -629,8 +626,6 @@ extension MarkdownReaderView {
 
             // Focus mode follows the caret across blocks.
             refreshFocusDimmingOnSelectionChange(in: textView)
-            // Review rail: caret-in-mark highlights its card.
-            updateReviewLinkage(in: textView)
 
             // Span-level syntax reveal: as the caret moves inside the
             // active block, re-style it so only the caret's span shows its
@@ -1088,110 +1083,6 @@ extension MarkdownReaderView {
         /// Done Editing (embeds and the open block), and Copy Markdown
         /// Source (any block whose source the host can provide). Inserted
         /// above AppKit's standard items.
-        /// Rebuilds/re-anchors the review rail for the current projection.
-        /// Called from updateNSView after a projection applies. Anchors come
-        /// from the STORAGE positions of `suggestionRange` runs (bounded
-        /// ensureLayout per mark — marks are few).
-        func updateReviewRail(in textView: NSTextView) {
-            let items = parent.reviewItems
-            let wideEnough = (textView.enclosingScrollView?.bounds.width ?? 0)
-                >= ReviewRailView.minimumWindowWidth
-            guard !items.isEmpty, wideEnough,
-                  let layoutManager = textView.textLayoutManager,
-                  let contentStorage = textView.textContentStorage,
-                  let storage = contentStorage.textStorage else {
-                reviewRail?.removeFromSuperview()
-                reviewRail = nil
-                return
-            }
-
-            // Map each mark's byte range to its first rendered char index.
-            var anchors: [Int: Int] = [:] // byteOffset -> charIndex
-            storage.enumerateAttribute(
-                QuoinAttribute.suggestionRange,
-                in: NSRange(location: 0, length: storage.length)
-            ) { value, range, _ in
-                guard let boxed = value as? NSValue else { return }
-                let byteOffset = boxed.rangeValue.location
-                if anchors[byteOffset] == nil { anchors[byteOffset] = range.location }
-            }
-
-            let origin = textView.textContainerOrigin
-            var placed: [ReviewRailView.Placed] = []
-            for item in items {
-                guard let charIndex = anchors[item.markRange.offset],
-                      let textRange = nsTextRange(NSRange(location: charIndex, length: 0), in: contentStorage)
-                else { continue }
-                layoutManager.ensureLayout(for: textRange)
-                guard let fragment = layoutManager.textLayoutFragment(for: textRange.location) else { continue }
-                placed.append(ReviewRailView.Placed(
-                    item: item,
-                    anchorY: fragment.layoutFragmentFrame.minY + origin.y))
-            }
-            guard !placed.isEmpty else {
-                reviewRail?.removeFromSuperview()
-                reviewRail = nil
-                return
-            }
-
-            let rail: ReviewRailView
-            if let existing = reviewRail {
-                rail = existing
-            } else {
-                rail = ReviewRailView(frame: .zero)
-                rail.onResolve = { [weak self] range, action in
-                    self?.parent.onSuggestionAction?(range, action)
-                }
-                rail.onFocus = { [weak self, weak textView] range in
-                    guard let self, let textView else { return }
-                    // Bring the mark into view without activating its block.
-                    if let target = self.railAnchorCharIndex(forByteOffset: range.offset, in: textView) {
-                        self.scrollCaretIntoViewIfNeeded(target, in: textView)
-                        rail.setLinked(range)
-                    }
-                }
-                textView.addSubview(rail)
-                reviewRail = rail
-            }
-            let x = textView.bounds.width - ReviewRailView.railWidth - 12
-            rail.frame = CGRect(
-                x: max(x, 0), y: 0,
-                width: ReviewRailView.railWidth, height: textView.bounds.height)
-            rail.update(placed: placed, theme: parent.theme)
-        }
-
-        private func railAnchorCharIndex(forByteOffset offset: Int, in textView: NSTextView) -> Int? {
-            guard let storage = textView.textContentStorage?.textStorage else { return nil }
-            var found: Int?
-            storage.enumerateAttribute(
-                QuoinAttribute.suggestionRange,
-                in: NSRange(location: 0, length: storage.length)
-            ) { value, range, stop in
-                if let boxed = value as? NSValue, boxed.rangeValue.location == offset {
-                    found = range.location
-                    stop.pointee = true
-                }
-            }
-            return found
-        }
-
-        /// Caret↔card linkage: the caret sitting inside a rendered mark
-        /// highlights its card (one linked pair at a time).
-        func updateReviewLinkage(in textView: NSTextView) {
-            guard let rail = reviewRail,
-                  let storage = textView.textContentStorage?.textStorage else { return }
-            let caret = textView.selectedRange().location
-            guard caret >= 0, caret < storage.length,
-                  let boxed = storage.attribute(
-                      QuoinAttribute.suggestionRange, at: caret, effectiveRange: nil) as? NSValue
-            else {
-                rail.setLinked(nil)
-                return
-            }
-            let range = boxed.rangeValue
-            rail.setLinked(ByteRange(offset: range.location, length: range.length))
-        }
-
         @objc private func contextResolveSuggestion(_ sender: NSMenuItem) {
             guard let payload = sender.representedObject as? [Any],
                   let boxed = payload.first as? NSValue,

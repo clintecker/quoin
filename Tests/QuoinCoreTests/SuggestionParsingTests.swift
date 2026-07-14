@@ -148,3 +148,29 @@ final class SuggestionParsingTests: XCTestCase {
         XCTAssertFalse(MarkdownConverter.parse(openerBomb).blocks.isEmpty)
     }
 }
+
+// MARK: - Boundary whitespace (live redline, 2026-07-14 screenshots)
+
+extension SuggestionParsingTests {
+    /// The glue bug: segment re-parsing trimmed boundary spaces, rendering
+    /// "a plain {++portable++} markdown" as "a plainportablemarkdown".
+    func testWhitespaceAroundMarksSurvives() throws {
+        let document = MarkdownConverter.parse("a plain {++portable++} markdown file\n")
+        guard case .paragraph(let inlines) = document.blocks[0].kind else { return XCTFail() }
+        XCTAssertEqual(inlines.plainText, "a plain portable markdown file")
+    }
+
+    /// Same mechanism, pre-existing on the MATH path: "We $x$ promise".
+    func testWhitespaceAroundInlineMathSurvives() throws {
+        let document = MarkdownConverter.parse("We $x^2$ promise results\n")
+        guard case .paragraph(let inlines) = document.blocks[0].kind else { return XCTFail() }
+        XCTAssertEqual(inlines.plainText, "We x^2 promise results")
+    }
+
+    /// A mark at line end: the newline boundary is a soft break, not glue.
+    func testNewlineBoundaryBecomesSoftBreak() throws {
+        let document = MarkdownConverter.parse("start {++x++}\nnext line\n")
+        guard case .paragraph(let inlines) = document.blocks[0].kind else { return XCTFail() }
+        XCTAssertEqual(inlines.plainText, "start x next line")
+    }
+}

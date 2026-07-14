@@ -521,11 +521,29 @@ final class ReaderModel {
     /// those bytes no longer parse as one whole mark, refuse with a banner
     /// rather than splice blind. Rides the ordinary edit path: undoable,
     /// autosaved, stale-base protected.
+    /// The block whose source range contains this byte offset — the review
+    /// panel's card→document navigation.
+    func blockID(containingByteOffset offset: Int) -> BlockID? {
+        document.blocks.first {
+            offset >= $0.range.offset && offset < $0.range.offset + $0.range.length
+        }?.id
+    }
+
     func resolveSuggestion(markRange: ByteRange, action: SuggestionResolver.Action) {
         guard let edit = SuggestionResolver.edit(
             resolving: markRange, in: document.source, action: action) else {
             reportFailure("That suggestion changed since it was rendered — try again.")
             return
+        }
+        // Endmatter maintenance (redlined 2026-07-14): the resolved mark's
+        // metadata entry (+ its reply thread) leaves with it, and the whole
+        // endmatter block goes when it empties — otherwise the orphaned
+        // YAML leaks into the prose once the last {#id} is gone. Applied
+        // FIRST (it sits at higher offsets, so the mark edit is unaffected);
+        // two pipeline edits = two undo steps, documented.
+        if let id = SuggestionResolver.markID(at: markRange, in: document.source),
+           let maintenance = ReviewEndmatter.maintenanceEdit(afterResolving: id, in: document.source) {
+            applyAbsolute(maintenance, caretUTF8: nil)
         }
         applyAbsolute(edit, caretUTF8: markRange.offset)
     }
