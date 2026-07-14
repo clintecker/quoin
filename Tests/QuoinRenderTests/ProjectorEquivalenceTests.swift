@@ -98,7 +98,13 @@ final class ProjectorEquivalenceTests: XCTestCase {
             let base = RenderedDocument(
                 attributed: reading.attributed, blockRanges: reading.blockRanges)
 
-            for block in patchableBlocks(in: document).prefix(4) {
+            // FLIPS are valid for every kind (only KEYSTROKE patches are
+            // gated to patchable kinds) — lists/quotes/callouts were
+            // silently uncovered until the click-collapse report exposed
+            // the gap (task #60).
+            let flippable = document.blocks.prefix(6)
+            let patchable = Set(patchableBlocks(in: document).map(\.id))
+            for block in flippable {
                 guard let slice = document.source.substring(in: block.range),
                       !slice.isEmpty else { continue }
                 let caret = min(3, slice.utf16.count)
@@ -126,7 +132,9 @@ final class ProjectorEquivalenceTests: XCTestCase {
                                "\(name): flip editable range drifted")
                 flipChecks += 1
 
-                // KEYSTROKE: three scripted edits from the active state.
+                // KEYSTROKE: three scripted edits from the active state
+                // (patchable kinds only — others always bail to full render).
+                guard patchable.contains(block.id) else { continue }
                 let insertAt = slice.index(slice.startIndex, offsetBy: min(3, slice.count))
                 var edits: [String] = [
                     slice.replacingCharacters(in: insertAt..<insertAt, with: "x"),
