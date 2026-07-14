@@ -689,17 +689,23 @@ extension MarkdownReaderView {
                   let storage = textView.textContentStorage?.textStorage,
                   active.location + active.length <= storage.length
             else { return }
-            // The restyle consumes the reveal's configuration VERBATIM
-            // (RenderedDocument.revealStyler — one derivation, editor-modes
-            // plan 3.3): a default styler re-interpreted mermaid/code source
-            // as markdown on the first caret move (mono flipped to
-            // proportional, fake spans lit up — the reported shape-shift),
-            // and the old single-bool sync drifted for indented code.
-            let config = parent.rendered.revealStyler ?? .prose
-            var styler = MarkdownSourceStyler(theme: parent.theme)
-            styler.collapsesNonLiteralSpans = config.collapsesNonLiteralSpans
-            styler.treatsSourceAsVerbatimCode = config.treatsSourceAsVerbatimCode
-            let styled = styler.style(source, caretOffset: relativeCaret)
+            // Phase 3.3 done RIGHT: the restyle consumes the SAME fragment
+            // pipeline the reveal used — styler config AND fallback metrics
+            // AND paragraph transplant. A bare styler pass (even with the
+            // carried config) lost everything applied AFTER the styler:
+            // revealed code flipped mono→proportional on the first caret
+            // click, because the mono font comes from applyFallbackMetrics,
+            // not the styler (screenshots 2026-07-14).
+            let styled: NSAttributedString
+            if let fragment = parent.activeFragmentProvider?(relativeCaret) {
+                styled = fragment
+            } else {
+                let config = parent.rendered.revealStyler ?? .prose
+                var styler = MarkdownSourceStyler(theme: parent.theme)
+                styler.collapsesNonLiteralSpans = config.collapsesNonLiteralSpans
+                styler.treatsSourceAsVerbatimCode = config.treatsSourceAsVerbatimCode
+                styled = styler.style(source, caretOffset: relativeCaret)
+            }
             guard styled.length == active.length else { return }
 
             let blockID = storage.attribute(QuoinAttribute.blockID, at: active.location, effectiveRange: nil)

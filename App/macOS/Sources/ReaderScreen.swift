@@ -147,7 +147,8 @@ struct ReaderScreen: View {
                     isOutlineVisible = true
                     inspectorMode = .review
                     userPickedInspectorMode = true
-                }
+                },
+                activeFragmentProvider: { caret in model.restyledActiveFragment(caretOffset: caret) }
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.
@@ -265,9 +266,6 @@ struct ReaderScreen: View {
                 }
             }
         }
-        .environment(\.outlineSectionPreview, { headingID in
-            sectionPreview(for: headingID)
-        })
     }
 
     private func windowChrome(_ content: some View) -> some View {
@@ -550,29 +548,6 @@ struct ReaderScreen: View {
         scrollGeneration += 1
     }
 
-    /// A short rendered snippet of a heading's section, for the outline's
-    /// hover peek (idea #5). Uses the LIVE projection — what you peek is
-    /// exactly what's rendered.
-    private func sectionPreview(for headingID: BlockID) -> AttributedString? {
-        guard let start = model.rendered.blockRanges[headingID],
-              let index = model.outline.firstIndex(where: { $0.id == headingID })
-        else { return nil }
-        let level = model.outline[index].level
-        var end = model.rendered.attributed.length
-        for heading in model.outline[(index + 1)...] where heading.level <= level {
-            if let range = model.rendered.blockRanges[heading.id] {
-                end = range.location
-                break
-            }
-        }
-        let length = min(end - start.location, 1200)
-        guard length > 0,
-              start.location + length <= model.rendered.attributed.length else { return nil }
-        let snippet = model.rendered.attributed.attributedSubstring(
-            from: NSRange(location: start.location, length: length))
-        return try? AttributedString(snippet, including: \.appKit)
-    }
-
     /// The ancestor chain of the current section (H1 › H2 › …), for the
     /// status-bar breadcrumb (idea #6).
     private var breadcrumb: [HeadingInfo] {
@@ -653,7 +628,11 @@ struct ReaderScreen: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
-                    .fixedSize()
+                    // NOT .fixedSize(): the bridged popup button wraps a
+                    // long breadcrumb at narrow widths and reports a TALL
+                    // intrinsic height — the status bar once swallowed half
+                    // the window (screenshot, 2026-07-14). Truncate instead.
+                    .layoutPriority(1)
                     .help("Jump to a section in the current path")
                 }
                 Spacer()
@@ -682,7 +661,10 @@ struct ReaderScreen: View {
             .font(.system(size: 10.5, design: .monospaced))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            // The bar is a FIXED-HEIGHT hairline strip by spec — no content
+            // may inflate it, whatever the bridged controls report.
+            .frame(height: 22)
+            .clipped()
         }
     }
 
@@ -769,28 +751,10 @@ private extension View {
 // indent 0/16/34 by level, H1 bold / H2 semibold / H3+ regular, current
 // section in accent at weight 500)
 
-/// Section-preview provider for the outline's hover peek (idea #5).
-private struct OutlineSectionPreviewKey: EnvironmentKey {
-    static let defaultValue: (BlockID) -> AttributedString? = { _ in nil }
-}
-
-extension EnvironmentValues {
-    var outlineSectionPreview: (BlockID) -> AttributedString? {
-        get { self[OutlineSectionPreviewKey.self] }
-        set { self[OutlineSectionPreviewKey.self] = newValue }
-    }
-}
-
 struct OutlinePanel: View {
     let outline: [HeadingInfo]
     let currentSectionID: BlockID?
     let onSelect: (BlockID) -> Void
-
-    @Environment(\.outlineSectionPreview) private var sectionPreview
-    /// Hover peek state: the row under the pointer, admitted after a
-    /// short dwell so scrubbing the list doesn't strobe the card.
-    @State private var hoveredID: BlockID?
-    @State private var peekedID: BlockID?
 
     /// Collapsed heading subtrees (session-scoped). A heading hides when
     /// any ancestor — the nearest preceding heading of a shallower level —
@@ -857,37 +821,7 @@ struct OutlinePanel: View {
                             }
                         }
                     )
-                    .onHover { inside in
-                        hoveredID = inside ? heading.id : (hoveredID == heading.id ? nil : hoveredID)
-                        if inside {
-                            let candidate = heading.id
-                            Task { @MainActor in
-                                try? await Task.sleep(for: .milliseconds(350))
-                                if hoveredID == candidate {
-                                    withAnimation(.easeOut(duration: 0.12)) { peekedID = candidate }
-                                }
-                            }
-                        } else if peekedID == heading.id {
-                            withAnimation(.easeOut(duration: 0.12)) { peekedID = nil }
-                        }
-                    }
                 }
-            }
-        }
-        // Hover peek (idea #5): a calm card pinned to the panel's bottom
-        // with the hovered section's LIVE rendering — no popover flicker.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let peekedID, let preview = sectionPreview(peekedID) {
-                ScrollView {
-                    Text(preview)
-                        .textSelection(.disabled)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 160)
-                .background(.bar)
-                .overlay(alignment: .top) { Divider() }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .overlay {

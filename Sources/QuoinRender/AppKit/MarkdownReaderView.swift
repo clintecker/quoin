@@ -153,6 +153,13 @@ public struct MarkdownReaderView: NSViewRepresentable {
     public var onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil
     /// The review-endmatter chip was clicked: open the Review inspector.
     public var onOpenReview: (() -> Void)? = nil
+    /// The active block's FULL reveal fragment re-styled for a caret
+    /// offset — the same renderer pipeline the reveal used (styler config
+    /// AND fallback metrics AND paragraph transplant). The caret-move
+    /// restyle consumes this; a bare styler pass dropped the mono font on
+    /// the first click into revealed code (the fallback metrics live
+    /// outside the styler — screenshots 2026-07-14).
+    public var activeFragmentProvider: ((_ caretOffset: Int) -> NSAttributedString?)? = nil
 
     public init(
         rendered: RenderedDocument,
@@ -188,7 +195,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         flashSuggestionOffset: Int? = nil,
         flashGeneration: Int = 0,
         onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil,
-        onOpenReview: (() -> Void)? = nil
+        onOpenReview: (() -> Void)? = nil,
+        activeFragmentProvider: ((_ caretOffset: Int) -> NSAttributedString?)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -224,6 +232,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.flashGeneration = flashGeneration
         self.onSuggestionCaretLink = onSuggestionCaretLink
         self.onOpenReview = onOpenReview
+        self.activeFragmentProvider = activeFragmentProvider
     }
 
     public func makeCoordinator() -> Coordinator {

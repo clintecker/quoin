@@ -529,6 +529,19 @@ final class ReaderModel {
     /// those bytes no longer parse as one whole mark, refuse with a banner
     /// rather than splice blind. Rides the ordinary edit path: undoable,
     /// autosaved, stale-base protected.
+    /// The active block's reveal fragment re-styled at a caret offset —
+    /// the caret-move restyle's source of truth (same pipeline as the
+    /// reveal itself; editor-modes plan 3.3).
+    func restyledActiveFragment(caretOffset: Int) -> NSAttributedString? {
+        guard let activeBlockID,
+              let block = document.blocks.first(where: { $0.id == activeBlockID }),
+              let slice = document.source.substring(in: block.range) else { return nil }
+        return renderer.renderEditableSourceFragment(
+            slice, caretOffset: caretOffset, block: block, document: document,
+            heldPreview: &heldPreview
+        ).attributed
+    }
+
     /// The block whose source range contains this byte offset — the review
     /// panel's card→document navigation.
     func blockID(containingByteOffset offset: Int) -> BlockID? {
