@@ -78,6 +78,91 @@ final class CaretLineAnchorTests: XCTestCase {
                        "the clicked table row must stay where the user was looking (was \(before), now \(after))")
     }
 
+    /// Phase 0.2 guard (editor-modes plan): above 200k chars the production
+    /// path skips eager whole-document layout, so the pre-draw viewport
+    /// settle (`viewWillDraw` → `layoutViewport`) is what resolves estimated
+    /// heights — and it runs AFTER `pinCaretLine`. Resolving estimates above
+    /// the caret must not move the pinned line, or the settle itself violates
+    /// the viewport invariant on large documents.
+    func testCaretPinSurvivesSettleOnHugeDocument() throws {
+        var source = "# Huge\n\n"
+        for i in 0..<2000 {
+            source += "Paragraph \(i) with enough filler words to be a plausible line of prose in a very long document.\n\n"
+        }
+        source += "```swift\nlet marker = 42\nlet second = 43\n```\n\n"
+        for i in 2000..<2500 {
+            source += "Paragraph \(i) below the code block, more filler prose.\n\n"
+        }
+        let document = MarkdownConverter.parse(source)
+        let renderer = AttributedRenderer()
+        var cache: [BlockID: NSAttributedString] = [:]
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+        XCTAssertGreaterThan(reading.attributed.length, 200_000,
+                             "fixture must exceed the eager-layout cutoff")
+        let code = try XCTUnwrap(document.blocks.first {
+            if case .codeBlock = $0.kind { return true }
+            return false
+        })
+
+        let contentStorage = NSTextContentStorage()
+        let layoutManager = NSTextLayoutManager()
+        contentStorage.addTextLayoutManager(layoutManager)
+        let container = NSTextContainer(size: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layoutManager.textContainer = container
+        let textView = QuoinTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 0), textContainer: container)
+        textView.isVerticallyResizable = true
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        scroll.documentView = textView
+        let storage = try XCTUnwrap(textView.textContentStorage?.textStorage)
+        storage.setAttributedString(reading.attributed)
+        // Deliberately NO whole-document ensureLayout — mirror the >200k
+        // production path, where heights beyond the viewport stay estimated.
+        textView.sizeToFit()
+
+        let view = MarkdownReaderView(rendered: RenderedDocument(
+            attributed: reading.attributed, blockRanges: reading.blockRanges))
+        let coordinator = MarkdownReaderView.Coordinator(parent: view)
+        coordinator.textView = textView
+
+        // Scroll the code block into view and put the "caret" on its marker.
+        let codeRange = try XCTUnwrap(reading.blockRanges[code.id])
+        coordinator.scrollBlockTop(codeRange, toScreenY: 120, in: textView)
+        let markerOffset = (storage.string as NSString)
+            .range(of: "marker", options: [], range: codeRange).location
+        XCTAssertNotEqual(markerOffset, NSNotFound)
+        let before = try XCTUnwrap(coordinator.lineScreenY(at: markerOffset, in: textView))
+
+        // Activate the block (flip patches), then pin — what updateNSView does.
+        let base = RenderedDocument(attributed: reading.attributed, blockRanges: reading.blockRanges)
+        let update = try XCTUnwrap(renderer.activationFlipUpdate(
+            document: document, current: base, from: nil, to: code.id, caret: nil))
+        for patch in update.storagePatches {
+            _ = MarkdownReaderView.Coordinator.applyStoragePatch(in: storage, patch: patch)
+        }
+        let newRange = try XCTUnwrap(update.blockRanges[code.id])
+        let newMarker = (storage.string as NSString)
+            .range(of: "marker", options: [], range: newRange).location
+        XCTAssertNotEqual(newMarker, NSNotFound)
+        // Production restores the caret before pinning — the settle's
+        // caret-line guard keys off the view's selection.
+        textView.setSelectedRange(NSRange(location: newMarker, length: 0))
+        coordinator.pinCaretLine(at: newMarker, toScreenY: before, in: textView,
+                                 ensuringLayoutOf: newRange)
+
+        let pinned = try XCTUnwrap(coordinator.lineScreenY(at: newMarker, in: textView))
+
+        // The settle that every draw now runs (viewWillDraw → layoutViewport):
+        // resolving estimated heights elsewhere must not move the pinned line.
+        textView.viewWillDraw()
+
+        let after = try XCTUnwrap(coordinator.lineScreenY(at: newMarker, in: textView))
+        XCTAssertEqual(after, pinned, accuracy: 2,
+                       "the pre-draw settle must not move the pinned caret line (pinned \(pinned), after settle \(after))")
+    }
+
     func testScrollCaretIntoViewIsNoOpWhenVisible() throws {
         var source = "# Visible\n\n"
         for i in 0..<50 { source += "Paragraph \(i) of filler prose to make the document scroll.\n\n" }

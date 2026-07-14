@@ -172,26 +172,70 @@ final class QuoinTextView: NSTextView {
             metadata: "clipBefore=\(Int(clipBefore)) clipAfter=\(Int(clipAfter)) moved=\(Int(clipAfter - clipBefore)) clicks=\(event.clickCount)")
     }
 
-    /// Force the visible viewport to finish layout, THEN redraw — so
-    /// decorations read SETTLED fragment positions, not estimates that predate
-    /// a reflow. Revealing a delimiter flips its font (1pt↔full), which
-    /// reflows the block and moves every following fragment; a bare
-    /// `needsDisplay` on the next runloop tick can still draw before TextKit
-    /// has propagated the new heights, leaving the accent frame / code canvas
-    /// offset from its own text ("box lags text"). Laying out the viewport
-    /// first is the editor's "measure phase" — cheap (decorations are
-    /// viewport-culled anyway) and correct on every path and doc size.
-    private func settleDecorations() {
-        textLayoutManager?.textViewportLayoutController.layoutViewport()
-        needsDisplay = true
+    /// Every draw is a SETTLED draw: finish the viewport's layout before any
+    /// pixel is painted, so decorations read settled fragment positions, not
+    /// estimates that predate a reflow. Revealing a delimiter flips its font
+    /// (1pt↔full), which reflows the block and moves every FOLLOWING
+    /// fragment's y-origin; `.ensuresLayout` during run enumeration only lays
+    /// out the enumerated run's own fragments, and a layout forced mid-draw
+    /// can't expand the already-committed dirty rect — so a draw against
+    /// unsettled predecessors left boxes behind their text with no repaint
+    /// scheduled ("box lags text"). Settling here is the editor's "measure
+    /// phase": on settled content `layoutViewport()` is a no-op; when it does
+    /// move geometry it invalidates display and the next draw settles again
+    /// (terminates — geometry is then fixed), both before pixels appear. This
+    /// also covers resize reflow (`setFrameSize` → draw) for free.
+    override func viewWillDraw() {
+        QuoinPerformanceTrace.measure("draw.settleViewport") {
+            settleViewportPreservingCaretLine()
+        }
+        super.viewWillDraw()
+    }
+
+    /// The settle must OBEY the viewport invariant it exists to serve: on
+    /// large documents (no eager whole-document layout) `layoutViewport()`
+    /// can resolve estimated heights ABOVE the viewport, shifting every
+    /// document Y — which would silently move the line the caret is on,
+    /// undoing a caret pin that ran a moment earlier (proved by
+    /// CaretLineAnchorTests.testCaretPinSurvivesSettleOnHugeDocument: a
+    /// 169pt jump). So: measure the caret line's screen position, settle,
+    /// and scroll by exactly the drift so the caret's line stays put. Only
+    /// an ON-SCREEN caret line is preserved — compensating for an off-screen
+    /// caret would yank the viewport away from what the user is reading.
+    private func settleViewportPreservingCaretLine() {
+        guard let layoutManager = textLayoutManager else { return }
+        let clip = enclosingScrollView?.contentView
+        let before = caretLineScreenY(clip: clip)
+        layoutManager.textViewportLayoutController.layoutViewport()
+        guard let clip, let before,
+              let after = caretLineScreenY(clip: clip),
+              abs(after - before) > 0.5 else { return }
+        let target = max(0, clip.bounds.origin.y + (after - before))
+        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: target))
+        enclosingScrollView?.reflectScrolledClipView(clip)
+    }
+
+    /// Screen-space y of the line containing the caret, or nil when the
+    /// caret's line is off-screen or geometry is unavailable. Deliberately
+    /// does NOT force layout — it reads whatever geometry exists, because
+    /// it's used to measure the settle's own effect.
+    private func caretLineScreenY(clip: NSClipView?) -> CGFloat? {
+        guard let clip,
+              let layoutManager = textLayoutManager,
+              let contentStorage = textContentStorage else { return nil }
+        let location = selectedRange().location
+        guard location >= 0, location <= (contentStorage.textStorage?.length ?? 0),
+              let docLocation = contentStorage.location(contentStorage.documentRange.location, offsetBy: location),
+              let fragment = layoutManager.textLayoutFragment(for: docLocation)
+        else { return nil }
+        let y = fragment.layoutFragmentFrame.minY + textContainerOrigin.y - clip.bounds.origin.y
+        guard y >= -fragment.layoutFragmentFrame.height, y <= clip.bounds.height else { return nil }
+        return y
     }
 
     func invalidateDecorations() {
         runsAreStale = true
         needsDisplay = true
-        DispatchQueue.main.async { [weak self] in
-            self?.settleDecorations()
-        }
     }
 
     /// Redraw with the CURRENT runs — for attribute-only restyles (syntax
@@ -201,9 +245,6 @@ final class QuoinTextView: NSTextView {
     /// re-enumerated the whole document's attributes on every caret move.
     func redrawDecorations() {
         needsDisplay = true
-        DispatchQueue.main.async { [weak self] in
-            self?.settleDecorations()
-        }
     }
 
     /// Incremental alternative to `invalidateDecorations()` for a bounded
@@ -255,9 +296,6 @@ final class QuoinTextView: NSTextView {
 
         decorationRuns = before + middle + after
         needsDisplay = true
-        DispatchQueue.main.async { [weak self] in
-            self?.settleDecorations()
-        }
     }
 
     // Any live layout change (viewport re-layout after estimates resolve)
