@@ -225,6 +225,34 @@ justification in the TRD first; the default answer is no.
   forever on the last line.
 - Flowchart layering must ignore cycle back-edges or layout loops
   (now MermaidKit's `DiagramLayout` — fix it in that repo, not here).
+- Swift treats `\r\n` as ONE grapheme cluster: `split(separator: "\n")`
+  never splits CRLF lines and `hasSuffix("\n")` is false for `"\r\n"`.
+  Every line-walker must normalize `\r\n` → `\n` first (bit three
+  separate loops in ReviewEndmatter before it was caught).
+- Equivalence asserts are only as strong as the fields they compare:
+  `assertEquivalentToFullParse` omitted `reviewMetadata` and hid TWO real
+  fast-path bugs. Adding a field to QuoinDocument (or any compared model)
+  means extending the equivalence helpers IN THE SAME COMMIT.
+- Inline nodes that carry ABSOLUTE byte ranges (suggestion marks) break
+  under the incremental fast paths, which shift only block ranges. The fix
+  is a conservative O(1) guard (`stats.suggestionCount == 0` → full parse),
+  not recursive range repair. Any new offset-carrying node needs the same
+  audit of `parseAfterEdit`.
+- A `SourceEdit` must be COMPUTED where it is APPLIED: edits computed
+  against the model's projection and then queued spliced at stale offsets
+  when a prior edit landed first (`contentRevision` does NOT bump on
+  ordinary edits, so the stale-base check passes). UI actions that derive
+  an edit from document state go through `DocumentSession` APIs that
+  compute in-actor at apply time (`applyResolution` pattern), with
+  refuse-on-drift byte re-validation.
+- Two recognizers for one grammar WILL diverge: the reveal styler's
+  regexes vs `CriticScanner`, and CriticScanner's `$…$` skip vs
+  `MathScanner`, each shipped a real bug. Either drive both from one
+  scanner or byte-mirror the rules and pin agreement with tests.
+- Anything written into endmatter YAML goes through
+  `ReviewEndmatter.escapedScalar` (one physical line, escaped): a raw
+  newline in a quoted scalar makes the STRICT parser reject the whole
+  endmatter, which then re-renders as prose (the YAML-soup bug class).
 
 ## Workflow
 
