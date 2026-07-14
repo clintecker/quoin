@@ -126,12 +126,13 @@ justification in the TRD first; the default answer is no.
   mapping re-ships a caret-lands-early bug. Typing on a rendered block
   activates it AND replays the keystroke (`pendingInsertion` through
   `activateBlock`). Revealed fragments are `RevealedFragment` (fragment +
-  editable subrange): mermaid/math reveals lead with a LIVE PREVIEW of
-  the artifact (last-good render held while mid-edit source is broken),
-  so `activeEditableRange` ≠ block start there — all three projection
-  paths (render loop, flip patch, per-keystroke ActiveBlockRenderPatch)
-  offset through `editableRange`, and the per-keystroke patch replaces
-  the whole old fragment so the preview refreshes. The open block's
+  editable subrange; `editableRange.location` is ALWAYS 0 — the editable
+  source IS the fragment). The mermaid/math live preview is a SIDE PANEL
+  beside the source, NOT an inline run (last-good render held while
+  mid-edit source is broken; retention state is `HeldPreview`, owned by
+  ReaderModel and threaded through render passes as an explicit inout) —
+  the per-keystroke patch replaces the whole old fragment so the panel
+  refreshes. The open block's
   `✓ done` chip + accent frame are the `editingFrame` DECORATION (drawn
   ink with its own hit-testing/tooltip — never a text run; the revealed
   source stays 1:1). Flips animate via `FlipTransitionController`

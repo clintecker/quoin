@@ -682,15 +682,16 @@ extension MarkdownReaderView {
                   let storage = textView.textContentStorage?.textStorage,
                   active.location + active.length <= storage.length
             else { return }
-            // The restyle must use the SAME configuration the reveal used:
-            // a default styler re-interpreted mermaid/code source as
-            // markdown on the first caret move — mono flipped to
-            // proportional, fake spans lit up (the reported shape-shift).
+            // The restyle consumes the reveal's configuration VERBATIM
+            // (RenderedDocument.revealStyler — one derivation, editor-modes
+            // plan 3.3): a default styler re-interpreted mermaid/code source
+            // as markdown on the first caret move (mono flipped to
+            // proportional, fake spans lit up — the reported shape-shift),
+            // and the old single-bool sync drifted for indented code.
+            let config = parent.rendered.revealStyler ?? .prose
             var styler = MarkdownSourceStyler(theme: parent.theme)
-            if parent.rendered.revealVerbatimCode {
-                styler.collapsesNonLiteralSpans = false
-                styler.treatsSourceAsVerbatimCode = true
-            }
+            styler.collapsesNonLiteralSpans = config.collapsesNonLiteralSpans
+            styler.treatsSourceAsVerbatimCode = config.treatsSourceAsVerbatimCode
             let styled = styler.style(source, caretOffset: relativeCaret)
             guard styled.length == active.length else { return }
 

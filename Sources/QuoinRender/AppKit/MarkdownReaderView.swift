@@ -319,7 +319,15 @@ public struct MarkdownReaderView: NSViewRepresentable {
         var caretLineAnchorY: CGFloat?
         var flipMotionID: BlockID?
 
+        // IME gate (editor-modes plan, 3.5): while marked text (dead-key or
+        // CJK composition) is in flight, replacing the fragment under it is
+        // undefined behavior — defer the projection. appliedRevision stays
+        // stale, so the NEXT pass applies it; composition normally ends
+        // with an insertText → edit → publish, which is that pass. A
+        // CANCELLED composition flushes on the next publish instead
+        // (documented limitation until the projector owns application).
         if coordinator.appliedRevision != rendered.revision,
+           !textView.hasMarkedText(),
            let storage = textView.textContentStorage?.textStorage {
             let anchorID = coordinator.topVisibleBlockID(in: textView)
             let viewport = scrollView.contentView.bounds.height
@@ -491,8 +499,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
         coordinator.lastActiveBlockID = rendered.activeBlockID
 
         // Restore the caret into the active block after an edit round-trip.
+        // Deferred during IME composition alongside the projection (3.5):
+        // setSelectedRange would discard the marked text.
         if let caret = caretInActiveBlock,
            caretGeneration != coordinator.appliedCaretGeneration,
+           !textView.hasMarkedText(),
            let active = rendered.activeEditableRange {
             coordinator.appliedCaretGeneration = caretGeneration
             let location = min(active.location + caret, active.location + active.length)

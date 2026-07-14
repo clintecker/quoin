@@ -287,9 +287,9 @@ final class ReaderModel {
                     revision: nextRevision(),
                     patchBaseLength: baseLength,
                     previewPanel: AttributedRenderer.previewPanel(for: heldPreview),
-                    revealVerbatimCode: presentation(
-                        for: document, activeBlockID: activeBlockID
-                    ).activeFlavor.map { $0 != .prose } ?? false
+                    revealStyler: AttributedRenderer.revealStylerConfig(
+                        kind: document.block(withID: activeBlockID)?.kind,
+                        slice: patch.activeSourceText)
                 )
             } else {
                 let next = renderer.render(
@@ -306,7 +306,7 @@ final class ReaderModel {
                     spliceHint: spliceHint,
                     revision: nextRevision(),
                     previewPanel: next.previewPanel,
-                    revealVerbatimCode: next.revealVerbatimCode
+                    revealStyler: next.revealStyler
                 )
             }
             outline = document.outline
@@ -443,9 +443,12 @@ final class ReaderModel {
             revision: nextRevision(),
             patchBaseLength: baseLength,
             previewPanel: newID != nil ? AttributedRenderer.previewPanel(for: heldPreview) : nil,
-            revealVerbatimCode: presentation(
-                for: document, activeBlockID: newID
-            ).activeFlavor.map { $0 != .prose } ?? false
+            revealStyler: newID.flatMap { id in
+                update.activeSourceText.map { slice in
+                    AttributedRenderer.revealStylerConfig(
+                        kind: document.block(withID: id)?.kind, slice: slice)
+                }
+            }
         )
         return true
     }
@@ -735,18 +738,19 @@ final class ReaderModel {
               let oldEditableRange = oldRendered.activeEditableRange,
               let oldBlockRange = oldRendered.blockRanges[oldActiveBlockID],
               let newSlice = newDocument.source.substring(in: newDocument.blocks[newIndex].range),
-              separatorSignature(oldDocument.blocks[oldIndex].kind) == separatorSignature(newDocument.blocks[newIndex].kind),
               isActiveBlockPatchable(oldDocument.blocks[oldIndex].kind),
               isActiveBlockPatchable(newDocument.blocks[newIndex].kind),
-              // The separator's CHARACTERS are constant across a keystroke,
-              // but its clamped-vs-normal STYLE follows the slice's trailing
-              // newline — which typing changes. This patch replaces the
-              // fragment WITHOUT its separator, so a clamp flip must fall
-              // back to the full render (which restyles the separator), or a
-              // phantom empty paragraph appears (editor-modes plan, 0.3).
-              AttributedRenderer.revealNeedsClampedSeparator(
-                  oldDocument.source.substring(in: oldDocument.blocks[oldIndex].range) ?? "")
-                  == AttributedRenderer.revealNeedsClampedSeparator(newSlice)
+              // This patch replaces the fragment WITHOUT its separator, so
+              // it is valid only when the separator the render loop WOULD
+              // emit is identical before and after the edit — characters
+              // AND styling (a revealed slice's trailing newline flips the
+              // clamp; a kind change flips the width). One derivation, one
+              // comparison: the SeparatorPolicy output itself (editor-modes
+              // plan 3.1; subsumes the old character-signature and the 0.3
+              // clamp guard). Any difference falls back to the full render.
+              separatorUnchangedAcrossEdit(
+                  oldDocument: oldDocument, oldIndex: oldIndex, newDocument: newDocument,
+                  newIndex: newIndex, newSlice: newSlice)
         else { return nil }
 
         var ranges: [BlockID: NSRange] = [:]
@@ -760,9 +764,10 @@ final class ReaderModel {
                 heldPreview: &heldPreview)
         }
         // The patch replaces the whole OLD fragment (block range minus its
-        // trailing separator) — not just the editable region: the
-        // preview-anchored reveal (mermaid/math) leads the fragment with a
-        // live preview that every keystroke must refresh.
+        // trailing separator). The fragment IS the editable source (see
+        // RevealedFragment's location-0 invariant); the mermaid/math live
+        // preview lives in the SIDE PANEL, refreshed through heldPreview
+        // above, not in the text flow.
         let separatorLength = oldIndex < oldDocument.blocks.count - 1
             ? renderer.separatorLength(
                 after: oldDocument.blocks[oldIndex].kind,
@@ -797,8 +802,9 @@ final class ReaderModel {
         return ActiveBlockRenderPatch(
             storagePatch: RenderStoragePatch(oldRange: oldFragmentRange, replacement: replacement),
             blockRanges: ranges,
+            // editableRange.location is 0 by invariant (RevealedFragment).
             activeEditableRange: NSRange(
-                location: oldBlockRange.location + revealed.editableRange.location,
+                location: oldBlockRange.location,
                 length: revealed.editableRange.length),
             activeSourceText: newSlice,
             oldActiveBlockID: oldActiveBlockID
@@ -814,22 +820,27 @@ final class ReaderModel {
         }
     }
 
-    private func separatorSignature(_ kind: BlockKind) -> (isCard: Bool, isHeading: Bool) {
-        let isHeading: Bool
-        if case .heading = kind {
-            isHeading = true
-        } else {
-            isHeading = false
-        }
-
-        let isCard: Bool
-        switch kind {
-        case .codeBlock, .mermaid, .table, .callout, .frontMatter, .htmlBlock:
-            isCard = true
-        default:
-            isCard = false
-        }
-        return (isCard, isHeading)
+    /// True when the render loop would emit an IDENTICAL separator (bytes
+    /// and styling) after the active block before and after this edit —
+    /// the per-keystroke patch's validity condition, asked of the single
+    /// SeparatorPolicy derivation rather than re-derived here.
+    private func separatorUnchangedAcrossEdit(
+        oldDocument: QuoinDocument, oldIndex: Int,
+        newDocument: QuoinDocument, newIndex: Int, newSlice: String
+    ) -> Bool {
+        let oldIsLast = oldIndex == oldDocument.blocks.count - 1
+        let newIsLast = newIndex == newDocument.blocks.count - 1
+        if oldIsLast || newIsLast { return oldIsLast && newIsLast }
+        let oldSlice = oldDocument.source.substring(in: oldDocument.blocks[oldIndex].range) ?? ""
+        let oldSeparator = renderer.separator(
+            after: oldDocument.blocks[oldIndex].kind,
+            before: oldDocument.blocks[oldIndex + 1].kind,
+            revealedSlice: oldSlice)
+        let newSeparator = renderer.separator(
+            after: newDocument.blocks[newIndex].kind,
+            before: newDocument.blocks[newIndex + 1].kind,
+            revealedSlice: newSlice)
+        return oldSeparator.isEqual(to: newSeparator)
     }
 
     // MARK: - Image drop

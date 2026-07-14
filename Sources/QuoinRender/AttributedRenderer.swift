@@ -34,6 +34,21 @@ public struct RenderStoragePatch {
     }
 }
 
+/// The reveal's styler configuration — ONE pure derivation
+/// (`AttributedRenderer.revealStylerConfig(kind:slice:)`) shared by the
+/// reveal render and the view-side caret-move restyle, so the two can never
+/// drift (editor-modes plan, 3.3).
+public struct RevealStylerConfig: Equatable, Sendable {
+    /// False for verbatim/preview flavors: their markup IS the content.
+    public let collapsesNonLiteralSpans: Bool
+    /// True for INDENTED code only — no fences for the styler's per-match
+    /// code guard to key on, so markdown styling is suppressed entirely.
+    public let treatsSourceAsVerbatimCode: Bool
+
+    public static let prose = RevealStylerConfig(
+        collapsesNonLiteralSpans: true, treatsSourceAsVerbatimCode: false)
+}
+
 public struct RenderedDocument {
     public let attributed: NSAttributedString
     public let blockRanges: [BlockID: NSRange]
@@ -73,13 +88,20 @@ public struct RenderedDocument {
     /// `attributed`, which the model keeps authoritative.
     public let patchBaseLength: Int?
 
-    /// True when the ACTIVE block's revealed source is fully verbatim
-    /// (code/mermaid/math/html/front matter): the caret-move restyle must
-    /// rebuild it with the SAME styler configuration the reveal used —
-    /// a default styler flipped mermaid source from mono-verbatim to
-    /// markdown-styled proportional text on the first click (the reported
-    /// shape-shift).
-    public let revealVerbatimCode: Bool
+    /// The ACTIVE block's reveal styler configuration, derived ONCE
+    /// (AttributedRenderer.revealStylerConfig) and carried here so the
+    /// caret-move restyle consumes it VERBATIM instead of re-deriving it —
+    /// two independent derivations synced by a single bool drifted for
+    /// indented code (the T3 seam; editor-modes plan, 3.3). nil when no
+    /// block is revealed.
+    public let revealStyler: RevealStylerConfig?
+
+    /// Compat: true when the revealed source styles fully verbatim (a
+    /// default styler flipped mermaid source from mono-verbatim to
+    /// markdown-styled proportional text on the first click).
+    public var revealVerbatimCode: Bool {
+        !(revealStyler ?? .prose).collapsesNonLiteralSpans
+    }
 
     /// Side-by-side preview for the ACTIVE diagram/equation (ledger #6b):
     /// the artifact rendered as a floating panel beside the revealed
@@ -109,7 +131,7 @@ public struct RenderedDocument {
         revision: Int = 0,
         patchBaseLength: Int? = nil,
         previewPanel: PreviewPanel? = nil,
-        revealVerbatimCode: Bool = false
+        revealStyler: RevealStylerConfig? = nil
     ) {
         self.attributed = attributed
         self.blockRanges = blockRanges
@@ -121,7 +143,7 @@ public struct RenderedDocument {
         self.revision = revision
         self.patchBaseLength = patchBaseLength
         self.previewPanel = previewPanel
-        self.revealVerbatimCode = revealVerbatimCode
+        self.revealStyler = revealStyler
     }
 
     public static let empty = RenderedDocument(attributed: NSAttributedString(), blockRanges: [:])
@@ -204,6 +226,7 @@ public struct AttributedRenderer {
         var blockRanges: [BlockID: NSRange] = [:]
         var activeEditableRange: NSRange?
         var activeSourceText: String?
+        var revealConfig: RevealStylerConfig?
         var newCache: [BlockID: NSAttributedString] = [:]
 
         for (index, block) in document.blocks.enumerated() {
@@ -218,10 +241,12 @@ public struct AttributedRenderer {
                 let revealed = renderEditableSource(
                     slice, caretOffset: activeCaret, block: block,
                     document: document, heldPreview: &heldPreview)
+                // editableRange.location is 0 by invariant (see
+                // RevealedFragment): the editable source IS the fragment.
                 activeEditableRange = NSRange(
-                    location: start + revealed.editableRange.location,
-                    length: revealed.editableRange.length)
+                    location: start, length: revealed.editableRange.length)
                 activeSourceText = slice
+                revealConfig = Self.revealStylerConfig(kind: block.kind, slice: slice)
                 output.append(revealed.attributed)
             } else if isCacheable(block.kind), let cached = cache[block.id] {
                 newCache[block.id] = cached
@@ -240,17 +265,9 @@ public struct AttributedRenderer {
             }
             if index < document.blocks.count - 1 {
                 let nextKind = document.blocks[index + 1].kind
-                // The separator after a revealed block whose slice carries
-                // its own trailing newline would lay out as a phantom empty
-                // paragraph (~a full line) the reading projection never
-                // shows; clamp it to near-zero height (same characters, so
-                // every range stays valid).
-                if block.id == activeBlockID, let text = activeSourceText,
-                   Self.revealNeedsClampedSeparator(text) {
-                    output.append(clampedSeparator(after: block.kind, before: nextKind))
-                } else {
-                    output.append(blockSeparator(after: block.kind, before: nextKind))
-                }
+                output.append(separator(
+                    after: block.kind, before: nextKind,
+                    revealedSlice: block.id == activeBlockID ? activeSourceText : nil))
             }
             blockRanges[block.id] = NSRange(location: start, length: output.length - start)
         }
@@ -273,16 +290,17 @@ public struct AttributedRenderer {
             activeEditableRange: activeEditableRange,
             activeSourceText: activeSourceText,
             previewPanel: activeBlockID != nil ? Self.previewPanel(for: heldPreview) : nil,
-            revealVerbatimCode: presentation(
-                for: document, activeBlockID: activeBlockID).activeFlavor.map { $0 != .prose } ?? false
+            revealStyler: revealConfig
         )
     }
 
     /// A revealed block's projection: the full fragment plus the range of
-    /// the 1:1 editable source WITHIN it. They differ for the
-    /// preview-anchored reveal (mermaid/math), where the fragment leads
-    /// with a live preview of the artifact; everywhere else the editable
-    /// range spans the whole fragment.
+    /// the 1:1 editable source WITHIN it. INVARIANT (since the mermaid/math
+    /// preview moved out of the text flow into the side panel):
+    /// `editableRange.location` is ALWAYS 0 — the editable source starts at
+    /// the fragment start; only the length is meaningful (it excludes any
+    /// trailing separator). The old lead-with-inline-preview offset case is
+    /// dead (editor-modes review finding 1; deleted in plan 3.4).
     public struct RevealedFragment {
         public let attributed: NSAttributedString
         public let editableRange: NSRange
@@ -383,6 +401,22 @@ public struct AttributedRenderer {
         blockSeparator(after: kind, before: nextKind).length
     }
 
+    /// THE single separator derivation (editor-modes plan, 3.1): every
+    /// projection producer asks here for both the characters AND the clamp
+    /// styling, so producers can never disagree by a line (the T1 drift
+    /// class — three call sites used to recompute this independently).
+    /// `revealedSlice` is the preceding block's source slice when that
+    /// block is revealed (its trailing newline decides the clamp), nil when
+    /// it renders normally.
+    public func separator(
+        after kind: BlockKind, before nextKind: BlockKind, revealedSlice: String?
+    ) -> NSAttributedString {
+        if let revealedSlice, Self.revealNeedsClampedSeparator(revealedSlice) {
+            return clampedSeparator(after: kind, before: nextKind)
+        }
+        return blockSeparator(after: kind, before: nextKind)
+    }
+
     /// Everything a host needs to apply an activate/deactivate flip as
     /// bounded storage patches instead of a full re-render.
     public struct ActivationFlipUpdate {
@@ -451,8 +485,9 @@ public struct AttributedRenderer {
             if !pending { cacheable = (oldID, fragment) }
             let replacement = NSMutableAttributedString(attributedString: fragment)
             if blockIndex < document.blocks.count - 1 {
-                replacement.append(blockSeparator(
-                    after: block.kind, before: document.blocks[blockIndex + 1].kind))
+                replacement.append(separator(
+                    after: block.kind, before: document.blocks[blockIndex + 1].kind,
+                    revealedSlice: nil))
             }
             patches.append((
                 location: oldBlockRange.location,
@@ -480,9 +515,8 @@ public struct AttributedRenderer {
             let replacement = NSMutableAttributedString(attributedString: revealed.attributed)
             if blockIndex < document.blocks.count - 1 {
                 let nextKind = document.blocks[blockIndex + 1].kind
-                replacement.append(Self.revealNeedsClampedSeparator(slice)
-                    ? clampedSeparator(after: block.kind, before: nextKind)
-                    : blockSeparator(after: block.kind, before: nextKind))
+                replacement.append(separator(
+                    after: block.kind, before: nextKind, revealedSlice: slice))
             }
             patches.append((
                 location: blockRange.location,
@@ -517,9 +551,9 @@ public struct AttributedRenderer {
         }
         var activeEditableRange: NSRange?
         if let newID, let newRange = ranges[newID] {
+            // editableRange.location is 0 by invariant (see RevealedFragment).
             activeEditableRange = NSRange(
-                location: newRange.location + newEditableRangeInFragment.location,
-                length: newEditableRangeInFragment.length)
+                location: newRange.location, length: newEditableRangeInFragment.length)
         }
 
         return ActivationFlipUpdate(
@@ -605,23 +639,12 @@ public struct AttributedRenderer {
         block: Block? = nil, document: QuoinDocument? = nil,
         heldPreview: inout HeldPreview?
     ) -> RevealedFragment {
+        // ONE derivation, shared with the view-side caret-move restyle via
+        // RenderedDocument.revealStyler (editor-modes plan, 3.3).
+        let config = Self.revealStylerConfig(kind: block?.kind, slice: slice)
         var styler = MarkdownSourceStyler(theme: theme)
-        // The flavor table (BlockPresentation) is the single derivation:
-        // verbatim and preview blocks' markup IS the content — never collapse.
-        let flavor = block.map { EditingFlavor.of($0.kind) } ?? .prose
-        if flavor != .prose {
-            styler.collapsesNonLiteralSpans = false
-        }
-        if case .codeBlock = block?.kind {
-            // INDENTED code has no fences for the styler's per-match code
-            // guard to key on — its content styled as markdown (bold text,
-            // LIVE links hijacking clicks; ledger #5). The kind is the
-            // truth: no fence in the slice → fully verbatim.
-            let head = slice.drop(while: { $0 == " " || $0 == "\t" || $0 == "\n" })
-            if !head.hasPrefix("```"), !head.hasPrefix("~~~") {
-                styler.treatsSourceAsVerbatimCode = true
-            }
-        }
+        styler.collapsesNonLiteralSpans = config.collapsesNonLiteralSpans
+        styler.treatsSourceAsVerbatimCode = config.treatsSourceAsVerbatimCode
         let styled = NSMutableAttributedString(
             attributedString: styler.style(slice, caretOffset: caretOffset))
         guard styled.length > 0 else {
@@ -822,6 +845,24 @@ public struct AttributedRenderer {
     /// the separator's characters are constant, but its style isn't.
     public static func revealNeedsClampedSeparator(_ slice: String) -> Bool {
         slice.hasSuffix("\n")
+    }
+
+    /// THE reveal styler configuration for a block (editor-modes plan, 3.3):
+    /// the flavor table decides span collapsing; INDENTED code (no fences
+    /// for the styler's per-match code guard to key on — its content styled
+    /// as markdown: bold text, LIVE links hijacking clicks; ledger #5)
+    /// additionally suppresses all markdown styling. The kind is the truth:
+    /// no fence in the slice → fully verbatim.
+    public static func revealStylerConfig(kind: BlockKind?, slice: String) -> RevealStylerConfig {
+        let flavor = kind.map(EditingFlavor.of) ?? .prose
+        var treatsAsVerbatimCode = false
+        if case .codeBlock = kind {
+            let head = slice.drop(while: { $0 == " " || $0 == "\t" || $0 == "\n" })
+            treatsAsVerbatimCode = !head.hasPrefix("```") && !head.hasPrefix("~~~")
+        }
+        return RevealStylerConfig(
+            collapsesNonLiteralSpans: flavor == .prose,
+            treatsSourceAsVerbatimCode: treatsAsVerbatimCode)
     }
 
     /// The block separator with ONLY ITS FIRST newline styled to near-zero
