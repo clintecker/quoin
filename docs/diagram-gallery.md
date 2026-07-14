@@ -5,7 +5,11 @@ no Mermaid.js, no JavaScript, no network. Each type is shown in a simple
 and a complex form; the images adapt to your light/dark theme. Regenerate
 with `QUOIN_DIAGRAM_GALLERY=$PWD swift test --filter DiagramGalleryDocTests`.
 
-All 23 Mermaid diagram types Quoin recognises render natively.
+All 30 Mermaid diagram types Quoin recognises render natively. This page
+shows the original 23; the seven newer types (venn, swimlane, tree view,
+event modeling, ishikawa, wardley, cynefin) are exercised in
+`Fixtures/renderer/10-diagrams.md` and documented exhaustively in
+[MermaidKit's repository](https://github.com/clintecker/MermaidKit).
 
 ## Flowchart
 

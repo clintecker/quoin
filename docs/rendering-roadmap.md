@@ -1,5 +1,11 @@
 # Rendering & interaction roadmap
 
+> **Status: COMPLETE (2026-07-14).** Every item on this roadmap has shipped —
+> including the north-star incremental render (fragment cache + storage
+> patches + splice, guarded by ProjectorEquivalenceTests) and all coverage
+> items. Kept as a historical record; new rendering work is tracked in
+> docs/design/ (editor-modes, suggestions).
+
 Driven by dogfooding against the two stress fixtures in `~/Documents/ClintNotes`
 (`markdown_renderer_stress_test.md`, `markdown_renderer_extreme_stress_test.md`)
 and Clint's direct feedback. Ordered by "does the app feel broken" first, then
@@ -25,9 +31,12 @@ Every change below is measured against these, not just correctness:
 
 ### The one architectural change that unlocks all of them: incremental render
 
-Today `ReaderModel.rerender()` rebuilds the entire `NSAttributedString` and
-`updateNSView` calls `setAttributedString` — a full re-layout on every keystroke.
-That is the root cause of slow reflows *and* viewport jumps on big docs.
+At the time of writing, `ReaderModel.rerender()` rebuilt the entire
+`NSAttributedString` and `updateNSView` called `setAttributedString` — a full
+re-layout on every keystroke. SINCE SHIPPED: per-block fragment cache,
+bounded storage patches for keystrokes and flips (built in the renderer —
+`activeBlockEditUpdate` / `activationFlipUpdate`), and splice application;
+patch-vs-full equivalence is enforced in CI by ProjectorEquivalenceTests.
 
 **Plan (foundational, do first):**
 1. `AttributedRenderer` caches a per-block rendered fragment keyed by `BlockID`
@@ -164,13 +173,12 @@ reintroducing full re-renders.
 
 ## Remaining
 
-- **3.1** More native Mermaid types. Done: gantt, timeline (vertical spine with
-  sectioned event cards), mindmap (tidy horizontal tree with per-branch tints).
-  Remaining: gitGraph. Each is parser + layout + renderer; until added they
-  degrade to the tidy source card, so they're "not broken," just not drawn.
-- **3.2 stretch** Math accents (`\vec` `\hat` `\bar` `\overline`), `\hline` /
-  array column rules — would let a few more fixture blocks render natively
-  instead of falling back.
+- **3.1** More native Mermaid types — DONE, including gitGraph (and, via
+  MermaidKit 0.5.0+, seven further types: venn, swimlane, tree view, event
+  modeling, ishikawa, wardley, cynefin). All 30 recognised types render
+  natively.
+- **3.2 stretch** — DONE in Vinculum (accents, `\hline`/array column rules,
+  and far beyond; see Vinculum's COVERAGE.md).
 - **Cross-cutting** ✅ CI conformance harness: the monolithic stress docs are
   split into focused modules under `Fixtures/renderer/`, and
   `RendererConformanceTests` parses each, snapshots structural metrics, and
@@ -182,4 +190,4 @@ reintroducing full re-renders.
 1.1 → 1.2 (near-term) → 1.3 → 2.1 → 2.2 → 3.x, with the conformance harness added
 alongside 1.1 so fixes stay fixed. **Status: 1.1, 1.2, 1.3, 2.1, 2.2, and 3.2
 are done and verified live on the stress fixtures; 3.1 and the CI harness
-remain.**
+shipped subsequently. Nothing remains — see the status banner at the top.**

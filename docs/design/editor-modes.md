@@ -1,6 +1,8 @@
 # Editor modes — a first-principles model for reveal, editing, and embeds
 
-Status: **design proposal** (not yet implemented). Owner: editor/render layer.
+Status: **implemented** (phases 0–3 shipped 2026-07-14, commits
+fb4cdbe..e38ba5d; see `editor-modes-plan.md` for the as-built record,
+including the two recorded deviations). Owner: editor/render layer.
 This doc defines the *presentation* model that governs how a block is shown
 and edited, why the current implementation produces rendering overlaps, the
 prior art we're drawing on, and a staged, test-guarded path to the clean model.

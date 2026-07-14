@@ -91,6 +91,16 @@ and publishes immutable `QuoinDocument` snapshots. External changes while
 edits are unsaved surface as a non-blocking conflict banner (keep mine / take
 disk); self-inflicted file events are recognised by source hash.
 
+**Session ownership (app layer).** `OpenDocumentStore` is an app-global
+registry: exactly ONE `ReaderModel` (and thus one `DocumentSession` /
+autosaver) per file, keyed by the resolved + standardized URL and
+ref-counted across every window and tab (launch ledger #12). A first-H1
+rename re-keys the entry and broadcasts so every window re-points its tab.
+Because the model outlives the transient editor view, switching tabs keeps
+the session and undo history alive, and the editor stashes its scroll +
+caret in the model (`ViewportSnapshot`) on teardown and restores them on
+return (ledger #22).
+
 **Keystroke fast paths.** `MarkdownConverter.parseAfterEdit` re-parses
 block-locally for the two things a caret does all day: typing in a plain
 paragraph and typing inside a fenced embed block (code / mermaid / math).
@@ -122,6 +132,28 @@ string:
   or the placeholder would stick forever.
 - **The active block** renders as literal source (`MarkdownSourceStyler`)
   instead of its projection — see “Editing model”.
+- **Presentation owner:** which block is editing and how it styles is decided
+  ONCE per projection by the pure `presentation(for:activeBlockID:)`
+  (`BlockPresentation.swift`) — `.rendered` or `.editing(flavor:chrome:)`,
+  where the flavor table (prose / verbatim / preview) is the single place a
+  block kind maps to reveal behavior. Exactly one block edits at a time (an
+  invariant, not an accident).
+- **Single derivations:** the block separator (characters AND clamp styling)
+  comes from one `separator(after:before:revealedSlice:)`; the reveal's
+  styler configuration comes from one `revealStylerConfig(kind:slice:)`,
+  carried on `RenderedDocument.revealStyler` so the view-side caret-move
+  restyle consumes it verbatim. Patch producers validate against these same
+  derivations, so projection paths cannot drift (see Testing).
+- **Patch producers:** the activation flip (`activationFlipUpdate`) and the
+  per-keystroke active-block edit (`activeBlockEditUpdate`) build bounded
+  `RenderStoragePatch`es IN the renderer, next to the render loop they must
+  agree with. `RenderedDocument.storagePatches` + `patchBaseLength` carry
+  them to the view; any validity failure returns nil and the model falls
+  back to the always-correct full render.
+- **Live preview retention** (mermaid/math side panel): the last-good
+  artifact is `HeldPreview` — SESSION state owned by `ReaderModel` and
+  threaded through render passes as an explicit `inout`; the renderer holds
+  no hidden mutable state.
 
 ### Display (QuoinRender)
 
@@ -135,9 +167,18 @@ document changed, and only that path re-anchors scroll.
 **Block decorations** (code canvases, callout boxes, quote rules, diagram
 frames, table rules, the front-matter chip) are drawn in
 `drawBackground(in:)` from laid-out fragment frames — *never* with
-`.backgroundColor` attributes, which render as ugly per-line strips. Geometry
-is re-queried after any attribute pass that changes fonts
-(`invalidateDecorations` schedules a second draw after TextKit settles).
+`.backgroundColor` attributes, which render as ugly per-line strips.
+
+**Every draw is a settled draw:** `viewWillDraw` finishes the viewport's
+layout before any pixel paints (preserving the caret line's screen position
+across the settle — the viewport invariant applies to the settle itself),
+so decorations never draw against estimated geometry. One measure pass per
+draw (`measureVisibleRuns`, viewport-culled) produces the geometry snapshot
+every chrome consumer reads: the draw pass, the ✓ done chip's hit-test and
+tooltip, the preview-panel anchor, and the accessibility element all derive
+from `EditingChrome` — one measured box, so they can never disagree. The
+chip itself draws in `draw(_:)`, ABOVE the glyphs, and is exposed to
+VoiceOver as a pressable "Done editing" button.
 
 ## Editing model (syntax reveal)
 
@@ -154,9 +195,10 @@ the edit boundary via `EditMapping`).
 - Keystrokes are intercepted in `shouldChangeTextIn` and become relative
   byte-range edits routed through the session; the storage itself is never
   mutated by typing (always returns `false`).
-- Embed blocks (code, tables, diagrams, math) flip to source on
-  **double-click**, so a single click can admire or select a rendered diagram
-  without turning it into text.
+- Code, tables, TOC, and HTML blocks flip to source on **double-click**;
+  diagrams and math open only through explicit intent — the ‹/› edit chip,
+  ⌘↩, or the context menu — so a single click (or double-click) can admire
+  or select a rendered artifact without turning it into text.
 - Smart pairs complete/type-over delimiters; typing a delimiter over a
   selection wraps it; format commands (⌘B etc.) without a selection act on
   the word under the caret.
@@ -297,6 +339,14 @@ fail to compile. Supporting it means changing those guards to
   font-independent structural invariants, not pixels. Also covers the extracted
   render helpers (code-token colors, non-BMP offset mapping, card spacing,
   source-styler 1:1 mapping).
+- **Projection equivalence** (`ProjectorEquivalenceTests`): the big guard.
+  For every renderer fixture × scripted interaction (activation flips,
+  keystroke edits including the trailing-newline clamp case), the PATCH
+  paths applied to live storage must be byte- and attribute-identical to a
+  fresh full render (attachments compared by presence; held preview
+  threaded identically on both sides). Any separator, offset, styling, or
+  base-length drift between projection paths fails CI forever. Extend its
+  interaction script when adding projection paths.
 - **Screenshots** (`App/macOS/UITests`): CI drives the real app over the
   fixture library and publishes window captures to the `ci-screenshots`
   branch — how a cloud session gets eyes on the app.

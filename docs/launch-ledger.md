@@ -194,7 +194,8 @@ top-down; nothing ships while a BLOCKER is open.*
   library?" popover. L1/L2.
 - [SHIPPED] Welcome doc + in-app Markdown Guide + Help menu (Guide,
   Welcome, Report an Issue). L3/L5/L14 partial.
-- [OPEN] Guide as conformance fixture in CI. L5-acceptance.
+- [SHIPPED] Guide as conformance fixture in CI (GuideConformanceTests
+  fails CI if the guide's features regress). L5-acceptance.
 - [OPEN] Version/bundle: 0.1.0→1.0 story; Viewer→Editor role. L7.
 - [DECISION] Crash reporting stance (recommend: none + privacy copy). L8.
 - [OPEN] Licenses view in About (Apache attribution REQUIRED for
@@ -202,6 +203,8 @@ top-down; nothing ships while a BLOCKER is open.*
 - [OPEN] Launch screenshots AFTER the visual token pass; 8-second live-
   diagram-edit screen recording is the marketing centerpiece. L12.
 - [FIXED] README stale claims (double-click row; 23→30 diagram types). L13.
+  (Regressed 23 by the 2026-07-13 docs sweep, which normalized to the stale
+  gallery instead of the code; re-fixed 2026-07-14 — 30 is the code truth.)
 - [OPEN] "Where is Save?" reassurance: transient Saved whisper in status
   bar. (Delight/confusion analysis.)
 - Launch gates from existing ledgers: fence healing (above), venn/C4

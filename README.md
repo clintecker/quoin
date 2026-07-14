@@ -37,7 +37,8 @@ MathJax, no KaTeX.
 ![Native math typesetting](docs/images/gallery-math.png)
 
 **Native diagram engines.** Mermaid sources are parsed and laid out by
-purpose-built engines: Sugiyama-style layering with fan-out edge attachment,
+**[MermaidKit](https://github.com/clintecker/MermaidKit)** — Quoin's own
+purpose-built engine: Sugiyama-style layering with fan-out edge attachment,
 orthogonal elbow routing with per-face slots, cycle-safe layering, UML
 relationship markers (▷ ◆ ◇, crow's feet), and recursive composite states
 with fork/join bars and choice diamonds.
@@ -116,9 +117,13 @@ those are the source of truth so this list can't quietly drift.
 
 ### Diagrams (Mermaid)
 
-**All 23 diagram types Quoin recognises render natively** — zero JavaScript,
-zero network. See the **[diagram gallery](docs/diagram-gallery.md)** for a simple
-and a complex example of every type, each drawn by Quoin's own engine.
+Diagrams are powered by **[MermaidKit](https://github.com/clintecker/MermaidKit)**
+— Quoin's own native Mermaid engine. **All 30 diagram types it recognises render
+natively** — zero JavaScript, zero network. The table below summarizes the
+breadth; MermaidKit's repository (its `Fixtures/diagrams/` corpus and CI
+gallery) is the source of truth for per-type capability, so this list can't
+quietly drift. See the in-repo **[diagram gallery](docs/diagram-gallery.md)**
+for rendered examples.
 
 | Type | Status | Notes |
 | :--- | :---: | :--- |
@@ -145,6 +150,13 @@ and a complex example of every type, each drawn by Quoin's own engine.
 | Architecture | ✅ | grouped service boxes, side-anchored edges |
 | Block | ✅ | column grid, block shapes, connectors |
 | ZenUML | ✅ | UML sequence (alternate syntax) |
+| Venn | ✅ | overlapping sets, region labels |
+| Swimlane | ✅ | laned flows, cross-lane connectors |
+| Tree view | ✅ | indented hierarchy with connectors |
+| Event modeling | ✅ | event/command/view timeline in lanes |
+| Ishikawa (fishbone) | ✅ | cause/effect spines |
+| Wardley map | ✅ | value chain × evolution axes |
+| Cynefin | ✅ | four-domain matrix with placed items |
 
 ### Editor & app
 
@@ -191,29 +203,34 @@ Budgets from the PRD, enforced in CI (`PerformanceTests`):
 ```mermaid
 flowchart TD
     subgraph Apps["App/macOS · App/iOS — SwiftUI shells (navigation only)"]
-        Shell[library · tabs · outline · find · export]
+        Shell[library · session store · tabs · outline · find · export]
     end
     subgraph Render["QuoinRender — Apple platforms"]
         TV[QuoinTextView — TextKit 2 + block decorations]
         AR[AttributedRenderer — AST to attributed projection]
-        MT[MathTypesetter — TeX box model, CoreText]
-        DR[DiagramRenderer — CoreGraphics]
     end
     subgraph Core["QuoinCore — platform-free, Linux-testable"]
         DS[DocumentSession — edits · undo · autosave · watching]
         MC[MarkdownConverter — source to AST]
-        MP[MathParser · MermaidParser]
-        DL[DiagramLayoutEngine — pure geometry]
+    end
+    subgraph Vinculum["Vinculum — first-party math engine"]
+        VL[VinculumLayout — parse + typeset geometry]
+        VR[VinculumRender — CoreText drawing]
+    end
+    subgraph MermaidKit["MermaidKit — first-party diagram engine"]
+        ML[MermaidLayout — parse + layout + scene IR]
+        MR[MermaidRender — CoreGraphics drawing]
     end
     Shell --> TV
     Shell --> DS
     TV --> AR
-    AR --> MT
-    AR --> DR
     AR --> MC
-    MT --> MP
-    DR --> DL
-    DL --> MP
+    AR --> VR
+    AR --> MR
+    VR --> VL
+    MR --> ML
+    MC -. re-exports .-> VL
+    MC -. re-exports .-> ML
     DS --> MC
 ```
 
@@ -247,9 +264,13 @@ screenshots to the `ci-screenshots` branch on every push.
 
 ## Dependency policy
 
-One code dependency: [swift-markdown](https://github.com/swiftlang/swift-markdown)
-(Apple's cmark-gfm wrapper). New dependencies require written justification in
-the TRD; the default answer is no.
+One third-party code dependency:
+[swift-markdown](https://github.com/swiftlang/swift-markdown) (Apple's
+cmark-gfm wrapper). [MermaidKit](https://github.com/clintecker/MermaidKit) and
+[Vinculum](https://github.com/clintecker/Vinculum) are **first-party** — Quoin's
+own published engines, consumed from GitHub like any host app would, and exempt
+from the policy. Anything new requires written justification in the TRD; the
+default answer is no.
 
 ## Privacy
 

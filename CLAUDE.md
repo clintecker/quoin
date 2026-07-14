@@ -32,7 +32,9 @@ Swift/SwiftUI + TextKit 2, zero JavaScript at runtime, local-only.
   (per-line style transplant). Scroll only when the caret leaves the
   viewport, then minimally. Enforced by RevealFidelityTests and
   CaretLineAnchorTests; extend BOTH when adding block types or projection
-  paths.
+  paths. Patch-vs-full-render equivalence is enforced by
+  ProjectorEquivalenceTests — extend its interaction script when touching
+  any projection path. The full rule-book: docs/INVARIANTS.md.
 
 ## Dependency policy
 
@@ -212,15 +214,17 @@ justification in the TRD first; the default answer is no.
   built from `paragraphStyle()` inherit the 12pt body gap. Code blocks,
   tables, and any multi-line block must zero `paragraphSpacing` explicitly
   or lines render double-spaced.
-- Decoration geometry can be queried mid-reflow: after any attribute pass
-  that changes fonts (syntax reveal flips 1pt↔full-size delimiters), call
-  `invalidateDecorations()` — it schedules a second draw after TextKit
-  settles, otherwise boxes lag behind their text.
+- Decoration geometry: EVERY draw is a settled draw — `viewWillDraw` runs
+  the viewport settle (preserving the caret line's screen position) before
+  any pixel paints, and one measure pass (`measureVisibleRuns`) feeds all
+  chrome geometry (border/chip/tooltip/panel/AX from one box). Call
+  `invalidateDecorations()` only to rescan the decoration RUN LIST after
+  attribute changes; `noteStorageEdit` maintains it incrementally.
 - `MarkdownSourceStyler.styleLinePrefixes` must advance by
   `NSMaxRange(lineRange)`; the old clamped-location loop pinwheeled
   forever on the last line.
 - Flowchart layering must ignore cycle back-edges or layout loops
-  (`DiagramLayout`).
+  (now MermaidKit's `DiagramLayout` — fix it in that repo, not here).
 
 ## Workflow
 

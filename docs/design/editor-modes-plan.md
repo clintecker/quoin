@@ -1,12 +1,13 @@
 # Editor modes — implementation plan (4 phases)
 
-Status: **approved plan** (post-review). Companion to `editor-modes.md` (the
-model + diagnosis) — this is the *how*. Incorporates the adversarial design
-review of 2026-07-14: every phase below reflects its amendments (settle in
-`viewWillDraw`, view-owned caret contract, viewport-scoped double-buffered
-geometry, patches-only hot path, Stage-4-as-AX re-scope) and its two new
-confirmed bugs (separator-clamp drift, stale-caret rerender), which land in
-Phase 0.
+Status: **phases 0–3 SHIPPED** (2026-07-14, fb4cdbe..e38ba5d; as-built
+deviations recorded inline in Phases 2 and 3). Phase 4 (documentation
+retool) in progress. Companion to `editor-modes.md` (the model + diagnosis)
+— this is the *how*. Incorporates the adversarial design review of
+2026-07-14: every phase below reflects its amendments (settle in
+`viewWillDraw`, view-owned caret contract, viewport-scoped geometry,
+patches-only hot path, Stage-4-as-AX re-scope) and its two new confirmed
+bugs (separator-clamp drift, stale-caret rerender), which landed in Phase 0.
 
 Ground rules for every phase:
 
