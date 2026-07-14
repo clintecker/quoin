@@ -48,6 +48,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @AppStorage("QuoinAppearance") private var appearanceRaw = AppAppearance.system.rawValue
     @AppStorage("QuoinShowStatusBar") private var showStatusBar = true
+    @AppStorage("QuoinReviewerName") private var reviewerName = ""
 
     var body: some View {
         Form {
@@ -67,6 +68,16 @@ struct SettingsView: View {
             .padding(.bottom, 6)
 
             Toggle("Show status bar", isOn: $showStatusBar)
+
+            TextField("Review as:", text: $reviewerName, prompt: Text(NSUserName()))
+                .frame(maxWidth: 220)
+
+            LabeledContent("") {
+                Text("Comments and suggestions you create are attributed to this name.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.bottom, 6)
 
             LabeledContent("") {
                 Text("Current section and word count, at the foot of the window.")

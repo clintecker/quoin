@@ -69,6 +69,20 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// Fires when the topmost visible block changes (status-bar section tracking).
     public let onTopBlockChange: (BlockID?) -> Void
 
+    /// S3a selection gestures (suggestions §3.6): the coordinator reports
+    /// WHAT the user asked for and WHERE (block + rendered offsets within
+    /// the block + the rendered text they saw); the model owns the
+    /// rendered→source mapping and the session applies atomically.
+    public var onAddAnnotation: ((ReviewAuthoring.Kind, BlockID, Int, Int, String) -> Void)? = nil
+    /// Menu-driven annotation gesture (⇧⌘M etc.), generation-fired like
+    /// formatCommand. `.comment`/`.replacement` open the compose popover;
+    /// `.deletion`/`.highlight` apply immediately.
+    public enum AnnotationGesture: Equatable, Sendable {
+        case comment, replacement, deletion, highlight
+    }
+    public var annotationCommand: AnnotationGesture? = nil
+    public var annotationGeneration: Int = 0
+
     // MARK: Editing (nil callbacks = read-only reader)
 
     /// A keystroke inside the active block's revealed source. The range is
@@ -209,6 +223,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         flashGeneration: Int = 0,
         flashBlockID: BlockID? = nil,
         flashScroll: FlashScrollBehavior = .center,
+        onAddAnnotation: ((ReviewAuthoring.Kind, BlockID, Int, Int, String) -> Void)? = nil,
+        annotationCommand: AnnotationGesture? = nil,
+        annotationGeneration: Int = 0,
         onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil,
         onOpenReview: (() -> Void)? = nil,
         activeFragmentProvider: ((_ caretOffset: Int) -> NSAttributedString?)? = nil
@@ -247,6 +264,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.flashGeneration = flashGeneration
         self.flashBlockID = flashBlockID
         self.flashScroll = flashScroll
+        self.onAddAnnotation = onAddAnnotation
+        self.annotationCommand = annotationCommand
+        self.annotationGeneration = annotationGeneration
         self.onSuggestionCaretLink = onSuggestionCaretLink
         self.onOpenReview = onOpenReview
         self.activeFragmentProvider = activeFragmentProvider
@@ -643,6 +663,11 @@ public struct MarkdownReaderView: NSViewRepresentable {
                 window.makeFirstResponder(textView)
             }
             coordinator.wasActiveTab = isActiveTab
+        }
+
+        if let annotationCommand, annotationGeneration != coordinator.appliedAnnotationGeneration {
+            coordinator.appliedAnnotationGeneration = annotationGeneration
+            coordinator.beginAnnotation(annotationCommand, in: textView)
         }
 
         if let flashSuggestionOffset, flashGeneration != coordinator.appliedFlashGeneration {

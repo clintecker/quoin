@@ -43,6 +43,10 @@ struct ReaderScreen: View {
     /// only when the change is offscreen).
     @State private var flashBlockID: BlockID?
     @State private var flashScroll: MarkdownReaderView.FlashScrollBehavior = .center
+    /// S3a annotation gesture from the Format ▸ Review menu (⇧⌘M / ⇧⌘R),
+    /// generation-fired into the coordinator like formatCommand.
+    @State private var annotationCommand: MarkdownReaderView.AnnotationGesture?
+    @State private var annotationGeneration = 0
     /// Document→card linkage: the mark the caret is inside.
     @State private var linkedMark: ByteRange?
     @State private var isExportVisible = false
@@ -149,6 +153,14 @@ struct ReaderScreen: View {
                 flashGeneration: flashGeneration,
                 flashBlockID: flashBlockID,
                 flashScroll: flashScroll,
+                onAddAnnotation: { kind, blockID, relStart, relEnd, renderedText in
+                    model.addAnnotation(
+                        kind: kind, blockID: blockID,
+                        renderedStart: relStart, renderedEnd: relEnd,
+                        renderedText: renderedText)
+                },
+                annotationCommand: annotationCommand,
+                annotationGeneration: annotationGeneration,
                 onSuggestionCaretLink: { range in linkedMark = range },
                 onOpenReview: {
                     isOutlineVisible = true
@@ -297,6 +309,26 @@ struct ReaderScreen: View {
             }
             // Resolution applied: pulse the splice location in place — the
             // "something happened, and HERE" cue (user ask). Never scrolls.
+            .onReceive(NotificationCenter.default.publisher(for: AppDelegate.addCommentNotification)) { _ in
+                guard isKeyWindow else { return }
+                annotationCommand = .comment
+                annotationGeneration += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: AppDelegate.suggestReplacementNotification)) { _ in
+                guard isKeyWindow else { return }
+                annotationCommand = .replacement
+                annotationGeneration += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: AppDelegate.suggestDeletionNotification)) { _ in
+                guard isKeyWindow else { return }
+                annotationCommand = .deletion
+                annotationGeneration += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: AppDelegate.reviewHighlightNotification)) { _ in
+                guard isKeyWindow else { return }
+                annotationCommand = .highlight
+                annotationGeneration += 1
+            }
             .onChange(of: model.resolutionFlashGeneration) {
                 guard let offset = model.resolutionFlashOffset else { return }
                 flashSuggestionOffset = offset

@@ -544,6 +544,85 @@ final class ReaderModel {
     private(set) var resolutionFlashOffset: Int?
     private(set) var resolutionFlashGeneration = 0
 
+    /// S3a: create an annotation from a selection gesture. The coordinator
+    /// reports rendered offsets RELATIVE to the block plus the text the
+    /// user saw; this maps both endpoints through the projection mapper,
+    /// snaps outward over emphasis delimiters (a whole-span selection wraps
+    /// complete `**`, never half of one), and hands the byte range to the
+    /// session — which recomputes against ITS current source and refuses on
+    /// drift. Every refusal is a banner, never a silent no-op.
+    func addAnnotation(
+        kind: ReviewAuthoring.Kind, blockID: BlockID,
+        renderedStart: Int, renderedEnd: Int, renderedText: String
+    ) {
+        let refusal = "Couldn't annotate that selection — try a smaller one inside a single paragraph."
+
+        // Document-level comment: no selection, no mark, no mapping.
+        if case .comment = kind, renderedStart == renderedEnd {
+            applySessionResolution(refusalMessage: refusal) { [reviewer = Self.reviewerName] session in
+                try await session.applyAnnotation(
+                    kind: kind, range: ByteRange(offset: 0, length: 0), expectedSlice: "",
+                    reviewer: reviewer, publishSnapshot: false)
+            }
+            return
+        }
+
+        guard let block = document.blocks.first(where: { $0.id == blockID }),
+              let slice = document.source.substring(in: block.range),
+              let blockRendered = rendered.blockRanges[blockID],
+              NSMaxRange(blockRendered) <= rendered.attributed.length,
+              renderedStart <= renderedEnd,
+              renderedEnd <= blockRendered.length
+        else { reportFailure(refusal); return }
+        let renderedBlockText = (rendered.attributed.string as NSString).substring(with: blockRendered)
+        // The projection may have moved since the gesture (an edit landed):
+        // the text at those offsets must still be what the user saw.
+        let renderedNS = renderedBlockText as NSString
+        guard renderedNS.length >= renderedEnd,
+              renderedNS.substring(
+                with: NSRange(location: renderedStart, length: renderedEnd - renderedStart))
+                == renderedText
+        else { reportFailure(refusal); return }
+
+        var startUTF16 = EditMapping.sourceOffset(
+            forRenderedOffset: renderedStart, renderedText: renderedBlockText, sourceText: slice)
+        var endUTF16 = EditMapping.sourceOffset(
+            forRenderedOffset: renderedEnd, renderedText: renderedBlockText, sourceText: slice)
+        // Snap outward over emphasis delimiter runs (`*_~=`) so a rendered
+        // whole-span selection wraps complete syntax. Backticks are
+        // deliberately excluded — swallowing one edge of a code span would
+        // unbalance it.
+        let sourceUTF16 = Array(slice.utf16)
+        let snapSet: Set<UInt16> = Set("*_~=".utf16)
+        while startUTF16 > 0, snapSet.contains(sourceUTF16[startUTF16 - 1]) { startUTF16 -= 1 }
+        while endUTF16 < sourceUTF16.count, snapSet.contains(sourceUTF16[endUTF16]) { endUTF16 += 1 }
+
+        guard startUTF16 < endUTF16 || renderedStart == renderedEnd,
+              let relRange = EditMapping.utf8Range(inText: slice, utf16Range: startUTF16..<endUTF16)
+        else { reportFailure(refusal); return }
+        let absolute = ByteRange(offset: block.range.offset + relRange.offset, length: relRange.length)
+        let bytes = Array(document.source.utf8)
+        let expected = String(decoding: bytes[absolute.offset..<(absolute.offset + absolute.length)], as: UTF8.self)
+
+        applySessionResolution(
+            refusalMessage: refusal,
+            flashOffset: absolute.offset
+        ) { [reviewer = Self.reviewerName] session in
+            try await session.applyAnnotation(
+                kind: kind, range: absolute, expectedSlice: expected,
+                reviewer: reviewer, publishSnapshot: false)
+        }
+    }
+
+    /// The name annotations are attributed to (`by:`). `AI` stays reserved
+    /// for agents; the default is the macOS account name.
+    static var reviewerName: String {
+        let stored = UserDefaults.standard.string(forKey: "QuoinReviewerName")?
+            .trimmingCharacters(in: .whitespaces)
+        if let stored, !stored.isEmpty { return stored }
+        return NSUserName()
+    }
+
     /// The active block's reveal fragment re-styled at a caret offset —
     /// the caret-move restyle's source of truth (same pipeline as the
     /// reveal itself; editor-modes plan 3.3).

@@ -40,6 +40,9 @@ extension MarkdownReaderView {
         var lastActiveBlockID: BlockID?
         var appliedScrollGeneration = 0
         var appliedFlashGeneration = 0
+        var appliedAnnotationGeneration = 0
+        /// The live compose popover (comment/replacement body input).
+        var annotationPopover: NSPopover?
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
         var appliedCaretGeneration: Int = -1
@@ -1244,6 +1247,24 @@ extension MarkdownReaderView {
                 items.append(reject)
                 items.append(NSMenuItem.separator())
             }
+            // Review gestures (S3a): selection-scoped, before block items.
+            if parent.onAddAnnotation != nil, let textView,
+               let target = annotationSelection(in: textView),
+               target.relEnd > target.relStart, target.blockID == id {
+                func reviewItem(_ title: String, _ raw: String) -> NSMenuItem {
+                    let item = NSMenuItem(
+                        title: title, action: #selector(contextAddAnnotation(_:)),
+                        keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = raw
+                    return item
+                }
+                items.append(reviewItem("Add Comment…", "comment"))
+                items.append(reviewItem("Suggest Replacement…", "replacement"))
+                items.append(reviewItem("Suggest Deletion", "deletion"))
+                items.append(reviewItem("Highlight", "highlight"))
+                items.append(NSMenuItem.separator())
+            }
             let isActive = id == parent.rendered.activeBlockID
             if isActive || isEmbedBlock(atCharIndex: index) {
                 let item = NSMenuItem(
@@ -1288,6 +1309,121 @@ extension MarkdownReaderView {
             for (offset, item) in items.enumerated() {
                 menu.insertItem(item, at: offset)
             }
+        }
+
+        // MARK: - S3a annotation gestures (suggestions §3.6)
+
+        /// The current selection as an annotation target: block + rendered
+        /// offsets RELATIVE to the block + the rendered text the user sees.
+        /// Nil when the selection crosses blocks (marks are intra-block) or
+        /// there is no text view. A zero-length selection is a valid target
+        /// only for document-level comments — callers decide.
+        struct AnnotationSelection {
+            let blockID: BlockID
+            let relStart: Int
+            let relEnd: Int
+            let renderedText: String
+        }
+
+        func annotationSelection(in textView: NSTextView) -> AnnotationSelection? {
+            let selection = textView.selectedRange()
+            guard let storage = textView.textContentStorage?.textStorage,
+                  NSMaxRange(selection) <= storage.length,
+                  let id = blockID(atCharIndex: selection.location),
+                  let blockRange = blockRanges[id],
+                  NSMaxRange(selection) <= NSMaxRange(blockRange)
+            else { return nil }
+            if selection.length > 0,
+               blockID(atCharIndex: NSMaxRange(selection) - 1) != id {
+                return nil // crosses blocks — v1 marks are intra-block
+            }
+            let text = (storage.string as NSString).substring(with: selection)
+            return AnnotationSelection(
+                blockID: id,
+                relStart: selection.location - blockRange.location,
+                relEnd: NSMaxRange(selection) - blockRange.location,
+                renderedText: text)
+        }
+
+        func beginAnnotation(
+            _ gesture: MarkdownReaderView.AnnotationGesture, in textView: NSTextView
+        ) {
+            guard let onAdd = parent.onAddAnnotation else { return }
+            guard let target = annotationSelection(in: textView) else {
+                NSSound.beep()
+                return
+            }
+            let hasSelection = target.relEnd > target.relStart
+            switch gesture {
+            case .deletion:
+                guard hasSelection else { NSSound.beep(); return }
+                onAdd(.deletion, target.blockID, target.relStart, target.relEnd, target.renderedText)
+            case .highlight:
+                guard hasSelection else { NSSound.beep(); return }
+                onAdd(.highlight, target.blockID, target.relStart, target.relEnd, target.renderedText)
+            case .comment:
+                // No selection → document-level comment (endmatter-only).
+                presentComposer(
+                    prompt: hasSelection ? "Comment on “\(target.renderedText.prefix(40))…”"
+                        : "Comment on the whole document",
+                    initialText: "", commitTitle: "Comment", in: textView
+                ) { body in
+                    onAdd(.comment(body: body), target.blockID,
+                          target.relStart, target.relEnd, target.renderedText)
+                }
+            case .replacement:
+                guard hasSelection else { NSSound.beep(); return }
+                presentComposer(
+                    prompt: "Replace with", initialText: target.renderedText,
+                    commitTitle: "Suggest", in: textView
+                ) { new in
+                    onAdd(.replacement(new: new), target.blockID,
+                          target.relStart, target.relEnd, target.renderedText)
+                }
+            }
+        }
+
+        private func presentComposer(
+            prompt: String, initialText: String, commitTitle: String,
+            in textView: NSTextView, onCommit: @escaping (String) -> Void
+        ) {
+            annotationPopover?.performClose(nil)
+            let controller = AnnotationComposerController(
+                prompt: prompt, initialText: initialText, commitTitle: commitTitle,
+                onCommit: onCommit)
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentViewController = controller
+            controller.popover = popover
+            // Anchor at the selection's first rect (screen → view coords);
+            // fall back to the visible rect's center for caret-only input.
+            let selection = textView.selectedRange()
+            var screenRect = textView.firstRect(forCharacterRange: selection, actualRange: nil)
+            if screenRect.isEmpty {
+                screenRect.size = CGSize(width: 1, height: 14)
+            }
+            let windowRect = textView.window?.convertFromScreen(screenRect) ?? .zero
+            var anchor = textView.convert(windowRect, from: nil)
+            if anchor.isEmpty || !textView.visibleRect.intersects(anchor) {
+                anchor = CGRect(x: textView.visibleRect.midX, y: textView.visibleRect.midY,
+                                width: 1, height: 1)
+            }
+            annotationPopover = popover
+            popover.show(relativeTo: anchor, of: textView, preferredEdge: .maxY)
+        }
+
+        @objc func contextAddAnnotation(_ sender: NSMenuItem) {
+            guard let textView,
+                  let raw = sender.representedObject as? String else { return }
+            let gesture: MarkdownReaderView.AnnotationGesture?
+            switch raw {
+            case "comment": gesture = .comment
+            case "replacement": gesture = .replacement
+            case "deletion": gesture = .deletion
+            case "highlight": gesture = .highlight
+            default: gesture = nil
+            }
+            if let gesture { beginAnnotation(gesture, in: textView) }
         }
 
         @objc private func contextEditSource(_ sender: NSMenuItem) {

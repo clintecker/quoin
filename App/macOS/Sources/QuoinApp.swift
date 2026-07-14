@@ -275,6 +275,20 @@ private struct FormatCommands: Commands {
                 .keyboardShortcut(.return, modifiers: .command)
             }
             .disabled(hasDocument != true)
+            Divider()
+            // Review gestures (suggestions §3.6, S3a): annotate the
+            // selection without changing the prose. ⇧⌘H stays with the
+            // formatting Highlight above; the review highlight is
+            // menu/context-menu only.
+            Menu("Review") {
+                Button("Add Comment…") { post(AppDelegate.addCommentNotification) }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                Button("Suggest Replacement…") { post(AppDelegate.suggestReplacementNotification) }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Suggest Deletion") { post(AppDelegate.suggestDeletionNotification) }
+                Button("Highlight for Review") { post(AppDelegate.reviewHighlightNotification) }
+            }
+            .disabled(hasDocument != true)
         }
     }
 }
@@ -318,6 +332,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let goBackNotification = Notification.Name("quoin.goBack")
     static let goForwardNotification = Notification.Name("quoin.goForward")
     static let changeLibraryNotification = Notification.Name("quoin.changeLibrary")
+    static let addCommentNotification = Notification.Name("quoin.review.addComment")
+    static let suggestReplacementNotification = Notification.Name("quoin.review.suggestReplacement")
+    static let suggestDeletionNotification = Notification.Name("quoin.review.suggestDeletion")
+    static let reviewHighlightNotification = Notification.Name("quoin.review.highlight")
 
     /// ⌘Q inside the autosave debounce window used to drop the last
     /// keystrokes — drain every live session before the process dies.
