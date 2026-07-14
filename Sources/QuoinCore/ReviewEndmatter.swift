@@ -326,10 +326,7 @@ extension ReviewEndmatter {
         func emitRecord(indentOnly: Bool = false) {
             guard inTargetEntry, !wroteRecord else { return }
             keptLines.append("    status: resolved")
-            let escaped = summary
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-            keptLines.append("    resolved: \"\(escaped)\"")
+            keptLines.append("    resolved: \"\(escapedScalar(summary))\"")
             wroteRecord = true
             inTargetEntry = false
         }
@@ -388,9 +385,7 @@ extension ReviewEndmatter {
     public static func appendedRecordEdit(
         summary: String, asComment: Bool, in source: String
     ) -> SourceEdit? {
-        let escaped = summary
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        let escaped = escapedScalar(summary)
         let prefix = asComment ? "c" : "s"
         let section = asComment ? "comments" : "suggestions"
 
@@ -421,5 +416,21 @@ extension ReviewEndmatter {
         return SourceEdit(
             range: ByteRange(offset: source.utf8.count, length: 0),
             replacement: block)
+    }
+}
+
+
+extension ReviewEndmatter {
+    /// One double-quoted YAML scalar on ONE physical line: backslash and
+    /// quote escaped, any line break flattened to a space. A raw newline
+    /// here split the scalar across lines and the strict parser rejected
+    /// the whole endmatter (panel review, HIGH) — summaries are pre-
+    /// flattened at construction, this is the writers' backstop.
+    static func escapedScalar(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .components(separatedBy: .newlines)
+            .joined(separator: " ")
     }
 }

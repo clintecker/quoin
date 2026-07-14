@@ -351,6 +351,38 @@ public actor DocumentSession {
         return document
     }
 
+    // MARK: - Suggestion resolution (computed in-actor, so offsets can't go stale)
+
+    /// Accept/reject ONE mark atomically: the combined mark+record edit is
+    /// computed against the session's CURRENT source, inside the actor —
+    /// never against a projection snapshot (panel review BLOCKER: two quick
+    /// Accepts each computed offsets against the pre-first-resolution
+    /// source; the second spliced mid-mark and corrupted the document, and
+    /// autosave persisted it). Returns nil when the bytes at `markRange` no
+    /// longer parse as one whole mark — the document changed since the card
+    /// was rendered; the caller surfaces that, and the re-rendered panel
+    /// carries fresh ranges for the next click.
+    @discardableResult
+    public func applyResolution(
+        markRange: ByteRange, action: SuggestionResolver.Action, publishSnapshot: Bool = true
+    ) throws -> QuoinDocument? {
+        guard let edit = SuggestionResolver.combinedResolutionEdit(
+            resolving: markRange, in: document.source, action: action) else { return nil }
+        return try applyEdit(edit, publishSnapshot: publishSnapshot)
+    }
+
+    /// Accept All / Reject All — one atomic edit, one undo (suggestions
+    /// design §3.5), with the same in-actor computation guarantee. Nil when
+    /// there is nothing left to resolve.
+    @discardableResult
+    public func applyBulkResolution(
+        action: SuggestionResolver.Action, publishSnapshot: Bool = true
+    ) throws -> QuoinDocument? {
+        guard let edit = SuggestionResolver.resolveAllEdit(
+            in: document.source, action: action) else { return nil }
+        return try applyEdit(edit, publishSnapshot: publishSnapshot)
+    }
+
     @discardableResult
     public func undo() throws -> QuoinDocument? {
         guard let edit = undoStack.popLast() else { return nil }

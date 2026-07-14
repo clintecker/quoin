@@ -351,7 +351,11 @@ public enum MarkdownConverter {
     private static func isSafePlainParagraphSource(_ source: String) -> Bool {
         guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard !source.contains("\n\n"), !source.contains("\r") else { return false }
-        let forbidden = CharacterSet(charactersIn: "#>*_`[]!$=|<>&\\")
+        // `{`/`}`: typing a CriticMarkup mark into a plain paragraph must
+        // take the full parse — the slice re-parse would stamp the new
+        // mark's inline range SLICE-relative instead of document-absolute
+        // (panel review, HIGH).
+        let forbidden = CharacterSet(charactersIn: "#>*_`[]!$=|<>&\\{}")
         guard source.rangeOfCharacter(from: forbidden) == nil else { return false }
 
         for line in source.split(separator: "\n", omittingEmptySubsequences: false) {

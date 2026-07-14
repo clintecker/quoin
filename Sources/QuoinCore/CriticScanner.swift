@@ -109,19 +109,28 @@ public enum CriticScanner {
                 continue
             }
 
-            // Math spans are opaque: $…$/$$…$$ and \(…\)/\[…\]. (MathScanner
-            // owns their real parsing downstream; here we only skip them.)
+            // Math spans are opaque: $…$/$$…$$ and \(…\)/\[…\]. But only
+            // REAL spans — the validity rules mirror MathScanner's, byte
+            // for byte, or the two scanners disagree about what is math:
+            // the naive skip treated "costs $5 … $10" as one span and
+            // swallowed any mark between the amounts (panel review, HIGH).
             if byte == UInt8(ascii: "$") {
-                let double = i + 1 < bytes.count && bytes[i + 1] == UInt8(ascii: "$")
-                let delimiter: [UInt8] = double ? Array("$$".utf8) : Array("$".utf8)
                 if i > 0, bytes[i - 1] == UInt8(ascii: "\\") {
                     i += 1 // escaped dollar: literal
                     continue
                 }
-                if let close = find(delimiter, in: bytes, from: i + delimiter.count) {
-                    i = close + delimiter.count
+                if i + 1 < bytes.count, bytes[i + 1] == UInt8(ascii: "$") {
+                    if let close = closingDoubleDollar(in: bytes, from: i + 2) {
+                        i = close + 2
+                    } else {
+                        i += 2 // no closer: literal `$$`
+                    }
+                    continue
+                }
+                if let close = closingSingleDollar(in: bytes, from: i + 1) {
+                    i = close + 1
                 } else {
-                    i += delimiter.count
+                    i += 1 // currency / lone dollar: literal, keep scanning
                 }
                 continue
             }
@@ -189,6 +198,57 @@ public enum CriticScanner {
         guard i < bytes.count, i > index + 2 else { return nil }
         let id = String(decoding: bytes[(index + 2)..<i], as: UTF8.self)
         return (id, i + 1)
+    }
+
+    private static func isSpaceByte(_ b: UInt8) -> Bool {
+        b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D
+    }
+
+    /// Byte-wise mirror of `MathScanner.findClosingSingle` (Vinculum): the
+    /// opener must not be followed by whitespace or `$`; a closer must not
+    /// follow whitespace nor precede a digit; a blank line ends the scan.
+    /// Divergence here is a bug — the two scanners must agree on what is
+    /// math or marks near dollar amounts silently vanish.
+    private static func closingSingleDollar(in bytes: [UInt8], from start: Int) -> Int? {
+        guard start < bytes.count, !isSpaceByte(bytes[start]),
+              bytes[start] != UInt8(ascii: "$") else { return nil }
+        var i = start
+        var lastNonSpace = -1
+        var newlineRun = 0
+        while i < bytes.count {
+            let b = bytes[i]
+            if b == UInt8(ascii: "\\") { i += 2; continue }
+            if b == UInt8(ascii: "\n") {
+                newlineRun += 1
+                if newlineRun >= 2 { break }
+            } else if !isSpaceByte(b) {
+                newlineRun = 0
+            }
+            if b == UInt8(ascii: "$") {
+                let precededBySpace = lastNonSpace != i - 1
+                let followedByDigit = i + 1 < bytes.count
+                    && bytes[i + 1] >= UInt8(ascii: "0") && bytes[i + 1] <= UInt8(ascii: "9")
+                if !precededBySpace, !followedByDigit, i > start {
+                    return i
+                }
+                i += 1
+                continue
+            }
+            if !isSpaceByte(b) { lastNonSpace = i }
+            i += 1
+        }
+        return nil
+    }
+
+    /// Byte-wise mirror of `MathScanner.findClosingDouble`.
+    private static func closingDoubleDollar(in bytes: [UInt8], from start: Int) -> Int? {
+        var i = start
+        while i + 1 < bytes.count {
+            if bytes[i] == UInt8(ascii: "\\") { i += 2; continue }
+            if bytes[i] == UInt8(ascii: "$"), bytes[i + 1] == UInt8(ascii: "$") { return i }
+            i += 1
+        }
+        return nil
     }
 
     private static func matches(_ needle: [UInt8], in bytes: [UInt8], at index: Int) -> Bool {

@@ -532,9 +532,10 @@ final class ReaderModel {
     /// Accept All / Reject All: one atomic edit, one undo (design §3.5).
     /// Acts on suggestions only — comments/highlights are annotations.
     func resolveAllSuggestions(action: SuggestionResolver.Action) {
-        guard let edit = SuggestionResolver.resolveAllEdit(
-            in: document.source, action: action) else { return }
-        applyAbsolute(edit, caretUTF8: nil)
+        // Nothing to resolve is a quiet no-op, not a failure.
+        applySessionResolution(refusalMessage: nil) { session in
+            try await session.applyBulkResolution(action: action, publishSnapshot: false)
+        }
     }
 
     /// The active block's reveal fragment re-styled at a caret offset —
@@ -563,16 +564,58 @@ final class ReaderModel {
         // record (RDFM-native history) in a single splice — a single ⌘Z
         // restores both together (the two-edit version left a mark-back/
         // record-stale chimera after one undo; live screenshot 2026-07-14).
-        guard let edit = SuggestionResolver.combinedResolutionEdit(
-            resolving: markRange, in: document.source, action: action) else {
-            reportFailure("That suggestion changed since it was rendered — try again.")
-            return
+        // The edit is computed INSIDE the session actor, behind the pipeline
+        // queue — computing it here against the model's projection let a
+        // second quick Accept splice at pre-first-resolution offsets and
+        // corrupt the document (panel review BLOCKER).
+        applySessionResolution(
+            refusalMessage: "That suggestion changed since it was rendered — try again."
+        ) { session in
+            try await session.applyResolution(
+                markRange: markRange, action: action, publishSnapshot: false)
         }
-        // caretUTF8: nil — a card/menu click is NOT an edit-intent into the
-        // block. Restoring a caret at the mark tripped the prose-activation
-        // path: accepting a suggestion flipped its paragraph to revealed
-        // source and jumped the viewport (screenshots, 2026-07-14).
-        applyAbsolute(edit, caretUTF8: nil)
+    }
+
+    /// Suggestion resolutions ride the ordinary edit pipeline (serialized,
+    /// undoable, autosaved) but their edits are computed by the session at
+    /// APPLY time, against its current truth. A nil result means the
+    /// operation refused (mark bytes drifted / nothing to resolve) — no
+    /// splice happened; `refusalMessage` surfaces it when that deserves a
+    /// banner. Caret is never restored into the mark (a card click is not
+    /// an edit-intent into the block; see resolveSuggestion).
+    private func applySessionResolution(
+        refusalMessage: String?,
+        _ operation: @escaping @Sendable (DocumentSession) async throws -> QuoinDocument?
+    ) {
+        guard let session else { return }
+        latestEditGeneration += 1
+        let generation = latestEditGeneration
+        let previousEditTask = editPipelineTask
+
+        editPipelineTask = Task { [weak self] in
+            await previousEditTask?.value
+            guard let self else { return }
+            do {
+                let newDocument = try await QuoinPerformanceTrace.measure(
+                    "model.session.applyResolution") {
+                    try await operation(session)
+                }
+                guard generation == self.latestEditGeneration else { return }
+                if let newDocument {
+                    QuoinPerformanceTrace.measure("model.restoreCaret") {
+                        self.restoreCaret(in: newDocument, atUTF8Offset: nil)
+                    }
+                    self.scheduleH1Rename(for: newDocument)
+                } else if let refusalMessage {
+                    self.reportFailure(refusalMessage)
+                }
+            } catch {
+                await self.recoverFromFailedEdit(error, generation: generation)
+            }
+            if generation == self.latestEditGeneration {
+                self.editPipelineTask = nil
+            }
+        }
     }
 
     private func applyAbsolute(_ edit: SourceEdit, caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil) {

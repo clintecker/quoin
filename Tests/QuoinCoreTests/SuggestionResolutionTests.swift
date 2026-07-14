@@ -379,6 +379,105 @@ extension SuggestionResolutionTests {
     }
 }
 
+// MARK: - Multi-line mark bodies (panel review HIGH: newline in summary)
+
+extension SuggestionResolutionTests {
+
+    /// A mark body spanning a soft line break is intra-block and fully
+    /// supported — its resolution summary must not carry the raw newline
+    /// into the quoted YAML scalar, or the strict parser rejects the WHOLE
+    /// endmatter and it re-renders as prose (then the next resolution
+    /// appends a SECOND endmatter on top).
+    func testMultiLineMarkBodyResolvesToDetectableEndmatter() throws {
+        let source = "Hello {--old\ntext--} world.\n"
+        let document = MarkdownConverter.parse(source)
+        let mark = try XCTUnwrap(SuggestionResolver.marks(in: document).first)
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+        let after = applying(edit, to: source)
+
+        XCTAssertNotNil(ReviewEndmatter.detect(in: after),
+                        "endmatter must stay detectable: \(after)")
+        let records = ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after))
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].summary, "accepted · removed old text",
+                       "newline flattened to a space in the summary")
+
+        // And the SECOND resolution appends to the SAME endmatter — no
+        // stacked `---` blocks.
+        let source2 = after.replacingOccurrences(of: "world.", with: "world {++and\nmore++}.")
+        let doc2 = MarkdownConverter.parse(source2)
+        let mark2 = try XCTUnwrap(SuggestionResolver.marks(in: doc2).first)
+        let edit2 = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark2.range, in: source2, action: .accept))
+        let after2 = applying(edit2, to: source2)
+        XCTAssertEqual(after2.components(separatedBy: "\n---\n").count, 2,
+                       "exactly one endmatter block: \(after2)")
+        XCTAssertEqual(ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after2)).count, 2)
+    }
+
+    func testMultiLineCommentDismissalStaysDetectable() throws {
+        let source = "Body {>>first line\nsecond line<<} here.\n"
+        let document = MarkdownConverter.parse(source)
+        let mark = try XCTUnwrap(SuggestionResolver.marks(in: document).first)
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+        let after = applying(edit, to: source)
+        XCTAssertNotNil(ReviewEndmatter.detect(in: after))
+        XCTAssertEqual(
+            ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after)).first?.summary,
+            "dismissed · first line second line")
+    }
+}
+
+// MARK: - Rapid successive resolutions (panel review BLOCKER)
+
+extension SuggestionResolutionTests {
+
+    /// The corruption scenario the panel reproduced: two Accept clicks in
+    /// quick succession, both cards' ranges computed from the SAME
+    /// pre-resolution projection. The second must REFUSE (mark bytes
+    /// drifted), never splice — the old path yielded "A x B {++yy+yy C."
+    /// plus a torn, duplicated endmatter, and autosave persisted it.
+    func testRapidDoubleResolutionRefusesTheStaleSecondClick() async throws {
+        let source = "A {++x++} B {++yy++} C.\n"
+        let session = DocumentSession(source: source, fileURL: nil)
+        let marks = SuggestionResolver.marks(in: MarkdownConverter.parse(source))
+        XCTAssertEqual(marks.count, 2)
+
+        // Both ranges captured from the same stale base — exactly what two
+        // quick panel clicks deliver.
+        let first = try await session.applyResolution(
+            markRange: marks[0].range, action: .accept)
+        XCTAssertNotNil(first)
+        let second = try await session.applyResolution(
+            markRange: marks[1].range, action: .accept)
+        XCTAssertNil(second, "stale range must refuse, not splice")
+
+        let after = await session.document.source
+        XCTAssertFalse(after.contains("{++yy+yy"), "no mid-mark tearing")
+        XCTAssertTrue(after.contains("{++yy++}"), "second mark still intact and actionable")
+
+        // The recovery path: ranges recomputed from the CURRENT document
+        // resolve cleanly (the re-rendered panel carries fresh ranges).
+        let freshMarks = SuggestionResolver.marks(in: MarkdownConverter.parse(after))
+        XCTAssertEqual(freshMarks.count, 1)
+        let third = try await session.applyResolution(
+            markRange: freshMarks[0].range, action: .accept)
+        XCTAssertNotNil(third)
+        let final = await session.document.source
+        XCTAssertTrue(final.contains("A x B yy C."), "both accepted in the end: \(final)")
+    }
+
+    func testBulkResolutionIsNilOnAnnotationOnlyDocuments() async throws {
+        let session = DocumentSession(source: "Just {>>a note<<} here.\n", fileURL: nil)
+        let result = try await session.applyBulkResolution(action: .accept)
+        XCTAssertNil(result, "nothing to resolve — no edit, no undo entry")
+        let canUndo = await session.canUndo
+        XCTAssertFalse(canUndo)
+    }
+}
+
 // MARK: - Accept All / Reject All (one atomic edit, panel review)
 
 extension SuggestionResolutionTests {

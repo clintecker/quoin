@@ -257,6 +257,23 @@ final class MarkdownConverterTests: XCTestCase {
         assertEquivalentToFullParse(incremental.document)
     }
 
+    func testTypingAMarkIntoAPlainParagraphTakesTheFullParse() throws {
+        // The slice re-parse would stamp a NEW mark's inline range
+        // slice-relative, not document-absolute — resolving it would then
+        // splice the wrong bytes (panel review, HIGH).
+        let source = "Lead paragraph.\n\nAlpha beta gamma.\n"
+        let previous = MarkdownConverter.parse(source)
+        let offset = "Lead paragraph.\n\nAlpha ".utf8.count
+        let edit = SourceEdit(range: ByteRange(offset: offset, length: 0),
+                              replacement: "{++new++} ")
+        let incremental = try MarkdownConverter.parseAfterEdit(previous: previous, edit: edit)
+        XCTAssertEqual(incremental.strategy, .full)
+        assertEquivalentToFullParse(incremental.document)
+        let marks = SuggestionResolver.marks(in: incremental.document)
+        XCTAssertEqual(marks.count, 1)
+        XCTAssertEqual(marks[0].range.offset, offset, "range is document-absolute")
+    }
+
     func testFastPathCarriesReviewMetadataWhenOnlyHistoryRemains() throws {
         // Endmatter with resolved records but no live marks: the fast path
         // fires (nothing to re-anchor) and must carry reviewMetadata — it

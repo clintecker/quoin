@@ -102,7 +102,16 @@ public enum SuggestionResolver {
         let segments = CriticScanner.scan(slice)
         guard segments.count == 1, case .mark(let mark) = segments[0] else { return nil }
         func clip(_ text: String) -> String {
-            text.count <= 60 ? text : String(text.prefix(59)) + "…"
+            // One physical line, always: a raw newline in the summary would
+            // split the quoted YAML scalar across lines — the strict parser
+            // then rejects the WHOLE endmatter and it re-renders as prose
+            // (panel review, HIGH). Marks can span soft line breaks, so
+            // newlines here are a normal case, not an edge.
+            let flattened = text
+                .components(separatedBy: .newlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            return flattened.count <= 60 ? flattened : String(flattened.prefix(59)) + "…"
         }
         switch (mark.payload, action) {
         case (.insertion(let body), .accept): return "accepted · \(clip(body))"

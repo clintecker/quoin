@@ -173,4 +173,40 @@ extension SuggestionParsingTests {
         guard case .paragraph(let inlines) = document.blocks[0].kind else { return XCTFail() }
         XCTAssertEqual(inlines.plainText, "start x next line")
     }
+
+    // MARK: - Dollar amounts vs math opacity (panel review, HIGH)
+
+    func testMarkBetweenTwoDollarAmountsIsParsed() throws {
+        // The naive $-to-$ skip treated "$5 … $10" as one opaque math span
+        // and swallowed the mark between the amounts. MathScanner's rules
+        // (closer can't follow whitespace / precede a digit) say this is
+        // currency — the critic scanner must agree.
+        let source = "It costs $5 and {++definitely++} later $10 total.\n"
+        let document = MarkdownConverter.parse(source)
+        let marks = SuggestionResolver.marks(in: document)
+        XCTAssertEqual(marks.count, 1, "the mark must survive the dollar amounts")
+        XCTAssertEqual(document.stats.mathCount, 0, "and no phantom math span")
+    }
+
+    func testMarkAfterASingleDollarAmountIsParsed() throws {
+        let source = "Pay $20 then {--remove me--} please.\n"
+        let marks = SuggestionResolver.marks(in: MarkdownConverter.parse(source))
+        XCTAssertEqual(marks.count, 1)
+    }
+
+    func testMarkInsideRealInlineMathStaysOpaque() throws {
+        // A genuine $a … b$ span: marks inside stay literal (RDFM rule).
+        let source = "Real math $a {++x++} b$ here.\n"
+        let document = MarkdownConverter.parse(source)
+        XCTAssertTrue(SuggestionResolver.marks(in: document).isEmpty,
+                      "mark inside a real math span is opaque")
+        XCTAssertEqual(document.stats.mathCount, 1)
+    }
+
+    func testMarkAfterUnclosedDisplayDollarsIsParsed() throws {
+        let source = "Costs $$ literally, and {++yes++} indeed.\n"
+        let marks = SuggestionResolver.marks(in: MarkdownConverter.parse(source))
+        XCTAssertEqual(marks.count, 1)
+    }
+
 }
