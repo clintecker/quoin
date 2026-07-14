@@ -529,6 +529,14 @@ final class ReaderModel {
     /// those bytes no longer parse as one whole mark, refuse with a banner
     /// rather than splice blind. Rides the ordinary edit path: undoable,
     /// autosaved, stale-base protected.
+    /// Accept All / Reject All: one atomic edit, one undo (design §3.5).
+    /// Acts on suggestions only — comments/highlights are annotations.
+    func resolveAllSuggestions(action: SuggestionResolver.Action) {
+        guard let edit = SuggestionResolver.resolveAllEdit(
+            in: document.source, action: action) else { return }
+        applyAbsolute(edit, caretUTF8: nil)
+    }
+
     /// The active block's reveal fragment re-styled at a caret offset —
     /// the caret-move restyle's source of truth (same pipeline as the
     /// reveal itself; editor-modes plan 3.3).

@@ -284,3 +284,45 @@ extension SuggestionResolver {
         return items
     }
 }
+
+extension SuggestionResolver {
+
+    /// Accept All / Reject All as ONE atomic edit (design §3.5: "one undo
+    /// group"): sequentially resolves every insertion/deletion/substitution
+    /// (comments and highlights are annotations — bulk actions leave them),
+    /// re-scanning after each step, then collapses the whole outcome into a
+    /// single SourceEdit from the first changed byte to EOF. One ⌘Z
+    /// restores the entire batch.
+    public static func resolveAllEdit(in source: String, action: Action) -> SourceEdit? {
+        var current = source
+        var iterations = 0
+        while iterations < 10_000 {
+            iterations += 1
+            let document = MarkdownConverter.parse(current)
+            let next = marks(in: document).first { mark in
+                switch mark.kind {
+                case .insertion, .deletion, .substitution: return true
+                default: return false
+                }
+            }
+            guard let next else { break }
+            guard let edit = combinedResolutionEdit(
+                resolving: next.range, in: current, action: action) else { break }
+            var bytes = Array(current.utf8)
+            bytes.replaceSubrange(
+                edit.range.offset..<(edit.range.offset + edit.range.length),
+                with: Array(edit.replacement.utf8))
+            current = String(decoding: bytes, as: UTF8.self)
+        }
+        guard current != source else { return nil }
+
+        // One spanning edit: first differing byte → EOF.
+        let a = Array(source.utf8)
+        let b = Array(current.utf8)
+        var first = 0
+        while first < min(a.count, b.count), a[first] == b[first] { first += 1 }
+        return SourceEdit(
+            range: ByteRange(offset: first, length: a.count - first),
+            replacement: String(decoding: b[first...], as: UTF8.self))
+    }
+}

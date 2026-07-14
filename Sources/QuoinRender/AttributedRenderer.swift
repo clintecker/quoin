@@ -1346,14 +1346,19 @@ public struct AttributedRenderer {
         var chipAttributes = attributes
         if !editable {
             // The review endmatter is machinery; its UI is the Review
-            // panel. The whole chip opens the panel — never inline YAML.
+            // panel — the affordance opens the panel, never inline YAML.
+            // Only the trailing verb carries the link: linkTextAttributes
+            // would paint a whole-chip link solid accent (panel review).
+            let output = NSMutableAttributedString(string: condensed, attributes: chipAttributes)
+            var review = attributes
             if let url = QuoinLink.reviewURL {
-                chipAttributes[.link] = url
+                review[.link] = url
             }
             #if canImport(AppKit)
-            chipAttributes[.toolTip] = "Open Review" as NSString
+            review[.toolTip] = "Open Review" as NSString
             #endif
-            return NSAttributedString(string: condensed, attributes: chipAttributes)
+            output.append(NSAttributedString(string: "   ·   Open Review", attributes: review))
+            return output
         }
         let output = NSMutableAttributedString(string: condensed, attributes: chipAttributes)
         // Trailing `· ‹/› edit` inside the chip: front matter's condensed

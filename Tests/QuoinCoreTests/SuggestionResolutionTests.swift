@@ -379,6 +379,66 @@ extension SuggestionResolutionTests {
     }
 }
 
+// MARK: - Accept All / Reject All (one atomic edit, panel review)
+
+extension SuggestionResolutionTests {
+
+    private var batch: String {
+        """
+        One {++alpha++}{#s1} two {--beta--}{#s2} three {~~old~>new~~}{#s3} \
+        and {>>a comment<<}{#c1} stays.
+
+        ---
+        comments:
+          c1: { by: user }
+        suggestions:
+          s1: { by: AI }
+          s2: { by: AI }
+          s3: { by: AI }
+
+        """
+    }
+
+    func testResolveAllAcceptsEverySuggestionButLeavesComments() throws {
+        let edit = try XCTUnwrap(SuggestionResolver.resolveAllEdit(in: batch, action: .accept))
+        let after = applying(edit, to: batch)
+        XCTAssertTrue(after.contains("One alpha two  three new"),
+                      "all three suggestions accepted: \(after)")
+        XCTAssertTrue(after.contains("{>>a comment<<}{#c1}"),
+                      "comments are annotations — bulk actions leave them")
+        let records = ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after))
+        XCTAssertEqual(records.count, 3, "every resolution left history")
+        XCTAssertTrue(records.allSatisfy { $0.summary.hasPrefix("accepted") })
+    }
+
+    func testResolveAllRejectRestoresTheOriginalProse() throws {
+        let edit = try XCTUnwrap(SuggestionResolver.resolveAllEdit(in: batch, action: .reject))
+        let after = applying(edit, to: batch)
+        XCTAssertTrue(after.contains("One  two beta three old"),
+                      "all three suggestions rejected: \(after)")
+        XCTAssertEqual(
+            ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after)).count, 3)
+    }
+
+    func testResolveAllIsNilWhenOnlyAnnotationsRemain() {
+        XCTAssertNil(SuggestionResolver.resolveAllEdit(
+            in: "Just {>>a note<<} and {==a highlight==} here.\n", action: .accept),
+            "nothing to resolve → no edit, no phantom undo entry")
+    }
+
+    func testResolveAllIsOneUndoThroughTheRealSession() async throws {
+        let source = batch
+        let session = DocumentSession(source: source, fileURL: nil)
+        let edit = try XCTUnwrap(SuggestionResolver.resolveAllEdit(in: source, action: .accept))
+        let resolved = try await session.applyEdit(edit, baseRevision: nil)
+        XCTAssertFalse(resolved.source.contains("{++"))
+        let restored = try await session.undo()
+        XCTAssertEqual(restored?.source, source, "ONE undo restores the whole batch")
+        let empty = try await session.undo()
+        XCTAssertNil(empty, "exactly one undo entry for Accept All")
+    }
+}
+
 // MARK: - Universal history (the review tab must never vanish)
 
 extension SuggestionResolutionTests {

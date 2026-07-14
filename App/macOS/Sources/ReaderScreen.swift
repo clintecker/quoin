@@ -220,7 +220,10 @@ struct ReaderScreen: View {
                         set: { inspectorMode = $0; userPickedInspectorMode = true }
                     )) {
                         Text("Outline").tag(InspectorMode.outline)
-                        Text("Review \(reviewItems.filter { !$0.isResolved }.count)")
+                        Text({
+                            let open = reviewItems.filter { !$0.isResolved }.count
+                            return open > 0 ? "Review \(open)" : "Review"
+                        }())
                             .tag(InspectorMode.review)
                     }
                     .pickerStyle(.segmented)
@@ -236,6 +239,9 @@ struct ReaderScreen: View {
                         linked: linkedMark,
                         onResolve: { range, action in
                             model.resolveSuggestion(markRange: range, action: action)
+                        },
+                        onResolveAll: { action in
+                            model.resolveAllSuggestions(action: action)
                         },
                         onFocus: { range in
                             // Scroll the mark's block up AND ring the mark
@@ -259,6 +265,13 @@ struct ReaderScreen: View {
             .inspectorColumnWidth(min: 180, ideal: 240, max: 340)
             .onChange(of: reviewItems.isEmpty && resolvedRecords.isEmpty) { _, empty in
                 if empty { inspectorMode = .outline }
+            }
+            // Marks ARRIVING while the inspector sits on Outline surface
+            // themselves (panel review: auto-switch only fired on appear).
+            .onChange(of: reviewItems.isEmpty) { was, isEmpty in
+                if was, !isEmpty, !userPickedInspectorMode {
+                    inspectorMode = .review
+                }
             }
             .onAppear {
                 if !reviewItems.isEmpty, !userPickedInspectorMode {

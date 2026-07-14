@@ -1,5 +1,6 @@
 import SwiftUI
 import QuoinCore
+import QuoinRender
 
 /// The review inspector (suggestions §3.5, as redlined): cards for every
 /// mark, in document order, living as the trailing inspector's second mode —
@@ -9,6 +10,11 @@ import QuoinCore
 /// capsules in the ✓ done chip grammar; replies nest under a hairline;
 /// resolved cards dim with actions gone.
 struct ReviewPanel: View {
+    /// Captured per body evaluation, like ReaderScreen.theme — the panel
+    /// renders in the SAME suggestion tints as the inline marks (panel once
+    /// used raw systemGreen/systemRed: ~2.1:1 contrast in light mode and a
+    /// visibly different green than the document — panel review, HIGH).
+    private var theme: Theme { Theme() }
     let items: [ReviewItem]
     /// Resolutions read back from endmatter records (status: resolved) —
     /// history, not live work (user redline: "acted-on things just
@@ -17,16 +23,26 @@ struct ReviewPanel: View {
     /// The mark the caret is inside, when any: its card highlights.
     let linked: ByteRange?
     let onResolve: (ByteRange, SuggestionResolver.Action) -> Void
+    /// Bulk resolution (one undo group); nil hides the buttons.
+    var onResolveAll: ((SuggestionResolver.Action) -> Void)?
     let onFocus: (ByteRange) -> Void
 
     @State private var showResolved = false
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                if items.filter(\.isSuggestion).count > 1, let onResolveAll {
+                    HStack(spacing: 6) {
+                        capsuleAll("✓ Accept All") { onResolveAll(.accept) }
+                        capsuleAll("✕ Reject All") { onResolveAll(.reject) }
+                    }
+                }
                 ForEach(Array(items.enumerated()), id: \.element) { _, item in
                     ReviewCard(item: item, linked: item.markRange == linked,
-                               onResolve: onResolve, onFocus: onFocus)
+                               theme: theme, onResolve: onResolve, onFocus: onFocus)
+                        .id(item.markRange.offset)
                 }
                 if items.isEmpty {
                     Text("Nothing left to review")
@@ -54,6 +70,26 @@ struct ReviewPanel: View {
             }
             .padding(12)
         }
+        // The caret's linked card must be VISIBLE (panel review: the
+        // highlight could land entirely offscreen).
+        .onChange(of: linked) { _, range in
+            guard let range else { return }
+            withAnimation(.easeOut(duration: 0.15)) {
+                proxy.scrollTo(range.offset, anchor: .center)
+            }
+        }
+        }
+    }
+
+    private func capsuleAll(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium))
+                .padding(.horizontal, 8).padding(.vertical, 2.5)
+                .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -65,6 +101,7 @@ private struct ResolvedRow: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 5) {
                 Image(systemName: record.summary.hasPrefix("rejected")
+                    || record.summary.hasPrefix("dismissed")
                     ? "xmark.circle" : "checkmark.circle")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -88,6 +125,7 @@ private struct ResolvedRow: View {
 private struct ReviewCard: View {
     let item: ReviewItem
     var linked: Bool = false
+    let theme: Theme
     let onResolve: (ByteRange, SuggestionResolver.Action) -> Void
     let onFocus: (ByteRange) -> Void
 
@@ -114,6 +152,10 @@ private struct ReviewCard: View {
         .opacity(item.isResolved ? 0.55 : 1)
         .contentShape(Rectangle())
         .onTapGesture { onFocus(item.markRange) }
+        // The jump affordance must exist for VoiceOver/keyboard too, not
+        // just the pointer (panel review).
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "Show in Document") { onFocus(item.markRange) }
     }
 
     private var meta: some View {
@@ -178,16 +220,19 @@ private struct ReviewCard: View {
     private func anchorText(_ anchor: String?) -> Text {
         guard let anchor else { return Text("") }
         return Text(anchor).bold()
-            .foregroundStyle(Color(nsColor: .systemOrange).opacity(0.9))
+            .foregroundStyle(Color(nsColor: theme.suggestionCommentInk))
             + Text(" — ").foregroundStyle(.secondary)
     }
 
+    // The SAME tints as the inline marks — one visual system, and the
+    // theme inks pass contrast where systemGreen (~2.1:1) did not.
     private func inserted(_ text: String) -> Text {
-        Text(text).foregroundStyle(Color(nsColor: .systemGreen))
+        Text(text).foregroundStyle(Color(nsColor: theme.suggestionInsertInk))
     }
 
     private func deleted(_ text: String) -> Text {
-        Text(text).strikethrough().foregroundStyle(Color(nsColor: .systemRed).opacity(0.8))
+        Text(text).strikethrough()
+            .foregroundStyle(Color(nsColor: theme.ink).opacity(0.55))
     }
 
     private var replies: some View {

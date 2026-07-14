@@ -1136,6 +1136,17 @@ extension MarkdownReaderView {
             let ring = FlashRingView(frame: rect)
             ring.strokeColor = parent.theme.accent
             textView.addSubview(ring)
+            // The flash is invisible to VoiceOver — announce the jump so
+            // the card→document affordance exists non-visually too
+            // (panel review).
+            let announced = (storage.string as NSString).substring(with: charRange)
+            NSAccessibility.post(
+                element: textView,
+                notification: .announcementRequested,
+                userInfo: [
+                    .announcement: "Showing suggestion: \(announced.prefix(80))",
+                    .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                ])
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.9
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
