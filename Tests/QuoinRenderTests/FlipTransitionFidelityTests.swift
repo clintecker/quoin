@@ -155,8 +155,20 @@ final class FlipTransitionFidelityTests: XCTestCase {
             if anchorRedness(atTextureRow: 8) > 800 || anchorRedness(atTextureRow: 32) > 800 { break }
             print("FLIPFIDELITY blank compositor readback, attempt \(attempt) — retrying")
             window.display()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            // Thread.sleep, NEVER RunLoop.run: run() defers the fade/slide
+            // to the next runloop turn, so draining the loop here STARTED
+            // them — the retry then measured through a mid-flight slide
+            // (below-content rows moving into the band → the sporadic
+            // 0.55-correlation "flake"). Sleeping gives the compositor its
+            // beat while the animations stay queued.
+            Thread.sleep(forTimeInterval: 0.05)
         }
+
+        // Tripwire: the readback must measure the MOUNTED, pre-animation
+        // state. If any slice has begun fading or sliding, some path drained
+        // the runloop — fail with the mechanism, not a correlation number.
+        XCTAssertTrue(overlayContainer.subviews.allSatisfy { $0.alphaValue == 1 },
+                      "readback must precede the fade — a drained runloop started the animations")
 
         // Ground truth for the same document region, straight from the
         // bitmap rep (row 0 = rect top, unambiguous).
