@@ -67,6 +67,28 @@ final class SuggestionRenderTests: XCTestCase {
     }
 }
 
+// MARK: - Styler agrees with the scanner (panel review)
+
+extension SuggestionRenderTests {
+    func testRevealDoesNotStyleLiteralTextAsASubstitution() throws {
+        // `{~~a~~}` has no arrow before its closer — the scanner degrades
+        // it to literal text. The old lazy regex matched from `{~~` through
+        // a LATER `~~}`, tinting the literal prose between them as a mark.
+        let source = "Odd {~~a~~} then x~>y ~~}.\n"
+        let document = MarkdownConverter.parse(source)
+        XCTAssertTrue(SuggestionResolver.marks(in: document).isEmpty, "scanner: literal")
+        let block = try XCTUnwrap(document.blocks.first)
+        let revealed = AttributedRenderer().renderEditableSourceFragment(
+            source.trimmingCharacters(in: .newlines), caretOffset: 0,
+            block: block, document: document)
+        let ns = revealed.attributed.string as NSString
+        let thenAt = ns.range(of: "then x").location
+        XCTAssertNil(
+            revealed.attributed.attribute(.strikethroughStyle, at: thenAt, effectiveRange: nil),
+            "literal prose must not carry substitution mark styling")
+    }
+}
+
 // MARK: - The endmatter chip is panel UI, never inline YAML (redline)
 
 extension SuggestionRenderTests {

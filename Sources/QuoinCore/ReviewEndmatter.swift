@@ -194,28 +194,45 @@ public enum ReviewEndmatter {
         var value = String(text[text.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
         guard !key.isEmpty else { return nil }
         if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
-            value = String(value.dropFirst().dropLast())
-                .replacingOccurrences(of: "\\\"", with: "\"")
-                .replacingOccurrences(of: "\\\\", with: "\\")
+            // Single left-to-right unescape: the two-pass replacing version
+            // mangled `\\\"` sequences (unescape a backslash, then treat the
+            // freed quote as escaped).
+            var unescaped = ""
+            var iterator = value.dropFirst().dropLast().makeIterator()
+            while let ch = iterator.next() {
+                if ch == "\\", let next = iterator.next() {
+                    unescaped.append(next)
+                } else {
+                    unescaped.append(ch)
+                }
+            }
+            value = unescaped
         }
         return (key, value)
     }
 
-    /// Splits `by: user, at: "a, b"` on commas OUTSIDE quotes.
+    /// Splits `by: user, at: "a, b"` on commas OUTSIDE quotes. Escapes are
+    /// consumed as two-character units in one scan — the previous-character
+    /// check treated the closing quote after `"C:\\"` as escaped and
+    /// swallowed the next field (panel review).
     private static func splitFlowPairs(_ text: String) -> [String] {
         var pairs: [String] = []
         var current = ""
         var inQuotes = false
-        var previous: Character = " "
-        for ch in text {
-            if ch == "\"" && previous != "\\" { inQuotes.toggle() }
-            if ch == "," && !inQuotes {
+        var chars = text.makeIterator()
+        while let ch = chars.next() {
+            if inQuotes, ch == "\\", let escaped = chars.next() {
+                current.append(ch)
+                current.append(escaped)
+                continue
+            }
+            if ch == "\"" { inQuotes.toggle() }
+            if ch == ",", !inQuotes {
                 pairs.append(current)
                 current = ""
             } else {
                 current.append(ch)
             }
-            previous = ch
         }
         if !current.trimmingCharacters(in: .whitespaces).isEmpty { pairs.append(current) }
         return pairs.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -319,7 +336,9 @@ extension ReviewEndmatter {
     public static func resolvedRecords(in document: QuoinDocument) -> [ResolvedRecord] {
         guard let metadata = document.reviewMetadata else { return [] }
         let liveIDs = Set(SuggestionResolver.marks(in: document).compactMap(\.id))
-        let all = metadata.comments.merging(metadata.suggestions) { a, _ in a }
+        // BOTH maps, independently: merging dropped the suggestion-side
+        // record whenever an id collided across sections (panel review).
+        let all = Array(metadata.comments) + Array(metadata.suggestions)
         return all
             .filter { $0.value.status == "resolved" && !liveIDs.contains($0.key) }
             .map { ResolvedRecord(
@@ -375,6 +394,9 @@ extension ReviewEndmatter {
                         keptLines.append("  \(entryID):")
                         let inner = String(rest.dropFirst().dropLast())
                         for pair in splitFlowPairs(inner) {
+                            // Same stale-field rule as the block form below,
+                            // or a re-resolution writes duplicate keys.
+                            if pair.hasPrefix("status:") || pair.hasPrefix("resolved:") { continue }
                             keptLines.append("    \(pair)")
                         }
                     } else {
@@ -438,7 +460,18 @@ extension ReviewEndmatter {
             // Normalized for the same CRLF-grapheme reason as parse().
             var yaml = detected.yaml.replacingOccurrences(of: "\r\n", with: "\n")
             let entry = "  \(id):\n    status: resolved\n    resolved: \"\(escaped)\"\n"
-            if let sectionRange = yaml.range(of: "\(section):\n") {
+            // LINE-anchored section header: a bare substring search could
+            // match an indent-4 `suggestions:` field inside some entry and
+            // reparent that entry's fields onto the new record.
+            let headerLine = "\(section):\n"
+            let sectionRange: Range<String.Index>?
+            if yaml.hasPrefix(headerLine) {
+                sectionRange = yaml.startIndex..<yaml.index(yaml.startIndex, offsetBy: headerLine.count)
+            } else {
+                sectionRange = yaml.range(of: "\n" + headerLine)
+                    .map { yaml.index(after: $0.lowerBound)..<$0.upperBound }
+            }
+            if let sectionRange {
                 yaml.insert(contentsOf: entry, at: sectionRange.upperBound)
             } else {
                 if !yaml.hasSuffix("\n") { yaml += "\n" }

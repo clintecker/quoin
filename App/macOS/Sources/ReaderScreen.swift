@@ -215,20 +215,34 @@ struct ReaderScreen: View {
         .inspector(isPresented: $isOutlineVisible) {
             VStack(spacing: 0) {
                 if !reviewItems.isEmpty || !resolvedRecords.isEmpty {
-                    Picker("", selection: Binding(
-                        get: { inspectorMode },
-                        set: { inspectorMode = $0; userPickedInspectorMode = true }
-                    )) {
-                        Text("Outline").tag(InspectorMode.outline)
-                        Text({
-                            let open = reviewItems.filter { !$0.isResolved }.count
-                            return open > 0 ? "Review \(open)" : "Review"
-                        }())
-                            .tag(InspectorMode.review)
+                    // The open count lives OUTSIDE the picker as an accent
+                    // badge: NSSegmentedControl flattens styled text, so a
+                    // count inside the segment could only ever render as
+                    // plain "Review 4" (user redline) — and the badge
+                    // doubles as the still-work-to-do indicator (#58).
+                    HStack(spacing: 6) {
+                        Picker("", selection: Binding(
+                            get: { inspectorMode },
+                            set: { inspectorMode = $0; userPickedInspectorMode = true }
+                        )) {
+                            Text("Outline").tag(InspectorMode.outline)
+                            Text("Review").tag(InspectorMode.review)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        let open = reviewItems.filter { !$0.isResolved }.count
+                        if open > 0 {
+                            Text("\(open)")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5.5)
+                                .padding(.vertical, 1.5)
+                                .background(Color.accentColor, in: Capsule())
+                                .accessibilityLabel("\(open) open review items")
+                        }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .controlSize(.small)
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
                 }

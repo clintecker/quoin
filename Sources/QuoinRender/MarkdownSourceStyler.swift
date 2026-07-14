@@ -214,15 +214,23 @@ struct MarkdownSourceStyler {
             .strikethroughStyle: NSUnderlineStyle.single.rawValue,
             .foregroundColor: theme.ink.withAlphaComponent(0.55),
         ]
+        // These must agree with CriticScanner's recognition: the id tail is
+        // ALPHA-first (spec grammar), and the substitution's halves are
+        // TEMPERED so the old half can't cross a `~>` or either half a
+        // `~~}` — the lazy version matched from `{~~a~~}` through a LATER
+        // `~~}`, styling literal prose as a mark the scanner (rightly)
+        // degraded to text (panel review).
+        let idTail = #"(\{#[A-Za-z][A-Za-z0-9_-]*\})?"#
         let patterns: [(pattern: String, contents: [[NSAttributedString.Key: Any]])] = [
-            (#"\{\+\+([\s\S]*?)\+\+\}(\{#[A-Za-z0-9_-]+\})?"#, [insertContent]),
-            (#"\{--([\s\S]*?)--\}(\{#[A-Za-z0-9_-]+\})?"#, [deleteContent]),
-            (#"\{~~([\s\S]*?)~>([\s\S]*?)~~\}(\{#[A-Za-z0-9_-]+\})?"#, [deleteContent, insertContent]),
-            (#"\{>>([\s\S]*?)<<\}(\{#[A-Za-z0-9_-]+\})?"#, [[
+            (#"\{\+\+([\s\S]*?)\+\+\}"# + idTail, [insertContent]),
+            (#"\{--([\s\S]*?)--\}"# + idTail, [deleteContent]),
+            (#"\{~~((?:(?!~~\}|~>)[\s\S])*)~>((?:(?!~~\})[\s\S])*?)~~\}"# + idTail,
+             [deleteContent, insertContent]),
+            (#"\{>>([\s\S]*?)<<\}"# + idTail, [[
                 .foregroundColor: theme.suggestionCommentInk,
                 .backgroundColor: theme.suggestionCommentFill,
             ]]),
-            (#"\{==([\s\S]*?)==\}(\{#[A-Za-z0-9_-]+\})?"#, [[
+            (#"\{==([\s\S]*?)==\}"# + idTail, [[
                 .backgroundColor: theme.suggestionHighlightFill,
             ]]),
         ]

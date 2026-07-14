@@ -179,12 +179,18 @@ public enum CriticScanner {
         return segments
     }
 
-    /// A trailing RDFM `{#id}` reference: `{#` + non-empty run of
-    /// alphanumerics/`-`/`_` + `}`.
+    /// A trailing RDFM `{#id}` reference. Spec grammar: `ALPHA *( ALPHA /
+    /// DIGIT / "_" / "-" )` — the FIRST character must be a letter, or the
+    /// braces are literal prose a reference reader keeps (accepting
+    /// `{#1abc}` made resolution delete bytes other readers preserve;
+    /// panel review).
     private static func idReference(in bytes: [UInt8], at index: Int) -> (id: String, end: Int)? {
         guard index + 2 < bytes.count,
               bytes[index] == UInt8(ascii: "{"),
               bytes[index + 1] == UInt8(ascii: "#") else { return nil }
+        let first = bytes[index + 2]
+        guard (first >= UInt8(ascii: "a") && first <= UInt8(ascii: "z"))
+            || (first >= UInt8(ascii: "A") && first <= UInt8(ascii: "Z")) else { return nil }
         var i = index + 2
         while i < bytes.count, bytes[i] != UInt8(ascii: "}") {
             let b = bytes[i]

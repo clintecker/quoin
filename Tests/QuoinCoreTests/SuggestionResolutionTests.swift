@@ -379,6 +379,100 @@ extension SuggestionResolutionTests {
     }
 }
 
+// MARK: - LOW-severity panel findings (grammar, escaping, collisions)
+
+extension SuggestionResolutionTests {
+
+    func testIdMustStartWithALetter() {
+        // Spec grammar: ALPHA *( ALPHA / DIGIT / "_" / "-" ). `{#1abc}` is
+        // literal prose a reference reader keeps — absorbing it into the
+        // mark made resolution delete those bytes.
+        let source = "A {++y++}{#1abc} here.\n"
+        let mark = SuggestionResolver.marks(in: MarkdownConverter.parse(source))[0]
+        XCTAssertNil(mark.id)
+        let edit = SuggestionResolver.edit(resolving: mark.range, in: source, action: .accept)!
+        XCTAssertEqual(applying(edit, to: source), "A y{#1abc} here.\n",
+                       "the invalid ref stays as prose, exactly as a reference reader sees it")
+        // And a valid one still binds.
+        XCTAssertEqual(
+            SuggestionResolver.marks(in: MarkdownConverter.parse("A {++y++}{#s1} x.\n"))[0].id, "s1")
+    }
+
+    func testFlowValueEndingInEscapedBackslashDoesNotSwallowTheNextField() throws {
+        let source = "Body {>>x<<}{#c1} here.\n\n---\ncomments:\n  c1: { by: \"C:\\\\\", at: \"2026-01-01T00:00:00Z\" }\n"
+        let metadata = try XCTUnwrap(MarkdownConverter.parse(source).reviewMetadata)
+        XCTAssertEqual(metadata.comments["c1"]?.by, "C:\\")
+        XCTAssertEqual(metadata.comments["c1"]?.at, "2026-01-01T00:00:00Z",
+                       "the field after the escaped backslash survives")
+    }
+
+    func testReResolvingAFlowEntryWithStaleRecordWritesNoDuplicateKeys() throws {
+        // Flow-form entry already carrying status/resolved (a chimera from
+        // an undo): re-resolving must strip the stale pair, not write a
+        // second status:/resolved: under the same entry.
+        let source = """
+        Body {++alpha++}{#s1} here.
+
+        ---
+        suggestions:
+          s1: { by: AI, status: resolved, resolved: "accepted · old" }
+
+        """
+        let mark = SuggestionResolver.marks(in: MarkdownConverter.parse(source))[0]
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .reject))
+        let after = applying(edit, to: source)
+        XCTAssertEqual(after.components(separatedBy: "status:").count - 1, 1,
+                       "exactly one status key: \(after)")
+        XCTAssertEqual(after.components(separatedBy: "resolved:").count - 1, 1)
+        XCTAssertTrue(after.contains("rejected · alpha"), "the FRESH record wins")
+    }
+
+    func testSectionHeaderInsertionIgnoresEntryFieldsNamedLikeSections() throws {
+        // An entry with an unknown indent-4 `suggestions:` field must not
+        // become the insertion anchor for a synthesized record.
+        let source = """
+        Body {--x--} here {>>keep<<}{#c1}.
+
+        ---
+        comments:
+          c1:
+            by: user
+            suggestions:
+
+        """
+        let mark = SuggestionResolver.marks(in: MarkdownConverter.parse(source)).first {
+            if case .deletion = $0.kind { return true }
+            return false
+        }!
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+        let after = applying(edit, to: source)
+        let metadata = try XCTUnwrap(MarkdownConverter.parse(after).reviewMetadata)
+        XCTAssertEqual(metadata.comments["c1"]?.by, "user", "c1 not reparented: \(after)")
+        XCTAssertEqual(ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after)).count, 1)
+    }
+
+    func testIdCollisionAcrossSectionsAttributesEachCardToItsOwnMap() throws {
+        let source = """
+        See {>>note<<}{#z1} and {++add++}{#z1}.
+
+        ---
+        comments:
+          z1: { by: alice }
+        suggestions:
+          z1: { by: bob }
+
+        """
+        let items = SuggestionResolver.reviewItems(in: MarkdownConverter.parse(source))
+        XCTAssertEqual(items.count, 2)
+        let comment = items.first { !$0.isSuggestion }
+        let suggestion = items.first { $0.isSuggestion }
+        XCTAssertEqual(comment?.by, "alice")
+        XCTAssertEqual(suggestion?.by, "bob", "the suggestion card is bob's, not alice's")
+    }
+}
+
 // MARK: - CRLF documents (panel review MEDIUM)
 
 extension SuggestionResolutionTests {

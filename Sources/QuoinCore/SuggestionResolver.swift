@@ -238,8 +238,14 @@ extension SuggestionResolver {
         var items: [ReviewItem] = []
         var pendingAnchor: (text: String, endOffset: Int)?
 
-        func entry(_ id: String?) -> ReviewEntry? {
-            id.flatMap { metadata?.entry(for: $0) }
+        // Kind-aware: on an id collision across sections, entry(for:)
+        // prefers comments — attributing a suggestion card to the comment's
+        // author (panel review). Look in the mark's OWN section first.
+        func entry(_ id: String?, isSuggestion: Bool) -> ReviewEntry? {
+            guard let id, let metadata else { return nil }
+            return isSuggestion
+                ? metadata.suggestions[id] ?? metadata.comments[id]
+                : metadata.comments[id] ?? metadata.suggestions[id]
         }
         func replies(to id: String?) -> [ReviewItem.Reply] {
             guard let id, let metadata else { return [] }
@@ -250,7 +256,12 @@ extension SuggestionResolver {
         }
 
         for mark in all {
-            let meta = entry(mark.id)
+            let isSuggestion: Bool
+            switch mark.kind {
+            case .insertion, .deletion, .substitution: isSuggestion = true
+            case .comment, .highlight: isSuggestion = false
+            }
+            let meta = entry(mark.id, isSuggestion: isSuggestion)
             // MARK WINS: a live mark is actionable no matter what stale
             // metadata says (an undo or a hand edit can restore a mark
             // whose record still reads resolved — the mark's presence is
