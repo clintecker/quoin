@@ -151,6 +151,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// Document→card linkage: the caret entered (byte range) or left (nil)
     /// a rendered mark.
     public var onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil
+    /// The review-endmatter chip was clicked: open the Review inspector.
+    public var onOpenReview: (() -> Void)? = nil
 
     public init(
         rendered: RenderedDocument,
@@ -185,7 +187,8 @@ public struct MarkdownReaderView: NSViewRepresentable {
         onSuggestionAction: ((ByteRange, SuggestionResolver.Action) -> Void)? = nil,
         flashSuggestionOffset: Int? = nil,
         flashGeneration: Int = 0,
-        onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil
+        onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil,
+        onOpenReview: (() -> Void)? = nil
     ) {
         self.rendered = rendered
         self.theme = theme
@@ -220,6 +223,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.flashSuggestionOffset = flashSuggestionOffset
         self.flashGeneration = flashGeneration
         self.onSuggestionCaretLink = onSuggestionCaretLink
+        self.onOpenReview = onOpenReview
     }
 
     public func makeCoordinator() -> Coordinator {

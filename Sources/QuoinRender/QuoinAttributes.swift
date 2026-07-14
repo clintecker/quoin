@@ -64,6 +64,12 @@ public enum QuoinLink {
     /// closes it; same URL, the handler toggles on the active state).
     public static var editURL: URL? { URL(string: "\(editScheme)://block") }
 
+    /// Opens the Review inspector (the endmatter chip's click target — the
+    /// metadata's UI is the panel, never inline YAML editing).
+    public static let reviewScheme = "quoin-review"
+    public static var reviewURL: URL? { URL(string: "\(reviewScheme)://panel") }
+    public static func isReviewURL(_ url: URL) -> Bool { url.scheme == reviewScheme }
+
     public static func isEditURL(_ url: URL) -> Bool { url.scheme == editScheme }
 
     /// quoin-task://toggle?offset=N — a clickable checkbox.

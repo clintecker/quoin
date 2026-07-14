@@ -325,6 +325,14 @@ final class ReaderModel {
     /// is inserted, not swallowed.
     func activateBlock(_ id: BlockID?, caretHint: CaretHint? = nil, pendingInsertion: String? = nil) {
         guard id != activeBlockID else { return }
+        // The review endmatter never opens as editable YAML — it is
+        // machinery whose UI is the Review panel (user redline 2026-07-14).
+        // Guarded here, the single chokepoint every activation path
+        // (click, ⌘↩, edit chip, context menu, typing) funnels through.
+        if let id, let block = document.blocks.first(where: { $0.id == id }),
+           case .reviewEndmatter = block.kind {
+            return
+        }
         let previousActiveID = activeBlockID
         // Fence healing on commit-while-broken (ledger senior #10): a
         // fenced block committed without its closing fence would swallow
@@ -539,7 +547,11 @@ final class ReaderModel {
             reportFailure("That suggestion changed since it was rendered — try again.")
             return
         }
-        applyAbsolute(edit, caretUTF8: markRange.offset)
+        // caretUTF8: nil — a card/menu click is NOT an edit-intent into the
+        // block. Restoring a caret at the mark tripped the prose-activation
+        // path: accepting a suggestion flipped its paragraph to revealed
+        // source and jumped the viewport (screenshots, 2026-07-14).
+        applyAbsolute(edit, caretUTF8: nil)
     }
 
     private func applyAbsolute(_ edit: SourceEdit, caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil) {

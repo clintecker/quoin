@@ -142,7 +142,12 @@ struct ReaderScreen: View {
                 onSuggestionAction: { range, action in model.resolveSuggestion(markRange: range, action: action) },
                 flashSuggestionOffset: flashSuggestionOffset,
                 flashGeneration: flashGeneration,
-                onSuggestionCaretLink: { range in linkedMark = range }
+                onSuggestionCaretLink: { range in linkedMark = range },
+                onOpenReview: {
+                    isOutlineVisible = true
+                    inspectorMode = .review
+                    userPickedInspectorMode = true
+                }
             )
             // Dropping an image file copies it into assets/ and inserts
             // the markdown reference at the caret.

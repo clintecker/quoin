@@ -378,3 +378,51 @@ extension SuggestionResolutionTests {
         XCTAssertNil(empty, "exactly one undo entry per resolution")
     }
 }
+
+// MARK: - Universal history (the review tab must never vanish)
+
+extension SuggestionResolutionTests {
+
+    func testIdlessMarkResolutionCreatesEndmatterAndRecord() throws {
+        // Plain CriticMarkup, no ids, no endmatter — resolving must still
+        // leave history (and thus keep the Review panel alive).
+        let source = "We {~~cannot~>can~~} ship.\n"
+        let document = MarkdownConverter.parse(source)
+        let mark = SuggestionResolver.marks(in: document)[0]
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+        let after = applying(edit, to: source)
+
+        XCTAssertTrue(after.hasPrefix("We can ship."), "resolution applied")
+        let final = MarkdownConverter.parse(after)
+        let records = ReviewEndmatter.resolvedRecords(in: final)
+        XCTAssertEqual(records.count, 1, "endmatter synthesized to carry the record")
+        XCTAssertEqual(records[0].id, "s1")
+        XCTAssertEqual(records[0].summary, "accepted · cannot → can")
+    }
+
+    func testIdlessMarkWithExistingEndmatterGetsAFreshId() throws {
+        let source = """
+        A {++x++} b {>>note<<}{#c1}.
+
+        ---
+        comments:
+          c1: { by: user }
+
+        """
+        let document = MarkdownConverter.parse(source)
+        let idless = SuggestionResolver.marks(in: document).first {
+            if case .insertion = $0.kind { return true }
+            return false
+        }!
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: idless.range, in: source, action: .reject))
+        let after = applying(edit, to: source)
+        let final = MarkdownConverter.parse(after)
+        let records = ReviewEndmatter.resolvedRecords(in: final)
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].id, "s1", "fresh suggestions counter")
+        XCTAssertEqual(final.reviewMetadata?.comments["c1"]?.by, "user",
+                       "existing entries untouched")
+    }
+}

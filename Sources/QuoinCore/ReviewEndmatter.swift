@@ -378,3 +378,48 @@ extension ReviewEndmatter {
         return SourceEdit(range: detected.range, replacement: replacement)
     }
 }
+
+extension ReviewEndmatter {
+
+    /// Records a resolution for a mark that had NO `{#id}`: synthesizes the
+    /// next document-local id (c1…/s1… counters, RDFM style) and appends
+    /// the entry — creating the endmatter itself when the document has
+    /// none. History must not depend on the author having used metadata.
+    public static func appendedRecordEdit(
+        summary: String, asComment: Bool, in source: String
+    ) -> SourceEdit? {
+        let escaped = summary
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let prefix = asComment ? "c" : "s"
+        let section = asComment ? "comments" : "suggestions"
+
+        if let detected = detect(in: source) {
+            // Next free id across BOTH maps and any inline refs.
+            let taken = Set(detected.metadata.comments.keys)
+                .union(detected.metadata.suggestions.keys)
+            var n = 1
+            while taken.contains("\(prefix)\(n)") || source.contains("{#\(prefix)\(n)}") { n += 1 }
+            let id = "\(prefix)\(n)"
+            var yaml = detected.yaml
+            let entry = "  \(id):\n    status: resolved\n    resolved: \"\(escaped)\"\n"
+            if let sectionRange = yaml.range(of: "\(section):\n") {
+                yaml.insert(contentsOf: entry, at: sectionRange.upperBound)
+            } else {
+                if !yaml.hasSuffix("\n") { yaml += "\n" }
+                yaml += "\(section):\n" + entry
+            }
+            return SourceEdit(range: detected.range, replacement: "\n---\n" + yaml)
+        }
+
+        // No endmatter yet: create one at EOF.
+        var n = 1
+        while source.contains("{#\(prefix)\(n)}") { n += 1 }
+        let id = "\(prefix)\(n)"
+        let needsNewline = source.hasSuffix("\n") ? "" : "\n"
+        let block = "\(needsNewline)\n---\n\(section):\n  \(id):\n    status: resolved\n    resolved: \"\(escaped)\"\n"
+        return SourceEdit(
+            range: ByteRange(offset: source.utf8.count, length: 0),
+            replacement: block)
+    }
+}

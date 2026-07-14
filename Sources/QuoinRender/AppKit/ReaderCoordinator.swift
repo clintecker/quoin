@@ -369,6 +369,10 @@ extension MarkdownReaderView {
                 }
                 return true
             }
+            if QuoinLink.isReviewURL(url) {
+                parent.onOpenReview?()
+                return true
+            }
             if QuoinLink.isEditURL(url) {
                 // ‹/› edit opens the enclosing block's source (caret at the
                 // body start); ✓ done on the open block commits and closes,

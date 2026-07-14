@@ -1161,7 +1161,7 @@ public struct AttributedRenderer {
                 + [suggestions > 0 ? "\(suggestions) suggestion\(suggestions == 1 ? "" : "s")" : nil,
                    comments > 0 ? "\(comments) comment\(comments == 1 ? "" : "s")" : nil]
                     .compactMap { $0 }.joined(separator: " · ")
-            content = renderFrontMatter(yaml: summary)
+            content = renderFrontMatter(yaml: summary, editable: false)
         case .tableOfContents:
             content = renderTOC(outline: document.outline)
         case .thematicBreak:
@@ -1321,7 +1321,7 @@ public struct AttributedRenderer {
         return output
     }
 
-    private func renderFrontMatter(yaml: String) -> NSAttributedString {
+    private func renderFrontMatter(yaml: String, editable: Bool = true) -> NSAttributedString {
         // Compact metadata chip above the H1 (spec): the fields collapse to
         // one truncated caption line; clicking the block reveals the full
         // YAML source for editing (block activation).
@@ -1343,7 +1343,19 @@ public struct AttributedRenderer {
         style.tailIndent = -8
         attributes[.paragraphStyle] = style
         attributes[QuoinAttribute.blockDecoration] = BlockDecoration(kind: .chip(fill: theme.inlineCodeFill))
-        let output = NSMutableAttributedString(string: condensed, attributes: attributes)
+        var chipAttributes = attributes
+        if !editable {
+            // The review endmatter is machinery; its UI is the Review
+            // panel. The whole chip opens the panel — never inline YAML.
+            if let url = QuoinLink.reviewURL {
+                chipAttributes[.link] = url
+            }
+            #if canImport(AppKit)
+            chipAttributes[.toolTip] = "Open Review" as NSString
+            #endif
+            return NSAttributedString(string: condensed, attributes: chipAttributes)
+        }
+        let output = NSMutableAttributedString(string: condensed, attributes: chipAttributes)
         // Trailing `· ‹/› edit` inside the chip: front matter's condensed
         // line gives no hint it's editable YAML.
         var edit = attributes

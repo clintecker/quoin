@@ -66,4 +66,28 @@ final class SuggestionRenderTests: XCTestCase {
             Theme().suggestionHighlightFill)
     }
 }
+
+// MARK: - The endmatter chip is panel UI, never inline YAML (redline)
+
+extension SuggestionRenderTests {
+    func testEndmatterChipLinksToReviewPanelAndHasNoEditAffordance() throws {
+        let source = "Body {++x++}{#s1}.\n\n---\nsuggestions:\n  s1: { by: AI }\n"
+        let document = MarkdownConverter.parse(source)
+        let rendered = AttributedRenderer().render(document)
+        let block = try XCTUnwrap(document.blocks.first {
+            if case .reviewEndmatter = $0.kind { return true }
+            return false
+        })
+        let range = try XCTUnwrap(rendered.blockRanges[block.id])
+        var foundReviewLink = false
+        var foundEditLink = false
+        rendered.attributed.enumerateAttribute(.link, in: range) { value, _, _ in
+            guard let url = value as? URL else { return }
+            if QuoinLink.isReviewURL(url) { foundReviewLink = true }
+            if QuoinLink.isEditURL(url) { foundEditLink = true }
+        }
+        XCTAssertTrue(foundReviewLink, "the chip opens the Review panel")
+        XCTAssertFalse(foundEditLink, "no inline-YAML edit affordance")
+    }
+}
 #endif

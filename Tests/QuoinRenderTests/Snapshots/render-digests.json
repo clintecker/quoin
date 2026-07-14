@@ -21409,23 +21409,13 @@
       {
         "deco" : "chip(#F2F2F4)",
         "f" : "10.50/0.00m",
-        "fg" : "#1D1D1F8C",
+        "fg" : "accent",
+        "link" : "quoin-review://panel",
         "p" : "lh1.40 ps4.00 psb2.00 fh8.00 hi8.00 ti-8.00 al4 tabs12",
         "q" : [
 
         ],
         "t" : "review metadata · 1 suggestion · 2 comments"
-      },
-      {
-        "deco" : "chip(#F2F2F4)",
-        "f" : "10.50/0.00m",
-        "fg" : "accent",
-        "link" : "quoin-edit://block",
-        "p" : "lh1.40 ps4.00 psb2.00 fh8.00 hi8.00 ti-8.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "   ·   ‹/› edit"
       }
     ]
   },

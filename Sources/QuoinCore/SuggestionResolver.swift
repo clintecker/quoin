@@ -59,10 +59,24 @@ public enum SuggestionResolver {
         resolving markRange: ByteRange, in source: String, action: Action
     ) -> SourceEdit? {
         guard let markEdit = edit(resolving: markRange, in: source, action: action) else { return nil }
-        guard let id = markID(at: markRange, in: source),
-              let summary = resolutionSummary(at: markRange, in: source, action: action),
-              let recordEdit = ReviewEndmatter.resolutionRecordEdit(
-                  resolving: id, summary: summary, in: source),
+        guard let summary = resolutionSummary(at: markRange, in: source, action: action)
+        else { return markEdit }
+        // EVERY resolution is recorded ("the review tab goes away" redline):
+        // a mark without a {#id} gets one synthesized, and a document
+        // without endmatter grows one — history must not depend on the
+        // author having used RDFM metadata.
+        let recordEdit: SourceEdit?
+        if let id = markID(at: markRange, in: source) {
+            recordEdit = ReviewEndmatter.resolutionRecordEdit(
+                resolving: id, summary: summary, in: source)
+        } else {
+            let isComment: Bool
+            if case .comment = payload(at: markRange, in: source) { isComment = true }
+            else { isComment = false }
+            recordEdit = ReviewEndmatter.appendedRecordEdit(
+                summary: summary, asComment: isComment, in: source)
+        }
+        guard let recordEdit,
               recordEdit.range.offset >= markRange.offset + markRange.length
         else { return markEdit }
 
@@ -100,6 +114,16 @@ public enum SuggestionResolver {
         case (.comment(let text), _): return "dismissed · \(clip(text))"
         case (.highlight(let body), _): return "resolved · \(clip(body))"
         }
+    }
+
+    static func payload(at range: ByteRange, in source: String) -> CriticMark.Payload? {
+        let bytes = Array(source.utf8)
+        guard range.offset >= 0, range.length > 0,
+              range.offset + range.length <= bytes.count else { return nil }
+        let slice = String(decoding: bytes[range.offset..<(range.offset + range.length)], as: UTF8.self)
+        let segments = CriticScanner.scan(slice)
+        guard segments.count == 1, case .mark(let mark) = segments[0] else { return nil }
+        return mark.payload
     }
 
     /// The `{#id}` of the mark at `range`, when the bytes there parse as
