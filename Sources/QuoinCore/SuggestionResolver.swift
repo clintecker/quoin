@@ -65,14 +65,19 @@ public enum SuggestionResolver {
         // a mark without a {#id} gets one synthesized, and a document
         // without endmatter grows one — history must not depend on the
         // author having used RDFM metadata.
+        let isComment: Bool
+        if case .comment = payload(at: markRange, in: source) { isComment = true }
+        else { isComment = false }
         let recordEdit: SourceEdit?
         if let id = markID(at: markRange, in: source) {
+            // A mark can carry an id its endmatter never declared — the
+            // record is then APPENDED under that same id, never skipped
+            // (panel review, MEDIUM).
             recordEdit = ReviewEndmatter.resolutionRecordEdit(
                 resolving: id, summary: summary, in: source)
+                ?? ReviewEndmatter.appendedRecordEdit(
+                    summary: summary, asComment: isComment, reusing: id, in: source)
         } else {
-            let isComment: Bool
-            if case .comment = payload(at: markRange, in: source) { isComment = true }
-            else { isComment = false }
             recordEdit = ReviewEndmatter.appendedRecordEdit(
                 summary: summary, asComment: isComment, in: source)
         }

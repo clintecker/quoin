@@ -51,7 +51,20 @@ public enum ReviewEndmatter {
     }
 
     public static func detect(in source: String) -> Detected? {
-        guard let delimiterRange = source.range(of: "\n---\n", options: .backwards) else { return nil }
+        // CRLF documents delimit with \r\n---\r\n — a pure-LF search never
+        // matched, so their endmatter rendered as prose and every
+        // resolution stacked a fresh LF endmatter on top (panel review,
+        // MEDIUM). Prefer whichever delimiter occurs LAST in mixed files.
+        let lf = source.range(of: "\n---\n", options: .backwards)
+        let crlf = source.range(of: "\r\n---\r\n", options: .backwards)
+        let delimiterRange: Range<String.Index>
+        switch (lf, crlf) {
+        case (nil, nil): return nil
+        case (let l?, nil): delimiterRange = l
+        case (nil, let c?): delimiterRange = c
+        case (let l?, let c?):
+            delimiterRange = l.lowerBound > c.lowerBound ? l : c
+        }
         let tail = String(source[delimiterRange.upperBound...])
         guard let metadata = parse(yaml: tail), !metadata.isEmpty else { return nil }
         let body = String(source[..<delimiterRange.lowerBound])
@@ -103,8 +116,13 @@ public enum ReviewEndmatter {
             return section == "comments" ? comments[id] : suggestions[id]
         }
 
-        for rawLine in yaml.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(rawLine)
+        // CRLF tolerance: Swift's "\r\n" is ONE grapheme cluster, so a
+        // Character-based split on "\n" never splits CRLF lines at all —
+        // the whole yaml read as one line and the strict rule nil'd it.
+        let normalized = yaml.replacingOccurrences(of: "\r\n", with: "\n")
+        for rawLine in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
+            var line = String(rawLine)
+            if line.hasSuffix("\r") { line.removeLast() } // stray lone \r
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
             let indent = line.prefix(while: { $0 == " " }).count
@@ -244,8 +262,10 @@ extension ReviewEndmatter {
         var keptLines: [String] = []
         var pendingHeader: String?
         var skippingEntry = false
-        for rawLine in detected.yaml.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(rawLine)
+        let normalizedYAML = detected.yaml.replacingOccurrences(of: "\r\n", with: "\n")
+        for rawLine in normalizedYAML.split(separator: "\n", omittingEmptySubsequences: false) {
+            var line = String(rawLine)
+            if line.hasSuffix("\r") { line.removeLast() } // CRLF tolerance
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let indent = line.prefix(while: { $0 == " " }).count
             if indent == 0 {
@@ -330,7 +350,10 @@ extension ReviewEndmatter {
             wroteRecord = true
             inTargetEntry = false
         }
-        for rawLine in detected.yaml.split(separator: "\n", omittingEmptySubsequences: false) {
+        // CRLF tolerance: Swift's "\r\n" is one grapheme, so an unnormalized
+        // split never splits CRLF lines (same rule as parse()).
+        let normalizedYAML = detected.yaml.replacingOccurrences(of: "\r\n", with: "\n")
+        for rawLine in normalizedYAML.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(rawLine)
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let indent = line.prefix(while: { $0 == " " }).count
@@ -385,18 +408,35 @@ extension ReviewEndmatter {
     public static func appendedRecordEdit(
         summary: String, asComment: Bool, in source: String
     ) -> SourceEdit? {
+        appendedRecordEdit(summary: summary, asComment: asComment, reusing: nil, in: source)
+    }
+
+    /// Same, but `reusing` keeps the mark's OWN `{#id}` as the record key —
+    /// a mark can carry an id its endmatter never declared (agent wrote the
+    /// ref but not the entry, or the entry was hand-deleted); resolving it
+    /// silently skipped history (panel review, MEDIUM: contradicts the
+    /// "EVERY resolution is recorded" rule).
+    public static func appendedRecordEdit(
+        summary: String, asComment: Bool, reusing existingID: String?, in source: String
+    ) -> SourceEdit? {
         let escaped = escapedScalar(summary)
         let prefix = asComment ? "c" : "s"
         let section = asComment ? "comments" : "suggestions"
 
         if let detected = detect(in: source) {
-            // Next free id across BOTH maps and any inline refs.
-            let taken = Set(detected.metadata.comments.keys)
-                .union(detected.metadata.suggestions.keys)
-            var n = 1
-            while taken.contains("\(prefix)\(n)") || source.contains("{#\(prefix)\(n)}") { n += 1 }
-            let id = "\(prefix)\(n)"
-            var yaml = detected.yaml
+            let id: String
+            if let existingID {
+                id = existingID
+            } else {
+                // Next free id across BOTH maps and any inline refs.
+                let taken = Set(detected.metadata.comments.keys)
+                    .union(detected.metadata.suggestions.keys)
+                var n = 1
+                while taken.contains("\(prefix)\(n)") || source.contains("{#\(prefix)\(n)}") { n += 1 }
+                id = "\(prefix)\(n)"
+            }
+            // Normalized for the same CRLF-grapheme reason as parse().
+            var yaml = detected.yaml.replacingOccurrences(of: "\r\n", with: "\n")
             let entry = "  \(id):\n    status: resolved\n    resolved: \"\(escaped)\"\n"
             if let sectionRange = yaml.range(of: "\(section):\n") {
                 yaml.insert(contentsOf: entry, at: sectionRange.upperBound)
@@ -408,9 +448,14 @@ extension ReviewEndmatter {
         }
 
         // No endmatter yet: create one at EOF.
-        var n = 1
-        while source.contains("{#\(prefix)\(n)}") { n += 1 }
-        let id = "\(prefix)\(n)"
+        let id: String
+        if let existingID {
+            id = existingID
+        } else {
+            var n = 1
+            while source.contains("{#\(prefix)\(n)}") { n += 1 }
+            id = "\(prefix)\(n)"
+        }
         let needsNewline = source.hasSuffix("\n") ? "" : "\n"
         let block = "\(needsNewline)\n---\n\(section):\n  \(id):\n    status: resolved\n    resolved: \"\(escaped)\"\n"
         return SourceEdit(

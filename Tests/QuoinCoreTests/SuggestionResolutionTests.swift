@@ -379,6 +379,30 @@ extension SuggestionResolutionTests {
     }
 }
 
+// MARK: - CRLF documents (panel review MEDIUM)
+
+extension SuggestionResolutionTests {
+
+    func testCRLFEndmatterIsDetectedAndResolvable() throws {
+        // CRLF delimiter + CRLF YAML lines: detection and parsing must
+        // both tolerate \r — a pure-LF search rendered the metadata as
+        // prose and stacked a second endmatter per resolution.
+        let source = "Body {++x++}{#s1} here.\r\n\r\n---\r\nsuggestions:\r\n  s1: { by: AI }\r\n"
+        let detected = try XCTUnwrap(ReviewEndmatter.detect(in: source))
+        XCTAssertEqual(detected.metadata.suggestions.count, 1)
+
+        let document = MarkdownConverter.parse(source)
+        XCTAssertNotNil(document.reviewMetadata, "metadata attached, not prose")
+        let mark = try XCTUnwrap(SuggestionResolver.marks(in: document).first)
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+        let after = applying(edit, to: source)
+        XCTAssertFalse(after.contains("{++"))
+        XCTAssertEqual(ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after)).count, 1,
+                       "one endmatter, one record — no stacking: \(after.debugDescription)")
+    }
+}
+
 // MARK: - Multi-line mark bodies (panel review HIGH: newline in summary)
 
 extension SuggestionResolutionTests {
@@ -541,6 +565,37 @@ extension SuggestionResolutionTests {
 // MARK: - Universal history (the review tab must never vanish)
 
 extension SuggestionResolutionTests {
+
+    func testMarkWithIdButNoEntryStillGetsARecordUnderThatId() throws {
+        // The id exists inline but the endmatter never declared it (agent
+        // wrote the ref but not the entry, or it was hand-deleted). The
+        // resolution must still be recorded — under the mark's OWN id.
+        let source = """
+        Body {++alpha++}{#s9} here.
+
+        ---
+        suggestions:
+          s1: { by: AI, status: resolved, resolved: "accepted · old" }
+
+        """
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: ByteRange(offset: 5, length: 16), in: source, action: .accept))
+        let after = applying(edit, to: source)
+        XCTAssertTrue(after.contains("Body alpha here."))
+        let records = ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after))
+        XCTAssertEqual(records.count, 2, "history recorded, not skipped: \(after)")
+        XCTAssertTrue(records.contains { $0.id == "s9" }, "under the mark's own id")
+    }
+
+    func testIdMarkWithNoEndmatterAtAllGetsARecordUnderItsId() throws {
+        let source = "Body {++alpha++}{#s7} here.\n"
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: ByteRange(offset: 5, length: 16), in: source, action: .reject))
+        let after = applying(edit, to: source)
+        let records = ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after))
+        XCTAssertEqual(records.first?.id, "s7")
+        XCTAssertEqual(records.first?.summary, "rejected · alpha")
+    }
 
     func testIdlessMarkResolutionCreatesEndmatterAndRecord() throws {
         // Plain CriticMarkup, no ids, no endmatter — resolving must still
