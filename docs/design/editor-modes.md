@@ -110,8 +110,11 @@ instants**, reconciled only by best-effort async passes:
 2. the **revealed source runs** — TextKit at *splice* time;
 3. the **frozen flip snapshot** — a `cacheDisplay` bitmap of the *old*
    dark-canvas block, captured *before* the splice;
-4. the **below-content slide delta** — gated by an `NSAttributedString.
-   boundingRect` *estimate* (a different engine than TextKit 2);
+4. the **flip capture gate** — an `NSAttributedString.boundingRect` *estimate*
+   (a different engine than TextKit 2). Review note: this authority is
+   **cosmetic-only** — the slide delta itself is TextKit-measured on both
+   sides; a wrong gate answer costs a missing/superfluous animation and
+   cannot produce overlap;
 5. the **preview panel** — derived from the editing-frame rect.
 
 ### 3.3 The concrete seams (grounded failure modes)
@@ -126,10 +129,25 @@ instants**, reconciled only by best-effort async passes:
   constants.
 - **Seam 1 (primary overlap) — decorations drawn against estimated geometry.**
   After a reveal/keystroke flips delimiter fonts (a reflow), the first draw can
-  read pre-settle geometry. The cure is an async settle redraw, but the
-  per-keystroke path (`noteStorageEdit`) settles more weakly than the spliced
-  path (`invalidateDecorations`), and above 200k chars eager layout is skipped
+  read pre-settle geometry. Precisely (review-sharpened): run *ranges* are
+  never stale (rebuilt from live attributes or shifted arithmetically); what's
+  stale is fragment **y-origins derived from unsettled *preceding* content** —
+  `.ensuresLayout` forces layout of the enumerated run's own fragments only,
+  and a layout forced mid-draw cannot expand the already-committed dirty rect,
+  so geometry that settles after the draw leaves painted boxes behind with no
+  repaint scheduled. The per-keystroke path (`noteStorageEdit`) settles more
+  weakly than the spliced path, and above 200k chars eager layout is skipped
   entirely.
+- **T1 is live, not latent (review finding — separator-clamp drift).** The
+  per-keystroke patch guards with a *character*-level `separatorSignature`,
+  but the separator's clamped-vs-normal *style* depends on whether the slice
+  ends with a newline — which typing changes. Typing a trailing newline into a
+  revealed block yields a phantom empty paragraph until the next flip.
+- **Two owners of caret truth (review finding — stale-caret rerender).** Plain
+  caret moves update only the coordinator's copy; the model's
+  `caretInActiveBlock` refreshes only on activation/edit-echo. A
+  model-initiated rerender while a block is open (async image decode) styles
+  the reveal with the activation-time caret — the revealed span snaps back.
 - **Seam 2 — the flip crossfade paints the old dark canvas over the new frame.**
   Activation is a content swap (dark canvas → stroked frame). The frozen
   old-block slice **does not resize**; if revealed source is taller, its
@@ -210,31 +228,52 @@ into one measure phase, never interleaved with writes.
 
 ---
 
-## 6. Staged plan (each stage independently shippable, test-guarded)
+## 6. Staged plan → see `editor-modes-plan.md`
 
-Existing guards to extend at every stage: `RevealFidelityTests`,
-`CaretLineAnchorTests`, `RendererConformanceTests`, `FlipTransitionFidelityTests`.
+The detailed, file-level implementation plan lives in
+**`docs/design/editor-modes-plan.md`** (post-review). Summary of the review's
+per-stage verdicts, which the plan incorporates:
 
-- **Stage 0 — targeted relief (no architecture change).** Fix the *specific*
-  overlap seam the repro identifies: settle-parity on the per-keystroke path
-  (Seam 1), and/or the flip snapshot resize (Seam 2), and/or drawing the done
-  chip in front of glyphs (Seam 5). Small, surgical, verifiable.
-- **Stage 1 — `BlockPresentation` owner.** Introduce the pure `present(...)`
-  function and route all four paths through it. No behavior change; existing
-  reveal/caret tests are the guard.
-- **Stage 2 — one `BlockLayout` snapshot.** Single measure pass after settle;
-  every decoration + frame + chip + preview reads it; delete per-consumer
-  `.ensuresLayout` scattering. Merge editing frame + done chip.
-- **Stage 3 — one projector.** Collapse the four paths into the block-diff
-  projector; centralize separator/clamp; fold in the caret-move restyle; delete
-  the dead offset arithmetic; positions through one mapping.
-- **Stage 4 — native embed realization (optional).** Evaluate
-  `NSTextAttachmentViewProvider` for the live preview so TextKit owns its
-  geometry.
+- **Phase 0 (Stage 0 amended)** — settle in `viewWillDraw` (kills the
+  remaining one-stale-frame and the `setFrameSize` hole); >200k caret-pin
+  test; fix the separator-clamp drift and stale-caret rerender bugs.
+- **Phase 1 (`BlockPresentation` owner)** — with the **view-owned caret
+  contract** (caret is a parameter of the styler pass, never of the mode; one
+  function, two call sites) and the purity precursor (evict
+  `activePreviewBox` / `revealVerbatimBox` from the renderer first).
+- **Phase 2 (geometry snapshot)** — **viewport-scoped** (document-wide would
+  reinstate the lay-out-the-whole-file regression) and **double-buffered**
+  (the flip needs the pre-splice endpoint). Merged editing chrome + the
+  re-scoped accessibility work.
+- **Phase 3 (one projector)** — hot-path output is **storage patches**, never
+  a materialized full string (that's the actual perf property); bail-to-full
+  escape hatch stays; caret-move restyle stays synchronous view-side; dead
+  offset machinery + stale comments + CLAUDE.md's outdated embed paragraph
+  deleted; IME/marked-text gate added; equivalence property test in CI.
+- **Stage 4 (attachment providers) — dropped.** Providers would resurrect the
+  offset machinery Phase 3 deletes and break the 1:1 revealed-source
+  invariant; the one real benefit (accessibility) is re-scoped into Phase 2's
+  chrome AX element.
 
 ---
 
-## 7. Non-goals (this design)
+## 7. Spec gaps the review surfaced (owned by the plan's phases)
+
+- **Undo/redo × mode transitions** (Phase 1.5): Escape's fence-heal is an
+  undoable edit; the state machine gains an undo transition row (active block
+  vanishes ⇒ deactivate to rendered, no flip, caret at the undo's location).
+- **IME / marked text** (Phase 3.5): fragment replacement freezes during
+  composition; `pendingInsertion` replay suppressed while composing.
+- **Accessibility** (Phase 2.3): the editing chrome becomes a real AX button;
+  representation swaps are announced.
+- **RTL/bidi**: explicitly **LTR-only for now**; Phase 2 centralizes chrome
+  geometry so a future RTL pass is single-site.
+- **Preview panel interaction**: pointer-transparent, no keyboard access — a
+  deliberate choice, now stated.
+- **One active block + one caret is an invariant, not an accident**
+  (multi-caret is out of scope by design).
+
+## 8. Non-goals (this design)
 
 New editing *capabilities* (multi-block selection, block drag beyond today,
 whole-document raw-source view) are out of scope — this is about making the
