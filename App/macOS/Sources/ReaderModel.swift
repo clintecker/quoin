@@ -623,6 +623,10 @@ final class ReaderModel {
             forRenderedOffset: renderedStart, renderedText: renderedBlockText, sourceText: slice)
         var endUTF16 = EditMapping.sourceOffset(
             forRenderedOffset: renderedEnd, renderedText: renderedBlockText, sourceText: slice)
+        // A whole-item selection maps to the line START — wrapping the list
+        // marker would erase the structure (the live list-renumber bug):
+        // annotate the item's CONTENT, marker excluded.
+        startUTF16 = ReviewAuthoring.clampPastLinePrefix(startUTF16, in: slice)
         // Snap outward over emphasis delimiter runs (`*_~=`) so a rendered
         // whole-span selection wraps complete syntax. Backticks are
         // deliberately excluded — swallowing one edge of a code span would

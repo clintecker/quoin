@@ -187,4 +187,60 @@ final class ReviewAuthoringTests: XCTestCase {
         XCTAssertTrue(after.contains("{>>line one line two<<}"))
         XCTAssertNotNil(ReviewEndmatter.detect(in: after))
     }
+
+    // MARK: - Structure preservation (live report: list renumbered)
+
+    func testCommentWrappingAListMarkerRefuses() throws {
+        let source = """
+        Intro.
+
+        1. Name the player problem.
+        2. Identify the rule IDs.
+        3. Update Gameplay.
+
+        Tail.
+        """
+        // The whole-item selection INCLUDING the "2. " marker: wrapping it
+        // erased the marker and restructured the list (renumbering every
+        // item) — an annotation must never change document structure.
+        XCTAssertNil(ReviewAuthoring.annotationEdit(
+            kind: .comment(body: "nice"), range: range(of: "2. Identify the rule IDs.", in: source),
+            in: source, reviewer: "clint", timestamp: stamp))
+    }
+
+    func testCommentOnItemContentSucceedsAndKeepsTheList() throws {
+        let source = """
+        Intro.
+
+        1. Name the player problem.
+        2. Identify the rule IDs.
+        3. Update Gameplay.
+
+        Tail.
+        """
+        let edit = try XCTUnwrap(ReviewAuthoring.annotationEdit(
+            kind: .comment(body: "nice"), range: range(of: "Identify the rule IDs.", in: source),
+            in: source, reviewer: "clint", timestamp: stamp))
+        let after = applying(edit, to: source)
+        let document = MarkdownConverter.parse(after)
+        let list = document.blocks.compactMap { block -> Int? in
+            if case .list(let items, _, _) = block.kind { return items.count }
+            return nil
+        }
+        XCTAssertEqual(list, [3], "the list survives intact: \(after)")
+        XCTAssertEqual(SuggestionResolver.reviewItems(in: document).count, 1)
+    }
+
+    func testClampPastLinePrefix() {
+        XCTAssertEqual(ReviewAuthoring.clampPastLinePrefix(0, in: "2. Item text"), 3)
+        XCTAssertEqual(ReviewAuthoring.clampPastLinePrefix(0, in: "- item"), 2)
+        XCTAssertEqual(ReviewAuthoring.clampPastLinePrefix(2, in: "  - [x] task item"), 8)
+        XCTAssertEqual(ReviewAuthoring.clampPastLinePrefix(0, in: "> quoted text"), 2)
+        XCTAssertEqual(ReviewAuthoring.clampPastLinePrefix(5, in: "plain prose"), 5,
+                       "content positions pass through untouched")
+        // Second line of a list slice: clamp is line-local.
+        let slice = "- one\n- two"
+        XCTAssertEqual(ReviewAuthoring.clampPastLinePrefix(6, in: slice), 8)
+    }
+
 }

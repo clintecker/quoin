@@ -143,8 +143,91 @@ public enum ReviewAuthoring {
         let afterIDs = Set(afterMarks.compactMap(\.id))
         guard afterMarks.count == beforeMarks.count + added,
               beforeIDs.subtracting(afterIDs).isEmpty else { return nil }
+        // …and the document's STRUCTURE must survive: wrapping a list
+        // item's marker in `{==` erased the marker, restructured the list,
+        // and renumbered everything — an annotation that changes what the
+        // document IS, not just what it says (live report, 2026-07-15).
+        let beforeDoc = MarkdownConverter.parse(source)
+        let afterDoc = MarkdownConverter.parse(candidate)
+        guard structuralSignature(beforeDoc) == structuralSignature(afterDoc) else { return nil }
 
         return combined
+    }
+
+    /// Block-level shape of a document — kinds and container arity, ignoring
+    /// inline content (which the annotation legitimately changes) and any
+    /// trailing endmatter (which the annotation legitimately creates).
+    private static func structuralSignature(_ document: QuoinDocument) -> [String] {
+        func shape(_ block: Block) -> String {
+            switch block.kind {
+            case .paragraph: return "p"
+            case .heading(let level, _, _): return "h\(level)"
+            case .list(let items, let ordered, _):
+                return "list(\(items.count),\(ordered),[\(items.map { $0.blocks.map(shape).joined() }.joined(separator: "|"))])"
+            case .blockQuote(let children): return "q[\(children.map(shape).joined())]"
+            case .callout(_, let children): return "callout[\(children.map(shape).joined())]"
+            case .codeBlock: return "code"
+            case .mermaid: return "mermaid"
+            case .mathBlock: return "math"
+            case .table(_, let rows, _): return "table(\(rows.count))"
+            case .frontMatter: return "front"
+            case .reviewEndmatter: return "endmatter"
+            case .tableOfContents: return "toc"
+            case .thematicBreak: return "hr"
+            case .htmlBlock: return "html"
+            }
+        }
+        var shapes = document.blocks.map(shape)
+        if shapes.last == "endmatter" { shapes.removeLast() }
+        return shapes
+    }
+
+    /// When a selection starts inside a line's STRUCTURAL prefix (list
+    /// marker, task checkbox, quote `>`), annotating from there would erase
+    /// the structure. Returns the first CONTENT offset at or after
+    /// `position` on its line — a whole-item selection annotates the item's
+    /// text, marker excluded. UTF-16 offsets (the projection mapper's
+    /// currency).
+    public static func clampPastLinePrefix(_ position: Int, in slice: String) -> Int {
+        let chars = Array(slice.utf16)
+        guard position >= 0, position <= chars.count else { return position }
+        let newline = UInt16(UnicodeScalar("\n").value)
+        var lineStart = position
+        while lineStart > 0, chars[lineStart - 1] != newline { lineStart -= 1 }
+
+        var i = lineStart
+        func skip(_ scalar: Unicode.Scalar) -> Bool {
+            guard i < chars.count, chars[i] == UInt16(scalar.value) else { return false }
+            i += 1
+            return true
+        }
+        func skipSpaces() { while i < chars.count, chars[i] == UInt16(UnicodeScalar(" ").value) || chars[i] == UInt16(UnicodeScalar("\t").value) { i += 1 } }
+
+        skipSpaces()
+        // Quote prefixes, possibly stacked: `> > `
+        while skip(">") { skipSpaces() }
+        // List marker: -/*/+ or digits + ./) — must be followed by a space.
+        let checkpoint = i
+        if skip("-") || skip("*") || skip("+") {
+            if !skip(" ") { i = checkpoint }
+        } else {
+            var digits = 0
+            while i < chars.count, chars[i] >= UInt16(UnicodeScalar("0").value),
+                  chars[i] <= UInt16(UnicodeScalar("9").value) { i += 1; digits += 1 }
+            if digits > 0, digits <= 9, skip(".") || skip(")") {
+                if !skip(" ") { i = checkpoint }
+            } else {
+                i = checkpoint
+            }
+        }
+        skipSpaces()
+        // Task checkbox: `[ ] ` / `[x] `
+        if i + 3 <= chars.count, chars[i] == UInt16(UnicodeScalar("[").value),
+           i + 2 < chars.count, chars[i + 2] == UInt16(UnicodeScalar("]").value) {
+            i += 3
+            skipSpaces()
+        }
+        return max(position, min(i, chars.count))
     }
 
     /// Mark bodies live INSIDE an inline span: line breaks would change
