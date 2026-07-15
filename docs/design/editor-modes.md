@@ -1,283 +1,343 @@
-# Editor modes — a first-principles model for reveal, editing, and embeds
+# Editor modes — how Quoin shows and edits a block
 
-Status: **implemented** (phases 0–3 shipped 2026-07-14, commits
-fb4cdbe..e38ba5d; see `editor-modes-plan.md` for the as-built record,
-including the two recorded deviations). Owner: editor/render layer.
-This doc defines the *presentation* model that governs how a block is shown
-and edited, why the current implementation produces rendering overlaps, the
-prior art we're drawing on, and a staged, test-guarded path to the clean model.
+Quoin is a WYSIWYG markdown editor whose **source of truth is the markdown
+string** (plus the AST cmark-gfm parses from it), never an attributed string.
+What you see on screen is a **projection** of that source. Edits mutate the
+source; the renderer re-projects.
 
-It sits under the handoff/TRD in authority: where it conflicts with
-`docs/design/handoff.md`, the handoff wins. This doc is about the *machinery*
-behind the handoff's visuals, not the visuals themselves.
+That single choice creates one unavoidable duality: every element has a
+**rendered form** (what you read) and a **source form** (what you edit). A
+heading is either the large styled title *Introduction* or the literal
+`## Introduction`. A diagram is either a drawn figure or a `mermaid` fenced
+code block. The screen defaults to rendered but must let you edit source
+locally, right where the caret is.
 
----
-
-## 1. The irreducible tension
-
-Quoin's source of truth is the markdown string + AST. The editor is a
-**projection** of it. But a source-truth WYSIWYG editor has one unavoidable
-duality: **every element has a *rendered* form (what you read) and a *source*
-form (what you edit).** The screen must default to rendered but let you edit
-source locally, around the caret.
-
-"Modes" are not a feature we chose — they are the *mechanism that resolves this
-duality per element, per moment.* The design question is therefore:
-
-> **What is the minimal, complete description of an element's presentation
-> state, and what transitions connect those states?**
-
-Today that description does not exist as a single value. It is re-derived on the
-fly from `activeBlockID` + caret + block kind, scattered across four projection
-paths and five geometry consumers. That diffusion — not code blocks
-specifically — is the root problem.
+**"Modes" are not a feature — they are the mechanism that resolves this
+duality, per element, per moment.** This document defines that mechanism: the
+presentation model, caret-scoped syntax reveal for prose, the rendered↔source
+flip for embeds, and the side-panel live preview for diagrams and math. It sits
+below `docs/design/handoff.md` in authority; where they conflict, the handoff
+(the visual spec) wins. This is the machinery behind the handoff's visuals.
 
 ---
 
-## 2. The mode taxonomy (what we actually need to support)
+## 1. The projection model
 
-The whole space is small. A block is in exactly one **presentation state**:
+The document lives on disk as a plain `.md` file. Opening it parses the bytes
+into a `QuoinDocument` (an ordered list of blocks, each with a stable
+`BlockID`). The renderer projects that document into a single attributed string;
+TextKit 2 typesets it; a subclassed `NSTextView` draws block-level chrome behind
+the glyphs. Every keystroke edits the underlying source through
+`DocumentSession`, which re-parses the touched region and re-projects.
 
-- **Rendered** (default): formatted; delimiters hidden (1pt clear); embeds show
-  their drawn artifact (code canvas, diagram, typeset math, ruled table).
-- **Editing**, in one of three *content flavors*:
-  - **Prose** — markdown source; delimiters styled; inline spans reveal only
-    where the caret sits (paragraph, heading, list, quote, callout, table).
-  - **Verbatim** — raw source, zero markdown styling (code, HTML, front-matter).
-  - **Preview** — raw source **plus** a side-panel live artifact, last-good held
-    while the source is unparseable (mermaid, math).
+```mermaid
+flowchart LR
+  file[("document.md<br/>bytes on disk")]
+  ast["QuoinDocument<br/>blocks + AST"]
+  proj["AttributedRenderer<br/>projection"]
+  screen["TextKit 2 + NSTextView<br/>what you see"]
 
-**Always-on affordances** (independent of state): checkbox, quote gutter, list
-marker, heading level; interactive runs (task toggle, anchor jump, copy button,
-`‹/›` edit chip).
+  file -->|parse| ast
+  ast -->|project| proj
+  proj -->|typeset + draw| screen
+  screen -->|keystroke| edit["DocumentSession<br/>mutate source"]
+  edit -->|write + reparse| file
+```
 
-**Cross-cutting display filters** (orthogonal — they dim/scroll, never change
-which representation is shown): focus mode, typewriter, search highlight.
+Why this way, and not a rich-text model that keeps an attributed string as the
+truth?
 
-**Transitions** (the state machine):
-- **Activate** (rendered → editing): single click / caret-move into prose;
-  double-click an embed; type on a rendered block (replays the keystroke as
-  `pendingInsertion`); ⌘↩. Carries a `CaretHint` (`.rendered` vs `.source`).
-- **Deactivate** (editing → rendered): Escape, the `✓ done` chip, or clicking
-  away; restores the caret to the rendered position.
-- **Within editing**: caret move (may reveal/hide inline spans), keystroke.
+- **Byte-lossless round-trips.** Open → edit → save must leave untouched
+  regions byte-for-byte identical. The file *is* the document, so there is no
+  lossy import/export step to drift through. Your markdown stays yours.
+- **The file is portable and durable.** It opens in any editor, diffs cleanly in
+  git, and outlives Quoin. A collaborator or an agent can propose edits to the
+  same `.md` and you triage them — the review loop is byte-safe because the
+  substrate is bytes.
+- **Native rendering, no webview.** Math (via the Vinculum package), diagrams
+  (via MermaidKit), code, and tables are drawn with CoreText/CoreGraphics, not
+  HTML. There is zero JavaScript at runtime and nothing leaves the machine.
 
-**Invariants that constrain every state and transition** (from the handoff /
-CLAUDE.md): the caret's line must not move on a projection change; round-trip
-must be byte-lossless; revealed source is 1:1 with the file (hidden delimiters
-are 1pt clear text, never removed).
-
-That is the entire model: **Rendered + 3 editing flavors**, orthogonal
-overlays, a 3-transition state machine, under the viewport/round-trip
-invariants. Everything the editor does is a point in this grid.
-
----
-
-## 3. Why the current implementation is messy
-
-### 3.1 No single owner of "mode"
-
-Reveal state lives as `ReaderModel` fields (`activeBlockID`,
-`caretInActiveBlock`, `caretGeneration`); the *rendering* of that state is
-produced by **four** distinct paths across two modules; the live preview is a
-**fifth**, out-of-band channel. Nothing owns "what mode is this block in," so:
-
-- **Four projection paths, each re-deriving mode + offsets:**
-  1. **Full render** (`AttributedRenderer.render`) — rebuilds the whole
-     attributed string; the fallback when any patch declines.
-  2. **Activation flip patch** (`activationFlipUpdate`) — ≤2 storage patches on
-     activate/deactivate; recomputes `blockRanges` + `activeEditableRange`.
-  3. **Per-keystroke `ActiveBlockRenderPatch`** (`makeActiveBlockRenderPatch`) —
-     re-renders just the active fragment; shifts all ranges by one delta.
-  4. **Caret-move restyle** (`ReaderCoordinator.restyleActiveBlock`) — runs *in
-     the view*, **bypasses the projection entirely**, rebuilds a
-     `MarkdownSourceStyler` that must be hand-configured (via a single
-     `revealVerbatimCode` bool) to match what the renderer did.
-- **Dead accommodation nobody removed:** the inline live-preview offset — the
-  "`editableRange` ≠ block start; all paths must offset through it" invariant
-  CLAUDE.md warns about — is **unreachable today**. The preview moved to a side
-  panel, so `editableRange.location` is *always 0*. The three-path offset
-  arithmetic survives only because no owner exists to notice it's dead.
-
-### 3.2 No single authority for a block's geometry
-
-The overlap you see is **not** stacked decorations. `blockDecoration` is a
-single attribute key — a character carries exactly one `BlockDecoration`, so an
-open code block draws the accent `editingFrame` *instead of* the dark
-`codeCanvas`, never both. The overlap is that **five consumers each measure the
-open block's geometry independently, with different layout engines, at different
-instants**, reconciled only by best-effort async passes:
-
-1. the **editing-frame box** — live TextKit fragment frames at *draw* time;
-2. the **revealed source runs** — TextKit at *splice* time;
-3. the **frozen flip snapshot** — a `cacheDisplay` bitmap of the *old*
-   dark-canvas block, captured *before* the splice;
-4. the **flip capture gate** — an `NSAttributedString.boundingRect` *estimate*
-   (a different engine than TextKit 2). Review note: this authority is
-   **cosmetic-only** — the slide delta itself is TextKit-measured on both
-   sides; a wrong gate answer costs a missing/superfluous animation and
-   cannot produce overlap;
-5. the **preview panel** — derived from the editing-frame rect.
-
-### 3.3 The concrete seams (grounded failure modes)
-
-- **T1 — separator/clamp math duplicated** across the full, flip, and
-  per-keystroke paths; disagree by a line → ranges drift.
-- **T3 — the caret-move restyle re-implements styling outside the renderer**;
-  the single largest "two paths compute the same projection independently" seam.
-- **T4 — preview geometry split**: the model reserves horizontal room via a
-  `tailIndent` written into source paragraphs; the view positions the panel from
-  the drawn frame rect. Two computations of one layout, agreeing only by shared
-  constants.
-- **Seam 1 (primary overlap) — decorations drawn against estimated geometry.**
-  After a reveal/keystroke flips delimiter fonts (a reflow), the first draw can
-  read pre-settle geometry. Precisely (review-sharpened): run *ranges* are
-  never stale (rebuilt from live attributes or shifted arithmetically); what's
-  stale is fragment **y-origins derived from unsettled *preceding* content** —
-  `.ensuresLayout` forces layout of the enumerated run's own fragments only,
-  and a layout forced mid-draw cannot expand the already-committed dirty rect,
-  so geometry that settles after the draw leaves painted boxes behind with no
-  repaint scheduled. The per-keystroke path (`noteStorageEdit`) settles more
-  weakly than the spliced path, and above 200k chars eager layout is skipped
-  entirely.
-- **T1 is live, not latent (review finding — separator-clamp drift).** The
-  per-keystroke patch guards with a *character*-level `separatorSignature`,
-  but the separator's clamped-vs-normal *style* depends on whether the slice
-  ends with a newline — which typing changes. Typing a trailing newline into a
-  revealed block yields a phantom empty paragraph until the next flip.
-- **Two owners of caret truth (review finding — stale-caret rerender).** Plain
-  caret moves update only the coordinator's copy; the model's
-  `caretInActiveBlock` refreshes only on activation/edit-echo. A
-  model-initiated rerender while a block is open (async image decode) styles
-  the reveal with the activation-time caret — the revealed span snaps back.
-- **Seam 2 — the flip crossfade paints the old dark canvas over the new frame.**
-  Activation is a content swap (dark canvas → stroked frame). The frozen
-  old-block slice **does not resize**; if revealed source is taller, its
-  dark-canvas pixels overlap the new frame's lower rows for the ~170 ms fade.
-- **Seam 5 — the `✓ done` chip is painted in `drawBackground` (behind glyphs)**,
-  so a long unwrapped code line can paint over it; its `x` derives from a
-  container-width `maxX`, so a mid-reflow width read mislocates both the chip
-  and its hit target.
+Because the projection is a pure function of source plus a little activation
+state, the same input always yields the same screen — the property that lets
+Quoin patch one block on a keystroke and know it matches a full re-render.
 
 ---
 
-## 4. Prior art & lineage
+## 2. Presentation states
 
-The target model is the mainstream architecture of modern structured editors,
-adapted to TextKit 2 / AppKit. We are catching up, not inventing.
+A block is in exactly one **presentation state** at any moment. The whole space
+is small:
 
-- **CodeMirror 6** — immutable `EditorState` vs `EditorView`, one-way. All view
-  adornments are **Decorations** (mark / widget / replace / line) supplied as a
-  **pure function of state** in an immutable `RangeSet`, never mixed into the
-  document. Its **measure phase** (`requestMeasure`) batches *all* layout reads
-  separately from writes — the direct cure for our Seam 1. Highest-ROI reference.
-- **Obsidian "Live Preview"** is built on CM6 and implements *our exact reveal
-  UX*: rendered elements are replace-widget decorations; when the selection
-  intersects the range, the widget drops to reveal source. The canonical name
-  for reveal-on-cursor is **"conceal"** (Vim `conceal` + `concealcursor`).
-- **ProseMirror** — tree document, changes as `Transaction`→`Step`, `Decoration`s
-  as a separate layer, `NodeView`s for custom-rendered nodes (our embeds); the
-  view is a pure projection reconciled via diff+patch.
-- **Zed `DisplayMap`** — a **stack of pure coordinate transforms**
-  (buffer → folds → soft-wrap → block/widget → display). Our `EditMapping`
-  (source↔rendered, hidden-delimiter accounting) is an ad-hoc single-purpose
-  version; generalizing it into a composed transform stack is Principle 3.
-- **Position mapping / `ChangeSet`** (ProseMirror `Mapping`, CM6 `ChangeSet`) —
-  never recompute absolute positions; describe each edit as a mapping and
-  *compose* them. The systematic fix for T1/T6 offset drift.
-- **TextKit 2 native widgets** — `NSTextAttachmentViewProvider` +
-  `NSTextLayoutFragment` + `NSTextViewportLayoutController` are the
-  Apple-blessed inline-live-view model. Our embeds are drawn manually in
-  `drawBackground`; for the live-preview panel specifically, an attachment view
-  provider would let TextKit own the geometry and collapse authorities #1/#5.
-  (Tradeoff: view providers are heavier/less controllable than drawn ink, which
-  is why the codebase went custom for the *decorations* — keep drawn ink for
-  passive chrome, consider providers only for the live artifact.)
+| State | What it shows | Applies to |
+|---|---|---|
+| **Rendered** (default) | Formatted text; delimiters hidden; embeds show their drawn artifact | Every block, when not being edited |
+| **Editing · prose** | Markdown source, styled; inline delimiters reveal only around the caret | Paragraph, heading, list, quote, callout, table, thematic break |
+| **Editing · verbatim** | Raw source, zero markdown styling | Code, HTML, front matter, review end-matter |
+| **Editing · preview** | Raw source **plus** a side-panel live artifact (last-good held while unparseable) | Mermaid, math |
 
-**The three moves every one of these systems shares:** (1) state is immutable
-and the view is a pure function of it; (2) all adornments live in a decoration
-layer mapped across changes, never in the document; (3) layout reads are batched
-into one measure phase, never interleaved with writes.
+Exactly one block can be in an editing state at a time — one active block, one
+caret. That is an invariant the model relies on, not a coincidence.
 
----
+Two things are **orthogonal** to this state and never change *which*
+representation is shown:
 
-## 5. Target architecture — four principles
+- **Always-on affordances** ride along regardless of state: the checkbox, the
+  blockquote gutter, the list marker, the heading level, and interactive runs
+  (task toggle, heading-anchor jump, code copy button, the `‹/› edit` chip).
+- **Display filters** dim or scroll but never swap representation: focus mode,
+  typewriter scrolling, search highlight.
 
-1. **One `BlockPresentation`, computed once.** A pure function
-   `present(document, activeBlockID, caret) → [BlockID: BlockPresentation]`
-   where `BlockPresentation` is `.rendered` or
-   `.editing(source, flavor: .prose | .verbatim | .preview(lastGood))`. The
-   renderer, the decorator, the chrome, and the transition all *read* this one
-   value — no consumer re-derives "is this block editing." Dead states (the
-   inline-preview offset) become states nothing constructs, and drop out.
-2. **One `BlockLayout` geometry snapshot.** After each projection applies and
-   TextKit settles, compute one `[BlockID: (fragmentUnion, lineRects,
-   containerWidth)]` in a single measure pass. Every consumer — canvas, editing
-   frame, done chip, preview panel, flip — reads from it. If it's stale,
-   everything is *consistently* stale (looks fine) instead of *partially* stale
-   (overlap). The editing frame + done chip merge into one "editing chrome"
-   decoration that owns the block rect and derives both border and chip from it.
-3. **One incremental projector.** A block-diff (reuse `BlockDiff.between`) that
-   re-realizes only changed blocks; the separator/clamp math lives in one
-   joiner; the caret-move restyle folds back in (kill path #4) as "re-project
-   this one block"; positions move through one composed mapping, not
-   per-path recomputation; the dead `editableRange`-offset arithmetic is deleted.
-4. **Transitions animate settled endpoints.** Capture old and new rects from the
-   *same* engine (TextKit) — never the `boundingRect` estimate; the frozen
-   snapshot resizes/clips to the new rect during the fade. Decorations only ever
-   read settled geometry, which makes the `invalidateDecorations` "second draw"
-   unnecessary rather than load-bearing.
+### The type that owns it
+
+The state is a real value, not something re-derived ad hoc at each draw. One
+pure function computes it, and every consumer reads the same answer:
+
+```
+presentation(for: document, activeBlockID:) -> PresentationMap
+```
+
+- `EditingFlavor.of(kind)` is the single table mapping a block kind to
+  `.prose`, `.verbatim`, or `.preview`. Every reveal decision consults it,
+  never the raw kind.
+- `BlockPresentation` is `.rendered` or
+  `.editing(flavor:, chrome:)`, where `chrome` marks the embed set (plus front
+  matter) — the blocks whose open state draws an accent frame and a `✓ done`
+  chip. Prose reveals are deliberately chrome-free: for prose, the caret *is*
+  the mode, so no affordance is needed.
+- `PresentationMap` is compact by construction — one active block means one
+  non-`.rendered` entry — and the function is pure, so the model (on a
+  projection change) and the view (on a caret-move restyle) compute the same
+  presentation and cannot disagree.
+
+The renderer, the decoration layer, the editing chrome, and the flip transition
+all *read* this one value. No consumer re-answers "is this block editing?"
 
 ---
 
-## 6. Staged plan → see `editor-modes-plan.md`
+## 3. Syntax reveal for prose
 
-The detailed, file-level implementation plan lives in
-**`docs/design/editor-modes-plan.md`** (post-review). Summary of the review's
-per-stage verdicts, which the plan incorporates:
+Click into a paragraph, or move the caret into one, and it activates as prose.
+The block re-renders as its **literal markdown source**, styled so the content
+still looks close to final while the delimiters obey a caret-scoped rule:
 
-- **Phase 0 (Stage 0 amended)** — settle in `viewWillDraw` (kills the
-  remaining one-stale-frame and the `setFrameSize` hole); >200k caret-pin
-  test; fix the separator-clamp drift and stale-caret rerender bugs.
-- **Phase 1 (`BlockPresentation` owner)** — with the **view-owned caret
-  contract** (caret is a parameter of the styler pass, never of the mode; one
-  function, two call sites) and the purity precursor (evict
-  `activePreviewBox` / `revealVerbatimBox` from the renderer first).
-- **Phase 2 (geometry snapshot)** — **viewport-scoped** (document-wide would
-  reinstate the lay-out-the-whole-file regression) and **double-buffered**
-  (the flip needs the pre-splice endpoint). Merged editing chrome + the
-  re-scoped accessibility work.
-- **Phase 3 (one projector)** — hot-path output is **storage patches**, never
-  a materialized full string (that's the actual perf property); bail-to-full
-  escape hatch stays; caret-move restyle stays synchronous view-side; dead
-  offset machinery + stale comments + CLAUDE.md's outdated embed paragraph
-  deleted; IME/marked-text gate added; equivalence property test in CI.
-- **Stage 4 (attachment providers) — dropped.** Providers would resurrect the
-  offset machinery Phase 3 deletes and break the 1:1 revealed-source
-  invariant; the one real benefit (accessibility) is re-scoped into Phase 2's
-  chrome AX element.
+- The inline span **containing the caret** shows its delimiters at 35% ink in a
+  mono font — `**bold**` shows its asterisks only while you are inside that
+  bold run.
+- **Every other span's** delimiters collapse to invisible.
+- Structural line prefixes (`>`, `- [ ]`, list markers, heading `#`s) stay
+  faded-visible the whole time — they orient you without shouting.
+
+This is a Raskin-clean quasimode: the caret is the mode selector, there is no
+chrome, and prose stays instant with no animation.
+
+**The crucial constraint: nothing is inserted or removed.** Every character of
+the source is present exactly once. Hidden delimiters are not deleted — they are
+rendered as **1pt clear text**. This is what keeps caret and edit mapping 1:1
+with the file: when you type at rendered offset *n*, the source offset it maps
+to is unambiguous because the projected string and the source string share a
+stable, invertible alignment.
+
+```mermaid
+flowchart TD
+  subgraph Rendered["Rendered (caret outside)"]
+    r["The <b>quick</b> brown fox"]
+  end
+  subgraph Editing["Editing · prose (caret in 'quick')"]
+    e["The <b>**quick**</b> brown fox<br/><i>** shown at 35% ink; move caret away → 1pt clear</i>"]
+  end
+  Rendered -->|click / caret enters| Editing
+  Editing -->|caret leaves block| Rendered
+```
+
+Adding a new inline span type therefore touches two coordinated places: a
+renderer case (how it projects) and a styler pass in `MarkdownSourceStyler` (how
+its source reveals), with the delimiter registered in the claimed-ranges
+ordering so overlapping markers resolve deterministically (`**` before `*`,
+links before emphasis).
+
+Verbatim blocks — code, HTML, front matter — reveal the same way structurally
+but skip markdown styling entirely: their markup *is* the content, so the source
+shows in the code font with no span collapse. (Collapsing an HTML block's tags
+would hide the block; treating `**not bold**` inside code as emphasis would
+hijack it. The flavor table prevents both.)
 
 ---
 
-## 7. Spec gaps the review surfaced (owned by the plan's phases)
+## 4. The rendered↔source flip for embeds
 
-- **Undo/redo × mode transitions** (Phase 1.5): Escape's fence-heal is an
-  undoable edit; the state machine gains an undo transition row (active block
-  vanishes ⇒ deactivate to rendered, no flip, caret at the undo's location).
-- **IME / marked text** (Phase 3.5): fragment replacement freezes during
-  composition; `pendingInsertion` replay suppressed while composing.
-- **Accessibility** (Phase 2.3): the editing chrome becomes a real AX button;
-  representation swaps are announced.
-- **RTL/bidi**: explicitly **LTR-only for now**; Phase 2 centralizes chrome
-  geometry so a future RTL pass is single-site.
-- **Preview panel interaction**: pointer-transparent, no keyboard access — a
-  deliberate choice, now stated.
-- **One active block + one caret is an invariant, not an accident**
-  (multi-caret is out of scope by design).
+Embeds — code blocks, diagrams, math, tables, front matter — are *drawn
+artifacts*, not text you would casually click into. So they don't auto-reveal on
+caret transit. You open one deliberately: **double-click it**, click its
+`‹/› edit` chip, or press **⌘↩** with the caret on it. Typing on a rendered
+embed also opens it and replays the keystroke, so a character is never dropped.
 
-## 8. Non-goals (this design)
+When an embed opens, the artifact **stays exactly where it is** and its markdown
+source unfolds beneath it, caret placed at the point you aimed at. An accent
+frame and a `✓ done` chip mark the open block. You close it with **Escape**, the
+**Done** chip, **⌘↩** again, or by clicking away — and the artifact simply
+remains, updated, never having moved a pixel. Closing always commits; every
+keystroke is already in the file, so backing out is ⌘Z's job, not the exit's.
 
-New editing *capabilities* (multi-block selection, block drag beyond today,
-whole-document raw-source view) are out of scope — this is about making the
-existing mode set correct and clean. Diagram/math *coverage* is tracked
-separately (`docs/history/rendering-roadmap.md`).
+```mermaid
+sequenceDiagram
+  participant U as You
+  participant V as Reader view
+  participant M as Model / session
+  participant D as document.md
+
+  Note over V: block shown RENDERED (drawn artifact)
+  U->>V: double-click / ‹/› edit / ⌘↩
+  V->>M: activate(blockID, CaretHint)
+  M->>V: re-project block as EDITING source
+  Note over V: accent frame + ✓ done chip;<br/>artifact stays put, source unfolds below
+  U->>V: type
+  V->>M: mutate source at mapped offset
+  M->>D: live-commit + reparse
+  M->>V: re-render fragment (+ live preview)
+  U->>V: Escape / Done / ⌘↩ / click away
+  V->>M: deactivate → caret to rendered image
+  Note over V: back to RENDERED, updated, unmoved
+```
+
+Two details make the flip feel like one continuous change instead of a jump:
+
+- **The `✓ done` chip and accent frame are a decoration, not a text run.** They
+  are drawn ink (with their own hit-testing and tooltip) in the same layer as
+  the code canvas and diagram frame — because inserting affordance *characters*
+  into the range would break the revealed source's 1:1 mapping with the file.
+- **Motion is cosmetic by construction.** The real layout applies instantly
+  (splice → pin caret line → settle). A `FlipTransitionController` freezes the
+  pre-splice pixels into an overlay, then dismantles it in slices that converge
+  on the true geometry: the old block crossfades out over the new one, and
+  content *below* the block slides its real reflow distance so the eye can track
+  what moved. Content above the pinned caret line never moves, so it is never
+  covered. Nothing here writes to storage or scroll position; a wrong animation
+  costs a frame, never correctness. Reduce Motion collapses it to a short
+  crossfade, and a watchdog removes the overlay unconditionally.
+
+The `CaretHint` carried into activation is typed by coordinate space:
+`.rendered(n)` for prose (aligned to source through the edit mapping) and
+`.source(n)` for embeds (whose body maps 1:1 into the source slice, used
+verbatim). The distinction is load-bearing — feeding a source offset through the
+rendered mapping lands the caret a few characters early.
+
+---
+
+## 5. The side-panel live preview
+
+For the two embeds whose source is unreadable as its own output — **mermaid
+diagrams** and **math** — revealing raw source alone would hide the very thing
+you are editing. So editing flavor `.preview` opens the source *and* keeps a
+live rendered artifact beside it, in a side panel anchored at the editing
+frame's right edge.
+
+```mermaid
+flowchart LR
+  subgraph Open["Editing · preview (a diagram open)"]
+    direction LR
+    src["```mermaid<br/>flowchart LR<br/>&nbsp;&nbsp;A --> B<br/>```<br/><i>raw source, editable</i>"]
+    panel["live render<br/>(last-good held)"]
+    src --- panel
+  end
+```
+
+The panel's behavior:
+
+- **Live, not debounced.** The native engines render in milliseconds, so every
+  keystroke re-renders. Latency is the product; the morphing artifact is the
+  feedback.
+- **Never flickers.** While mid-edit source is unparseable, the **last good
+  render is held** — never blank, never flashing. That retention is a
+  `HeldPreview` value owned by the model (one entry: one active block at a time)
+  and threaded through render passes as explicit `inout` state, so the renderer
+  keeps no hidden mutable state. When a different block activates, the model
+  resets it, so a stale artifact can never appear over foreign source.
+- **Patient about errors.** A "Preview paused" capsule badge appears only after
+  a grace period of typing-idle-while-invalid; the grace timer resets on every
+  keystroke, so mid-word transits never flash a warning. Recovery clears the
+  moment a fixing keystroke lands. The badge overlays the panel corner and never
+  steals image height; the held artifact stays full-opacity, because a dimmed
+  diagram reads as broken. While paused is admitted, the editing frame's stroke
+  turns amber — ambient liveness at the edge of where you are looking.
+- **Presentation only.** The panel is click-transparent; the caret and all
+  editing stay in the source. It wears the diagram's own chrome (hairline,
+  radius 8) because it *is* the artifact, not new UI. Its image scale locks per
+  session so the node you are watching does not drift as the bounding box
+  changes per keystroke. Its entire motion vocabulary is dissolve
+  (`PreviewPanelChoreographer` decides each swap); slide stays the text's verb.
+
+The revealed source reserves matching horizontal room for the panel via a tail
+indent on its paragraphs, so text and panel share one layout. The preview lives
+*beside* the source, not inline — the whole-fragment patch on each keystroke
+refreshes the panel without disturbing the 1:1 source below it.
+
+---
+
+## 6. The invariants every state obeys
+
+Every presentation state and transition is constrained by a small set of
+non-negotiable rules. They are why the model is shaped the way it is; the full
+rule-book lives in `docs/reference/invariants.md`.
+
+```mermaid
+flowchart TD
+  I1["Caret line never moves<br/>on a projection change"]
+  I2["Round-trip is byte-lossless<br/>for untouched regions"]
+  I3["Revealed source is 1:1 with the file<br/>hidden delimiters = 1pt clear, never removed"]
+  I4["One active block, one caret"]
+
+  I1 --> V["Viewport settle before every draw:<br/>the caret's line holds its screen position;<br/>scroll only when the caret leaves the viewport"]
+  I2 --> S["File is the source of truth;<br/>edits are atomic byte-safe splices"]
+  I3 --> M["Caret + edit mapping stay invertible;<br/>affordances are drawn ink, never characters"]
+  I4 --> P["PresentationMap has one non-.rendered entry"]
+```
+
+- **The caret line never moves.** On *any* projection change — reveal, close,
+  keystroke, for every block type — the line the caret or click is on must hold
+  its position on screen. Edit mode keeps the block's vertical skeleton (a
+  per-line style transplant), so revealing source adds no vertical jump. Scroll
+  only happens when the caret leaves the viewport, and then minimally. Enforced
+  by `RevealFidelityTests` and `CaretLineAnchorTests`.
+- **Byte-lossless round-trips.** Open → edit → save leaves untouched regions
+  identical. This is what makes the file a trustworthy substrate for the review
+  loop and for git.
+- **1:1 revealed source.** Hidden delimiters are 1pt clear text, never deleted,
+  so the projected string and the source string stay invertible. Edit mapping
+  depends on it.
+- **Patch/full-render equivalence.** A per-keystroke storage patch must produce
+  the same result a full re-render would. Enforced by
+  `ProjectorEquivalenceTests`; extend its interaction script when touching any
+  projection path.
+
+When you add a block type or a projection path, extend `RevealFidelityTests`,
+`CaretLineAnchorTests`, and `ProjectorEquivalenceTests` together — the model
+stays correct only because these three keep it honest.
+
+---
+
+## 7. How the pieces fit in code
+
+A developer map of where each concern lives:
+
+| Concern | Where |
+|---|---|
+| The presentation state + the single derivation | `BlockPresentation.swift` — `EditingFlavor.of`, `BlockPresentation`, `presentation(for:activeBlockID:)` |
+| Projecting the whole document | `AttributedRenderer.swift` — `render`, plus `renderEditableSourceFragment` for the open block |
+| Caret-scoped source styling | `MarkdownSourceStyler.swift` — the `.prose` reveal passes |
+| Block-level chrome (canvas, frame, quote rule, `✓ done` chip) | `BlockDecoration.swift`, drawn in `QuoinTextView.drawBackground(in:)` |
+| Activation, caret hints, escape restore, interactive links | `ReaderCoordinator.swift` |
+| The embed flip motion | `FlipTransitionController.swift` (cosmetic overlay; real layout is instant) |
+| The live preview panel + its swap decisions | `PreviewPanelView.swift`, `PreviewPanelChoreographer.swift` |
+
+The through-line: **state is a pure function of source plus activation; the view
+is a pure projection of that state; adornments live in a decoration layer mapped
+across changes, never mixed into the document; and layout reads happen in one
+settled measure pass, never interleaved with writes.** These are the moves every
+mature structured editor (CodeMirror, ProseMirror, Zed's display map) shares,
+adapted here to TextKit 2 and AppKit.
+
+For the interaction design behind embed editing — chip placement, keyboard
+grammar, the motion budget — see `docs/design/embed-editing-ux.md`. For the
+contributor-level machinery map, see `docs/reference/architecture.md`; for the
+product-level feature list, see `docs/PRODUCT.md` and `docs/guide/features.md`.
