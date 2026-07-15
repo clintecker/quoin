@@ -329,6 +329,10 @@ struct ReaderScreen: View {
                 annotationCommand = .highlight
                 annotationGeneration += 1
             }
+            .onReceive(NotificationCenter.default.publisher(for: AppDelegate.toggleSuggestModeNotification)) { _ in
+                guard isKeyWindow else { return }
+                model.isSuggestMode.toggle()
+            }
             .onChange(of: model.resolutionFlashGeneration) {
                 guard let offset = model.resolutionFlashOffset else { return }
                 flashSuggestionOffset = offset
@@ -712,6 +716,18 @@ struct ReaderScreen: View {
                     .help("Jump to a section in the current path")
                 }
                 Spacer()
+                // Review Mode must be LOUD (design §3.6): while typing
+                // becomes suggestions, the status bar says so in accent.
+                if model.isSuggestMode {
+                    Text("SUGGESTING")
+                        .font(.system(size: 9, weight: .semibold))
+                        .kerning(0.5)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Color.accentColor, in: Capsule())
+                        .help("Typing becomes suggestions — Format ▸ Review ▸ Suggest Edits (⌃⌘R) to turn off")
+                }
                 // Review counts (suggestions design §3.5): accent, mono,
                 // only while unresolved marks exist.
                 if reviewCounts.suggestions + reviewCounts.comments > 0 {

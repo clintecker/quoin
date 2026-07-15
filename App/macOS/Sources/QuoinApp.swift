@@ -301,6 +301,9 @@ private struct FormatCommands: Commands {
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Suggest Deletion") { post(AppDelegate.suggestDeletionNotification) }
                 Button("Highlight for Review") { post(AppDelegate.reviewHighlightNotification) }
+                Divider()
+                Button("Suggest Edits") { post(AppDelegate.toggleSuggestModeNotification) }
+                    .keyboardShortcut("r", modifiers: [.command, .control])
             }
             .disabled(hasDocument != true)
         }
@@ -350,6 +353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let suggestReplacementNotification = Notification.Name("quoin.review.suggestReplacement")
     static let suggestDeletionNotification = Notification.Name("quoin.review.suggestDeletion")
     static let reviewHighlightNotification = Notification.Name("quoin.review.highlight")
+    static let toggleSuggestModeNotification = Notification.Name("quoin.review.toggleSuggestMode")
 
     /// ⌘Q inside the autosave debounce window used to drop the last
     /// keystrokes — drain every live session before the process dies.

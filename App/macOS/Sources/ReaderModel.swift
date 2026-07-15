@@ -459,11 +459,46 @@ final class ReaderModel {
     /// within the active block's source slice. `caretDelta` (UTF-8 from the
     /// edit start) overrides the landing spot for smart pairs and format
     /// commands.
+    /// Review Mode (S3b): while ON, ordinary typing becomes suggestion
+    /// marks through SuggestTransform. Per-model (v1) — flipping it in one
+    /// window flips it for that document everywhere.
+    var isSuggestMode = false
+
     func applyEdit(relativeRange: ByteRange, replacement: String, caretDelta: Int? = nil) {
         guard let session,
               let activeBlockID,
               let block = document.blocks.first(where: { $0.id == activeBlockID })
         else { return }
+
+        var relativeRange = relativeRange
+        var replacement = replacement
+        var caretDelta = caretDelta
+        if isSuggestMode {
+            // Marks only live in prose containers (headings and embeds are
+            // documented v1 degradations) — and a refused transform BEEPS,
+            // never silently applies a real edit in review mode.
+            let proseKind: Bool
+            switch block.kind {
+            case .paragraph, .list, .blockQuote, .callout: proseKind = true
+            default: proseKind = false
+            }
+            guard proseKind, let slice = document.source.substring(in: block.range) else {
+                NSSound.beep()
+                return
+            }
+            switch SuggestTransform.outcome(
+                relativeRange: relativeRange, replacement: replacement, in: slice) {
+            case .plain:
+                break
+            case .transformed(let newRange, let newReplacement, let newCaret):
+                relativeRange = newRange
+                replacement = newReplacement
+                caretDelta = newCaret
+            case .refused:
+                NSSound.beep()
+                return
+            }
+        }
 
         let absolute = ByteRange(
             offset: block.range.offset + relativeRange.offset,
