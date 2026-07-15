@@ -127,10 +127,21 @@ designs:
 Interim Linux reality: the CLI + `$EDITOR` + `quoin export html` opened
 in a browser. Less romantic, shippable in Phase 1.
 
-## L2 — SVG scene writers (unchanged, upstream)
+## L2 — SVG scene writers (unchanged, upstream) + Silica raster option
 
 Platform-free scene IR → SVG strings in MermaidKit/Vinculum unlocks
 full-fidelity export everywhere. Enhancement issues at phase start.
+
+**Silica (PureSwift) evaluation queued (#84):** a maintained (v3.0.0,
+2026-07) MIT CoreGraphics implementation over Cairo/FreeType on Linux.
+Because both layout engines already take injected text measurers, a
+Silica-backed renderer + FreeType measurer could rasterize diagrams and
+math on Linux with the SAME geometry as the Mac — PNG export and serve
+thumbnails. Posture: optional products UPSTREAM only (never a Quoin-app
+dependency; system libs acceptable in CLI/server contexts).
+Complementary to SVG, which stays the zero-dependency path — and either
+way Linux needs a real text MEASURER, which Silica's font stack could
+supply for both.
 
 ## Sequencing (post-debate consensus, all five squads)
 
