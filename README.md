@@ -27,7 +27,11 @@ through opening a library and making a first edit.
 A *quoin* is the wedge a letterpress printer uses to lock type into the
 chase — the small, precise tool that makes the whole page hold.
 
-![Quoin rendering a document](docs/images/hero.png)
+Quoin editing a real Markdown document — the library sidebar, a rendered
+document with a front-matter chip and headings, the live outline, and the
+floating format pill, all native:
+
+![Quoin editing a Markdown document, showing the sidebar, rendered body, outline panel, and format pill](docs/images/hero.png)
 
 ---
 
@@ -82,6 +86,10 @@ sequenceDiagram
 | Highlight | `{==marked==}` | accent pill |
 
 Design + rationale: [`docs/design/suggestions.md`](docs/design/suggestions.md).
+
+A spec under review: tracked changes render inline in the prose (strike-through
+deletions, green insertions, a highlighted comment anchor), while the Review
+inspector on the right lists each mark as a card with Accept / Reject / Dismiss:
 
 ![Review inspector cards beside a marked-up document — suggestion and comment cards with author, timestamp, and Accept / Reject / Dismiss, plus the Suggesting status chip that marks Review Mode](docs/images/review-panel.png)
 
@@ -160,7 +168,10 @@ command* that isn't typeset — legible, not a shrug. Pathological input
 (10k-deep nesting, unclosed everything) parses to *something* without crashing;
 the torture suite keeps it that way.
 
-![Math and diagrams rendering natively side by side in one viewport](docs/images/native-engines.png)
+Inline and display LaTeX and a Mermaid flowchart, all typeset natively in the
+same document — Vinculum draws the math, MermaidKit the diagram:
+
+![Inline and display math beside a Mermaid flowchart, all rendered natively in one document viewport](docs/images/native-engines.png)
 
 ---
 
@@ -214,6 +225,10 @@ A scannable tour; the full walkthrough is in
 | Raw HTML blocks | 🟡 | shown as a labelled source card (no HTML engine, by design) |
 | Local images | ✅ | async decode at display size; drag-and-drop copies into `assets/` |
 | Remote images | 🟡 | placeholder by default (local-only policy) |
+
+Rich blocks — callouts, tables, task lists, and code — rendered natively:
+
+![Callouts, a GFM table, task lists, and a highlighted span rendered natively](docs/images/gallery-blocks.png)
 
 ### Editor & app
 
@@ -283,7 +298,10 @@ docs: [COVERAGE.md](https://github.com/clintecker/Vinculum/blob/main/docs/COVERA
 and [COMMANDS.md](https://github.com/clintecker/Vinculum/blob/main/docs/COMMANDS.md).
 Unsupported commands fall back to a named source card.
 
-![Native math typesetting](docs/images/gallery-math.png)
+A gallery of Vinculum's typesetting — fractions, integrals with limits, big
+operators, radicals, auto-sized fences, and aligned/matrix environments:
+
+![A gallery of LaTeX math rendered natively by Vinculum — fractions, integrals, matrices, and aligned equations](docs/images/gallery-math.png)
 
 ## Diagrams (Mermaid)
 
@@ -299,9 +317,10 @@ MermaidKit's repository is the source of truth for the per-type support
 matrix — its `Fixtures/diagrams/` corpus and CI gallery — so the list can't
 quietly drift. Unsupported diagram types fall back to a named source card.
 
-![Native diagrams](docs/images/gallery-diagrams.png)
+A gallery of flowcharts, sequence, state, class, and ER diagrams, all drawn
+natively by MermaidKit — no browser, no Mermaid.js:
 
-![Blocks, callouts, and tables](docs/images/gallery-blocks.png)
+![A gallery of Mermaid diagram types rendered natively — flowchart, sequence, state, class, and entity-relationship](docs/images/gallery-diagrams.png)
 
 ## Screenshots
 
