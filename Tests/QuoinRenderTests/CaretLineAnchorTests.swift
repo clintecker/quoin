@@ -211,6 +211,89 @@ final class CaretLineAnchorTests: XCTestCase {
         XCTAssertGreaterThan(after, 0)
         XCTAssertLessThan(after, 400, "off-screen caret must come into view")
     }
+
+    // MARK: - Width-reflow anchoring (#65)
+
+    /// Shared harness: long document in a 600pt scroll view, scrolled to
+    /// paragraph 400. Returns (textView, coordinator, storage offset of
+    /// paragraph 400).
+    private func widthHarness() throws -> (QuoinTextView, MarkdownReaderView.Coordinator, Int) {
+        var source = "# Wide\n\n"
+        for i in 0..<800 {
+            source += "Paragraph \(i) with enough filler words to wrap once or twice at six hundred points and differently at narrower widths.\n\n"
+        }
+        let document = MarkdownConverter.parse(source)
+        let renderer = AttributedRenderer()
+        var cache: [BlockID: NSAttributedString] = [:]
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+
+        let contentStorage = NSTextContentStorage()
+        let layoutManager = NSTextLayoutManager()
+        contentStorage.addTextLayoutManager(layoutManager)
+        let container = NSTextContainer(size: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layoutManager.textContainer = container
+        let textView = QuoinTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 0), textContainer: container)
+        textView.isVerticallyResizable = true
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        scroll.documentView = textView
+        let storage = try XCTUnwrap(textView.textContentStorage?.textStorage)
+        storage.setAttributedString(reading.attributed)
+        textView.sizeToFit()
+
+        let view = MarkdownReaderView(rendered: RenderedDocument(
+            attributed: reading.attributed, blockRanges: reading.blockRanges))
+        let coordinator = MarkdownReaderView.Coordinator(parent: view)
+        coordinator.textView = textView
+
+        let target = (storage.string as NSString).range(of: "Paragraph 400 ").location
+        XCTAssertNotEqual(target, NSNotFound)
+        coordinator.scrollBlockTop(NSRange(location: target, length: 10), toScreenY: 120, in: textView)
+        textView.viewWillDraw() // settled baseline
+        return (textView, coordinator, target)
+    }
+
+    func testWidthChangePreservesTheCaretLine() throws {
+        let (textView, coordinator, target) = try widthHarness()
+        textView.setSelectedRange(NSRange(location: target, length: 0))
+        let before = try XCTUnwrap(coordinator.lineScreenY(at: target, in: textView))
+
+        // The sidebar-close / resize-end shape: one width commit, then draw.
+        textView.setFrameSize(NSSize(width: 440, height: textView.frame.height))
+        textView.viewWillDraw()
+
+        let after = try XCTUnwrap(coordinator.lineScreenY(at: target, in: textView))
+        XCTAssertEqual(after, before, accuracy: 2,
+                       "the caret line must hold through a width reflow (\(before) → \(after))")
+    }
+
+    func testWidthChangePreservesTheTopVisibleLineWithoutACaret() throws {
+        let (textView, coordinator, target) = try widthHarness()
+        // Reading mode: the selection is far away (offscreen above).
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let before = try XCTUnwrap(coordinator.lineScreenY(at: target, in: textView))
+
+        textView.setFrameSize(NSSize(width: 460, height: textView.frame.height))
+        textView.viewWillDraw()
+
+        let after = try XCTUnwrap(coordinator.lineScreenY(at: target, in: textView))
+        // The anchor is the top VISIBLE fragment (some paragraph above the
+        // target); rewrap growth between anchor and target allows small
+        // drift — "content stays put", not pixel identity for every line.
+        XCTAssertEqual(after, before, accuracy: 24,
+                       "top-anchored width reflow must not scroll content away (\(before) → \(after))")
+        // And repeated toggling (sidebar animation shape) stays bounded.
+        for width in [520, 600] {
+            textView.setFrameSize(NSSize(width: CGFloat(width), height: textView.frame.height))
+            textView.viewWillDraw()
+        }
+        let round = try XCTUnwrap(coordinator.lineScreenY(at: target, in: textView))
+        XCTAssertEqual(round, before, accuracy: 30,
+                       "round-trip widths must return content home (\(before) → \(round))")
+    }
+
 }
 #endif
 

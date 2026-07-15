@@ -274,6 +274,13 @@ final class QuoinTextView: NSTextView {
     /// caret would yank the viewport away from what the user is reading.
     private func settleViewportPreservingCaretLine() {
         guard let layoutManager = textLayoutManager else { return }
+        // Width reflow (#65): a pending anchor from setFrameSize wins — it
+        // was captured in the OLD geometry, before the rewrap.
+        if let anchor = widthReflowAnchor {
+            widthReflowAnchor = nil
+            restoreWidthAnchor(anchor, layoutManager: layoutManager)
+            return
+        }
         let clip = enclosingScrollView?.contentView
         let before = caretLineScreenY(clip: clip)
         layoutManager.textViewportLayoutController.layoutViewport()
@@ -283,6 +290,67 @@ final class QuoinTextView: NSTextView {
         let target = max(0, clip.bounds.origin.y + (after - before))
         clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: target))
         enclosingScrollView?.reflectScrolledClipView(clip)
+    }
+
+    // MARK: - Width-reflow anchoring (#65)
+
+    /// A width change rewraps every line and moves every fragment — the
+    /// caret-line settle preserves nothing in reading mode (caret absent or
+    /// offscreen), so closing a sidebar or ending a window resize scrolled
+    /// the visible content away (live report: "great while the mouse is
+    /// held, wild on mouse-up"). The anchor is captured in OLD geometry at
+    /// setFrameSize — the caret line when visible, else the top visible
+    /// line — and the next settled draw scrolls it back to its exact
+    /// screen position. Re-captured per frame, so animated sidebar
+    /// toggles hold the line through the whole animation.
+    private var widthReflowAnchor: (location: Int, screenY: CGFloat)?
+
+    private func captureWidthAnchor() -> (location: Int, screenY: CGFloat)? {
+        guard let clip = enclosingScrollView?.contentView,
+              let layoutManager = textLayoutManager,
+              let contentStorage = textContentStorage else { return nil }
+        if let y = caretLineScreenY(clip: clip) {
+            return (selectedRange().location, y)
+        }
+        guard let viewport = layoutManager.textViewportLayoutController.viewportRange
+        else { return nil }
+        var anchor: (Int, CGFloat)?
+        layoutManager.enumerateTextLayoutFragments(from: viewport.location, options: []) { fragment in
+            let frame = fragment.layoutFragmentFrame
+            let y = frame.minY + self.textContainerOrigin.y - clip.bounds.origin.y
+            if y + frame.height > 0 {
+                let location = contentStorage.offset(
+                    from: contentStorage.documentRange.location,
+                    to: fragment.rangeInElement.location)
+                anchor = (location, y)
+                return false
+            }
+            return true
+        }
+        return anchor
+    }
+
+    private func restoreWidthAnchor(
+        _ anchor: (location: Int, screenY: CGFloat), layoutManager: NSTextLayoutManager
+    ) {
+        layoutManager.textViewportLayoutController.layoutViewport()
+        guard let clip = enclosingScrollView?.contentView,
+              let contentStorage = textContentStorage,
+              anchor.location <= (contentStorage.textStorage?.length ?? 0),
+              let docLocation = contentStorage.location(
+                contentStorage.documentRange.location, offsetBy: anchor.location)
+        else { return }
+        layoutManager.ensureLayout(for: NSTextRange(location: docLocation))
+        guard let fragment = layoutManager.textLayoutFragment(for: docLocation) else { return }
+        let after = fragment.layoutFragmentFrame.minY + textContainerOrigin.y - clip.bounds.origin.y
+        let drift = after - anchor.screenY
+        guard abs(drift) > 0.5 else { return }
+        let target = max(0, clip.bounds.origin.y + drift)
+        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: target))
+        enclosingScrollView?.reflectScrolledClipView(clip)
+        // The scroll changed the viewport — settle the new extent before
+        // pixels appear (same terminating argument as the caret settle).
+        layoutManager.textViewportLayoutController.layoutViewport()
     }
 
     /// Screen-space y of the line containing the caret, or nil when the
@@ -369,8 +437,13 @@ final class QuoinTextView: NSTextView {
     }
 
     // Any live layout change (viewport re-layout after estimates resolve)
-    // must redraw decorations, or boxes lag behind their text.
+    // must redraw decorations, or boxes lag behind their text. A WIDTH
+    // change also captures the reflow anchor (in the old geometry) that
+    // the next settled draw restores (#65).
     override func setFrameSize(_ newSize: NSSize) {
+        if abs(newSize.width - frame.width) > 0.5 {
+            widthReflowAnchor = captureWidthAnchor() ?? widthReflowAnchor
+        }
         super.setFrameSize(newSize)
         needsDisplay = true
     }
