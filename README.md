@@ -83,9 +83,7 @@ sequenceDiagram
 
 Design + rationale: [`docs/design/suggestions.md`](docs/design/suggestions.md).
 
-![Review inspector cards beside a marked-up document, showing suggestion and comment cards with author and timestamp](docs/images/review-panel.png)
-
-![The status-bar Suggesting chip active in Review Mode, so ordinary typing becomes suggestion marks](docs/images/review-mode.png)
+![Review inspector cards beside a marked-up document — suggestion and comment cards with author, timestamp, and Accept / Reject / Dismiss, plus the Suggesting status chip that marks Review Mode](docs/images/review-panel.png)
 
 ### The source is the document
 
@@ -245,11 +243,25 @@ A scannable tour; the full walkthrough is in
 | Focus mode, typewriter scrolling, jump history (⌘[ / ⌘]) | ✅ |
 | Dark mode (code canvas constant across appearances, per design spec) | ✅ |
 
+A few of these surfaces, up close:
+
+**Properties inspector.** Front matter becomes a typed key/value panel — a date
+picker for dates, a toggle for booleans, comma-separated lists for arrays —
+editing the YAML in place without you touching the raw syntax.
+
 ![Properties inspector editing YAML front-matter fields with typed editors](docs/images/properties-panel.png)
+
+**Footnotes.** A reference is click-to-jump to its definition, with a
+hover-preview bubble and a backlink to return — footnotes stay navigable
+instead of scrolling you away.
 
 ![A footnote reference marker with its hover-preview bubble](docs/images/footnotes.png)
 
-![A code block rendered in a selectable syntax theme](docs/images/code-theme.png)
+**Syntax themes.** Code blocks render in any of twelve selectable themes — six
+light, six dark — and by default follow the app's appearance (here, the Dracula
+dark theme):
+
+![A code block rendered in the Dracula syntax theme, with the language label and copy button](docs/images/code-theme.png)
 
 ## Math (LaTeX)
 
@@ -329,34 +341,33 @@ Quoin is three layers: a platform-free document engine, a native rendering
 layer, and the two first-party math/diagram engines it consumes from GitHub.
 
 ```mermaid
-flowchart TB
-    subgraph core["QuoinCore — platform-free, builds on Linux"]
-        parse["Parser<br/>swift-markdown / cmark-gfm"]
-        session["DocumentSession (actor)<br/>edits · undo · autosave · file watch"]
-        review["Review + front-matter machinery<br/>CriticMarkup / RDFM"]
+flowchart LR
+    subgraph core["QuoinCore — platform-free (builds on Linux)"]
+        direction TB
+        parse["Parser<br/>swift-markdown · cmark-gfm"]
+        session["DocumentSession actor<br/>edits · undo · autosave · watch"]
+        review["Review + front-matter<br/>CriticMarkup · RDFM"]
         export["Exporters · search · statistics"]
+        parse --> session
+        session --> review
+        session --> export
     end
-    subgraph render["QuoinRender — TextKit 2, CoreText, CoreGraphics"]
+    subgraph render["QuoinRender — TextKit 2 · CoreText"]
+        direction TB
         proj["AttributedRenderer<br/>AST → attributed string"]
         view["QuoinTextView<br/>drawn-ink decorations"]
+        proj --> view
     end
     subgraph engines["First-party engines (from GitHub)"]
+        direction TB
         vinc["Vinculum<br/>LaTeX math"]
         merm["MermaidKit<br/>Mermaid diagrams"]
     end
 
-    parse --> session --> review
-    session --> proj --> view
+    session --> proj
     proj --> vinc
     proj --> merm
 ```
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-overview-dark.png">
-  <img alt="Quoin module architecture" src="docs/images/architecture-overview.png">
-</picture>
-
-<sub>The image above is drawn by **Quoin's own native Mermaid engine** — no Mermaid.js, no JavaScript. Regenerate with `QUOIN_DOC_DIAGRAMS=$PWD swift test --filter testRenderDocDiagrams`.</sub>
 
 - **`QuoinCore`** — platform-free engine: parse, `DocumentSession` (edits, undo,
   autosave, file watching), search, statistics, exporters, and the **entire
