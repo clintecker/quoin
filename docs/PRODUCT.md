@@ -19,10 +19,10 @@ Feature groups are labeled **G1–G9** and referenced by shorthand throughout.
 | License | Application source (repository terms) |
 | Repository | github.com/clintecker/quoin |
 | Platforms | macOS 14+ (primary). `QuoinCore` is platform-free and builds + tests on Linux; iOS/iPadOS reader exists behind a UIKit path. |
-| Language / runtime | Swift 5.10, SwiftUI + TextKit 2. Zero JavaScript at runtime; local-only. |
+| Language / runtime | Swift 6.0 tools (QuoinCore in Swift 6 language mode), SwiftUI + TextKit 2. Zero JavaScript at runtime; local-only. |
 | Rendering | Native attributed-string projection + drawn-ink decorations. No web view, no MathJax/KaTeX, no Mermaid.js. |
 | Dependencies | One third-party package (swift-markdown / cmark-gfm). Two first-party engine packages consumed from GitHub: MermaidKit (`from: 0.10.0`) and Vinculum (`from: 0.23.0`). |
-| Verification | 631 package tests, 0 failures; core suite runs on Linux (147 headless). |
+| Verification | 634 package tests, 0 failures; core suite runs on Linux (147 headless). |
 | Origin | Built as a WYSIWYG markdown editor whose source of truth is the markdown string + AST, so that any tool writing markdown — including agents — writes Quoin documents. |
 
 ---
@@ -151,7 +151,7 @@ ranges, so a document containing live marks re-anchors via a full parse (guard).
 
 | Feature | Specific |
 | :--- | :--- |
-| Test suite | 631 package tests, 0 failures; performance budgets (PerformanceTests) and pathological inputs (TortureTests). |
+| Test suite | 634 package tests, 0 failures; performance budgets (PerformanceTests) and pathological inputs (TortureTests). |
 | Invariant enforcement | Named invariants (`docs/INVARIANTS.md`) with dedicated tests: viewport anchoring, reveal fidelity, projection equivalence, decoration geometry. |
 | No flaky tests | Intermittent failures are diagnosed to a definitive cause, never labeled environmental (ADR-0007); corpus tests assert minimum check counts so silent bailing cannot fake a pass. |
 | Decision records | `docs/adr/` records non-obvious roads taken and rejected, each with cited evidence. |

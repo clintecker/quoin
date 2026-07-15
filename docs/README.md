@@ -10,6 +10,9 @@ invariant cites its test, an ADR cites its commit, a claim cites file:line.)
   lift from here.
 - `../README.md` — the public overview + support matrix, leading with the
   review/commenting loop. Engine details defer to the engine repos.
+- **[features.md](features.md)** — the user-facing feature tour, organized
+  by what you *do* (write, review, organize, read). The "what's in my
+  hands" complement to PRODUCT.md's data spec.
 
 ## "What are the rules?"
 - **[INVARIANTS.md](INVARIANTS.md)** — the constitution: every rule the

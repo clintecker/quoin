@@ -408,3 +408,67 @@ fail to compile. Supporting it means changing those guards to
   engines — they are Vinculum's and MermaidKit's CI, not Quoin's.
 - **Ledgers**: `docs/rendering-ledger.md` (field reports → fixes),
   `docs/launch-ledger.md` (four-track pre-launch review).
+
+## The review subsystem (QuoinCore)
+
+The largest subsystem added in the surge, and the app's differentiator:
+an RDFM/CriticMarkup review loop where suggestions and comments live in
+the `.md` file and every resolution is one atomic, byte-safe source edit.
+Design in `docs/design/suggestions.md`. It is entirely platform-free
+(QuoinCore) — the app and any future CLI reuse it unchanged.
+
+- **`CriticScanner`** — the raw-slice scanner for the five mark kinds
+  (`{++ins++}` `{--del--}` `{~~old~>new~~}` `{>>comment<<}` `{==hl==}`)
+  plus the optional trailing `{#id}`. Runs on the raw source because cmark
+  mangles the delimiters (smart-punct en-dashes `{--`, GFM strikethrough
+  eats `{~~…~~}`); code spans and math spans are opaque (marks inside stay
+  literal, matching the RDFM normative rule). The dollar-opacity rules
+  mirror `MathScanner` byte-for-byte so the two agree on what is math.
+- **`ReviewEndmatter`** — the RDFM YAML endmatter (`comments:`/
+  `suggestions:` maps + resolution records) sliced off the tail before
+  cmark, the same split precedent as front matter. Owns detection
+  (strict, CRLF-aware), the shared entry writers (`allocateID`,
+  `appendedEntryEdit`, `resolutionRecordEdit`), and byte-lossless emit:
+  writers do line surgery in normalized LF and re-apply the block's
+  original line ending (`Detected.lineEnding`) so an untouched CRLF
+  sibling is never downgraded. `escapedScalar` keeps every written value
+  on one physical line (a raw newline would break the strict parser).
+- **`SuggestionResolver`** — accept/reject byte semantics + the
+  `combinedResolutionEdit` (mark replacement AND the endmatter record as
+  ONE spanning splice, so a single ⌘Z restores both) + `resolveAllEdit`
+  (batch as one edit). Composes the review-panel `ReviewItem` cards
+  (marks + metadata + threads; anchored comments absorb their highlight).
+- **`ReviewAuthoring`** — the create-without-editing gestures: every
+  selection annotation (comment/replacement/deletion/highlight/insertion)
+  and block-adjacent comments for opaque blocks. Validation is
+  self-calibration: the candidate is re-parsed and accepted only if
+  exactly the expected mark comes back, every prior mark survives, and the
+  block-level structural signature is unchanged (an annotation must never
+  change what the document IS — it clamps a whole-item selection past the
+  list marker rather than erase it).
+- **`SuggestTransform`** — Review Mode: a pure, STATELESS keystroke →
+  suggestion transform (insertion/deletion/substitution) with coalescing
+  by re-scan (a fresh keystroke mints a mark and parks the caret inside;
+  the next grows it — no per-keystroke state). Refuses rather than corrupt
+  (a sigil that would re-anchor the lazy closer self-calibrates and beeps;
+  a backspace never extends across a mark boundary).
+- **`FrontMatterEditing`** — the Properties inspector's engine: line
+  surgery over the leading YAML block, typed-value inference (date / bool
+  / number / flow-list / string) that is byte-conservative (a value that
+  does not parse cleanly as its type stays a string; typed writes preserve
+  the original precision), and `setTypedFieldEdit` for the typed editors.
+- **`DisplayMathPrescan`** — claims standalone `$$…$$` / `\[…\]` spans
+  from the raw source before cmark (which would tear a span containing a
+  setext-lookalike interior line into a phantom heading). Conservative:
+  a fenced `$$` is code, not a span; `MathScanner` must confirm exactly
+  one display-math segment or the span is left to the paragraph path.
+
+**The apply contract (both platforms).** Every review/properties mutation
+is computed INSIDE `DocumentSession` at apply time —
+`applyResolution` / `applyBulkResolution` / `applyAnnotation` /
+`applyFrontMatterEdit` / `removeFrontMatterField` — against the session's
+current truth, behind the pipeline queue, refusing on drift (an
+`expectedSlice` byte check) rather than splicing stale offsets. Computing
+an edit against a view projection and applying it later is the corruption
+class an adversarial review caught and this contract closes; the in-actor
+APIs are the seam a CLI reuses without a view layer.
