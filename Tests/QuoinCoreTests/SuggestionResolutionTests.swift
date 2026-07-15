@@ -494,6 +494,33 @@ extension SuggestionResolutionTests {
         XCTAssertFalse(after.contains("{++"))
         XCTAssertEqual(ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(after)).count, 1,
                        "one endmatter, one record — no stacking: \(after.debugDescription)")
+
+        // BYTE OUTPUT, not just detection (panel review BLOCKER: the
+        // writers normalized CRLF→LF across the whole block, downgrading
+        // the untouched delimiter and sibling entries to LF — mixed line
+        // endings from a resolution that touched only s1). The endmatter
+        // must stay entirely CRLF.
+        XCTAssertTrue(after.contains("\r\n---\r\n"), "delimiter stays CRLF")
+        XCTAssertTrue(after.contains("\r\n    status: resolved\r\n"), "record lines are CRLF")
+        // Every LF in the result is part of a CRLF pair (no lone LF).
+        let bytes = Array(after.utf8)
+        for (i, b) in bytes.enumerated() where b == UInt8(ascii: "\n") {
+            XCTAssertTrue(i > 0 && bytes[i - 1] == UInt8(ascii: "\r"),
+                          "lone LF at byte \(i): \(after.debugDescription)")
+        }
+    }
+
+    func testResolutionPreservesUntouchedCRLFSiblingEntries() throws {
+        // The exact blocker repro: resolving s1 must not touch s2's bytes
+        // or the delimiter.
+        let source = "# T\r\n\r\nA {++a++}{#s1} and {++b++}{#s2}.\r\n\r\n---\r\nsuggestions:\r\n  s1: { by: AI }\r\n  s2: { by: AI }\r\n"
+        let mark = try XCTUnwrap(SuggestionResolver.marks(in: MarkdownConverter.parse(source)).first)
+        let edit = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: source, action: .accept))
+        let after = applying(edit, to: source)
+        XCTAssertTrue(after.contains("\r\n  s2: { by: AI }\r\n"),
+                      "untouched s2 entry keeps its CRLF bytes: \(after.debugDescription)")
+        XCTAssertTrue(after.hasPrefix("# T\r\n"), "body stays CRLF")
     }
 }
 

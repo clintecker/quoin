@@ -72,6 +72,43 @@ enum DisplayMathPrescan {
         func content(_ line: (start: Int, contentEnd: Int, next: Int)) -> ArraySlice<UInt8> {
             bytes[line.start..<line.contentEnd]
         }
+
+        // A `$$`/`\[` line INSIDE a fenced code block is code, not a math
+        // opener (review HIGH: a fenced `$$…$$` was claimed, tearing the
+        // code block apart and eating following prose). Precompute which
+        // lines sit inside a ```/~~~ fence, conservatively per CommonMark:
+        // an opener is 3+ of ` or ~ indented 0–3 spaces; the closer is 3+
+        // of the SAME char, at least as long, with no trailing info text.
+        var insideFence = [Bool](repeating: false, count: lines.count)
+        var fenceChar: UInt8?
+        var fenceLen = 0
+        for (idx, line) in lines.enumerated() {
+            let c = content(line)
+            var p = c.startIndex
+            var indent = 0
+            while p < c.endIndex, c[p] == UInt8(ascii: " "), indent < 4 { p += 1; indent += 1 }
+            let ch = p < c.endIndex ? c[p] : 0
+            var runLen = 0
+            var q = p
+            while q < c.endIndex, c[q] == ch { runLen += 1; q += 1 }
+            let isBacktickOrTilde = ch == UInt8(ascii: "`") || ch == UInt8(ascii: "~")
+            if let open = fenceChar {
+                insideFence[idx] = true // the closer line itself counts as fence
+                if indent < 4, isBacktickOrTilde, ch == open, runLen >= fenceLen {
+                    // Closer: rest of line must be blank.
+                    var rest = q
+                    while rest < c.endIndex, c[rest] == UInt8(ascii: " ") { rest += 1 }
+                    if rest == c.endIndex { fenceChar = nil; fenceLen = 0 }
+                }
+            } else if indent < 4, isBacktickOrTilde, runLen >= 3 {
+                // Backtick openers may not contain a backtick in the info
+                // string; tildes may. Conservative: treat as a fence opener.
+                fenceChar = ch
+                fenceLen = runLen
+                insideFence[idx] = true
+            }
+        }
+
         let dollarFence: [UInt8] = Array("$$".utf8)
         let bracketOpen: [UInt8] = Array("\\[".utf8)
         let bracketClose: [UInt8] = Array("\\]".utf8)
@@ -87,7 +124,7 @@ enum DisplayMathPrescan {
             case openerContent.elementsEqual(bracketOpen): closer = bracketClose
             default: closer = nil
             }
-            if previousBlank, let closer {
+            if previousBlank, let closer, !insideFence[li] {
                 var lj = li + 1
                 var closerIndex: Int?
                 while lj < lines.count {

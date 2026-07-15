@@ -48,6 +48,21 @@ public enum ReviewEndmatter {
         public let range: ByteRange
         public let yaml: String
         public let metadata: ReviewMetadata
+        /// The line ending this endmatter block uses in the source
+        /// (`\r\n` for CRLF documents, else `\n`). The writers do line
+        /// surgery in normalized LF then re-apply THIS on emit, so a
+        /// resolution never downgrades an untouched CRLF sibling entry or
+        /// the delimiter to LF (byte-lossless-for-untouched, panel review
+        /// BLOCKER).
+        public let lineEnding: String
+
+        public init(range: ByteRange, yaml: String, metadata: ReviewMetadata,
+                    lineEnding: String = "\n") {
+            self.range = range
+            self.yaml = yaml
+            self.metadata = metadata
+            self.lineEnding = lineEnding
+        }
     }
 
     public static func detect(in source: String) -> Detected? {
@@ -79,10 +94,19 @@ public enum ReviewEndmatter {
         guard body.contains("{#") || documentLevel || hasRecords else { return nil }
         let offset = source.utf8.distance(from: source.utf8.startIndex,
                                           to: delimiterRange.lowerBound.samePosition(in: source.utf8)!)
+        let lineEnding = (crlf.map { delimiterRange == $0 } ?? false) ? "\r\n" : "\n"
         return Detected(
             range: ByteRange(offset: offset, length: source.utf8.count - offset),
             yaml: tail,
-            metadata: metadata)
+            metadata: metadata,
+            lineEnding: lineEnding)
+    }
+
+    /// Re-applies an endmatter's original line ending to an LF-built
+    /// replacement (no-op for LF documents). The writers build in
+    /// normalized LF; this is the last step before emitting the SourceEdit.
+    static func applyLineEnding(_ replacement: String, _ ending: String) -> String {
+        ending == "\n" ? replacement : replacement.replacingOccurrences(of: "\n", with: ending)
     }
 
     /// Parses the RDFM endmatter YAML subset:
@@ -309,7 +333,9 @@ extension ReviewEndmatter {
         }
         var replacement = "\n---\n" + keptLines.joined(separator: "\n")
         if !replacement.hasSuffix("\n") { replacement += "\n" }
-        return SourceEdit(range: detected.range, replacement: replacement)
+        return SourceEdit(
+            range: detected.range,
+            replacement: applyLineEnding(replacement, detected.lineEnding))
     }
 }
 
@@ -417,7 +443,9 @@ extension ReviewEndmatter {
         emitRecord()
         var replacement = "\n---\n" + keptLines.joined(separator: "\n")
         if !replacement.hasSuffix("\n") { replacement += "\n" }
-        return SourceEdit(range: detected.range, replacement: replacement)
+        return SourceEdit(
+            range: detected.range,
+            replacement: applyLineEnding(replacement, detected.lineEnding))
     }
 }
 
@@ -494,12 +522,20 @@ extension ReviewEndmatter {
                 if !yaml.hasSuffix("\n") { yaml += "\n" }
                 yaml += "\(section):\n" + entry
             }
-            return (SourceEdit(range: detected.range, replacement: "\n---\n" + yaml), id)
+            return (SourceEdit(
+                range: detected.range,
+                replacement: applyLineEnding("\n---\n" + yaml, detected.lineEnding)), id)
         }
 
-        // No endmatter yet: create one at EOF.
+        // No endmatter yet: create one at EOF. Match the document's line
+        // ending so a CRLF file doesn't gain an LF endmatter block. The
+        // leading `\n---\n` is REQUIRED — detect() finds the endmatter by
+        // its `\n---\n` delimiter, so even an empty document keeps it (the
+        // blank line is structural, not spurious).
+        let ending = source.contains("\r\n") ? "\r\n" : "\n"
         let needsNewline = source.hasSuffix("\n") ? "" : "\n"
-        let block = "\(needsNewline)\n---\n\(section):\n" + entry
+        let block = applyLineEnding(
+            "\(needsNewline)\n---\n\(section):\n" + entry, ending)
         return (SourceEdit(
             range: ByteRange(offset: source.utf8.count, length: 0),
             replacement: block), id)

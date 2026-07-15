@@ -750,12 +750,16 @@ final class ReaderModel {
         // queue — computing it here against the model's projection let a
         // second quick Accept splice at pre-first-resolution offsets and
         // corrupt the document (panel review BLOCKER).
+        // The bytes the card was rendered from — the session refuses if a
+        // DIFFERENT equal-length mark now occupies that range (review LOW).
+        let expected = document.source.substring(in: markRange)
         applySessionResolution(
             refusalMessage: "That suggestion changed since it was rendered — try again.",
             flashOffset: markRange.offset
         ) { session in
             try await session.applyResolution(
-                markRange: markRange, action: action, publishSnapshot: false)
+                markRange: markRange, action: action,
+                expectedSlice: expected, publishSnapshot: false)
         }
     }
 
@@ -806,7 +810,10 @@ final class ReaderModel {
         }
     }
 
-    private func applyAbsolute(_ edit: SourceEdit, caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil) {
+    private func applyAbsolute(
+        _ edit: SourceEdit, caretUTF8: Int?, spliceHint: RenderSpliceHint? = nil,
+        onError: (@Sendable () -> Void)? = nil
+    ) {
         guard let session else { return }
         let absolute = edit.range
         let replacement = edit.replacement
@@ -835,6 +842,7 @@ final class ReaderModel {
                 }
                 self.scheduleH1Rename(for: newDocument)
             } catch {
+                onError?()
                 await self.recoverFromFailedEdit(error, generation: generation)
             }
             if generation == self.latestEditGeneration {
@@ -1070,21 +1078,16 @@ final class ReaderModel {
             offset = document.source.utf8.count
         }
 
+        // Route through the FIFO edit pipeline like every other mutation
+        // (review HIGH: a bare Task computed the offset against the model
+        // projection and applied it OUT OF BAND, so an image dropped while
+        // a keystroke was still round-tripping spliced at a stale offset
+        // and landed in the wrong place — a well-formed but wrong document
+        // that autosave then persisted). On failure the orphaned asset is
+        // removed so a retry doesn't accumulate copies.
         let edit = SourceEdit(range: ByteRange(offset: offset, length: 0), replacement: markdown)
-        let baseRevision = sessionContentRevision
-        Task {
-            do {
-                let newDocument = try await session.applyEdit(
-                    edit, baseRevision: baseRevision, publishSnapshot: false)
-                QuoinPerformanceTrace.measure("model.restoreCaret.imageInsert") {
-                    self.restoreCaret(in: newDocument, atUTF8Offset: offset + markdown.utf8.count)
-                }
-            } catch {
-                // The copy succeeded but the reference didn't land — remove the
-                // orphaned asset so a retry doesn't accumulate copies.
-                try? FileManager.default.removeItem(at: destination)
-                self.reportFailure("Couldn't insert the image into the document.")
-            }
+        applyAbsolute(edit, caretUTF8: offset + markdown.utf8.count) {
+            try? FileManager.default.removeItem(at: destination)
         }
     }
 

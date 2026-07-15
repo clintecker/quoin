@@ -477,4 +477,44 @@ final class ReviewAuthoringTests: XCTestCase {
                        "endmatter block remains; comment paragraph reduced to blank")
     }
 
+
+    // MARK: - Review-verified edge cases (2026-07-15)
+
+    func testDocumentLevelCommentOnEmptyDocumentIsDetectable() throws {
+        // The previously-untested empty-document path (review coverage
+        // gap): the endmatter's `\n---\n` delimiter is required for
+        // detection, so the leading blank is structural — the result must
+        // parse back as review metadata.
+        let edit = try XCTUnwrap(ReviewAuthoring.annotationEdit(
+            kind: .comment(body: "overall"), range: ByteRange(offset: 0, length: 0),
+            in: "", reviewer: "AI", timestamp: "t"))
+        let after = applying(edit, to: "")
+        let metadata = try XCTUnwrap(ReviewEndmatter.detect(in: after)?.metadata,
+                                     "\(after.debugDescription)")
+        XCTAssertEqual(metadata.comments["c1"]?.body, "overall")
+        XCTAssertEqual(metadata.comments["c1"]?.by, "AI")
+    }
+
+    func testStaleRangeHittingADifferentMarkRefusesThroughTheSession() async throws {
+        // The identity gap: after an intervening edit, mark B occupies
+        // mark A's old equal-length range. Resolving A's stale range must
+        // refuse, not resolve B (review LOW).
+        let source = "{--zz--}{#a}{++qq++}{#b}\n"
+        let session = DocumentSession(source: source, fileURL: nil)
+        let marks = SuggestionResolver.marks(in: MarkdownConverter.parse(source))
+        let a = try XCTUnwrap(marks.first { $0.id == "a" })
+        let aSlice = try XCTUnwrap(source.substring(in: a.range))
+        // Resolve A with its correct slice — succeeds.
+        let first = try await session.applyResolution(
+            markRange: a.range, action: .accept, expectedSlice: aSlice)
+        XCTAssertNotNil(first)
+        // Now a stale range equal to A's, but the bytes there are B's — refuse.
+        let after = await session.document
+        let second = try await session.applyResolution(
+            markRange: a.range, action: .accept, expectedSlice: aSlice)
+        XCTAssertNil(second, "stale slice no longer matches — refuse")
+        let final = await session.document
+        XCTAssertEqual(final.source, after.source, "nothing spliced")
+    }
+
 }

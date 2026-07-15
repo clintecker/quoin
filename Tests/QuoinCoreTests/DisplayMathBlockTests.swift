@@ -244,4 +244,35 @@ final class DisplayMathBlockTests: XCTestCase {
         XCTAssertEqual(incremental.strategy, .full)
         assertEquivalentToFullParse(incremental.document)
     }
+
+    // MARK: - Fenced code blocks are not math (review HIGH)
+
+    func testDollarSpanInsideCodeFenceIsNotClaimed() {
+        let source = "```text\n\n$$\nx\n$$\n\n```\n"
+        let doc = MarkdownConverter.parse(source)
+        XCTAssertEqual(doc.blocks.count, 1, "one code block, not code+math+code: \(doc.blocks.map(\.kind))")
+        guard case .codeBlock(_, let code) = doc.blocks[0].kind else {
+            return XCTFail("expected a code block, got \(doc.blocks[0].kind)")
+        }
+        XCTAssertTrue(code.contains("$$\nx\n$$"), "the $$ stays literal inside the fence")
+        XCTAssertEqual(doc.stats.mathCount, 0)
+        XCTAssertEqual(doc.source, source, "byte-lossless")
+    }
+
+    func testBracketSpanInsideMarkdownFenceIsNotClaimed() {
+        let source = "How to write display math:\n\n```markdown\n\n\\[\n\\int_0^1 x\n\\]\n\n```\n\nThat's it.\n"
+        let doc = MarkdownConverter.parse(source)
+        let mathBlocks = doc.blocks.filter { if case .mathBlock = $0.kind { return true }; return false }
+        XCTAssertTrue(mathBlocks.isEmpty, "no math claimed from inside the fence: \(doc.blocks.map(\.kind))")
+        XCTAssertEqual(doc.source, source, "byte-lossless")
+    }
+
+    func testRealDisplayMathAfterACodeFenceStillClaimed() {
+        // The fence must not poison a genuine span that follows it.
+        let source = "```\ncode\n```\n\n$$\nx = 1\n$$\n\nDone.\n"
+        let doc = MarkdownConverter.parse(source)
+        let mathBlocks = doc.blocks.filter { if case .mathBlock = $0.kind { return true }; return false }
+        XCTAssertEqual(mathBlocks.count, 1, "the post-fence span is still claimed")
+    }
+
 }

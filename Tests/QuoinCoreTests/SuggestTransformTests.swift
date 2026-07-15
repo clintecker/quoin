@@ -178,4 +178,59 @@ final class SuggestTransformTests: XCTestCase {
         XCTAssertEqual(replacement, "{--éx--}", "é joins whole, never torn mid-byte")
         XCTAssertEqual(range.offset, 3)
     }
+
+    // MARK: - Review-panel-verified defects (2026-07-15)
+
+    func testBackspaceExtendDoesNotEatAnAdjacentMark() {
+        // {++a++}{--del--}: backspace deleting the trailing '}' must NOT
+        // absorb the neighbor insertion mark's closing byte (BLOCKER).
+        let slice = "{++a++}{--del--}"
+        let markEnd = slice.utf8.count // 15
+        let outcome = SuggestTransform.outcome(
+            relativeRange: ByteRange(offset: markEnd - 1, length: 1), replacement: "", in: slice)
+        XCTAssertEqual(outcome, .refused,
+                       "cannot extend a deletion across an abutting mark boundary")
+    }
+
+    func testBackspaceExtendPreservesTheMarkID() {
+        // X{--del--}{#c1}: extending the deletion must keep {#c1} (HIGH).
+        let slice = "X{--del--}{#c1}"
+        let markEnd = slice.utf8.count
+        let outcome = SuggestTransform.outcome(
+            relativeRange: ByteRange(offset: markEnd - 1, length: 1), replacement: "", in: slice)
+        guard case .transformed(let range, let replacement, _) = outcome else {
+            return XCTFail("\(outcome)")
+        }
+        XCTAssertEqual(replacement, "{--Xdel--}{#c1}", "id survives the extend")
+        XCTAssertEqual(range, ByteRange(offset: 0, length: markEnd))
+    }
+
+    func testTypingAClosingBraceThatLeaksRefuses() {
+        // The finding's accumulated state: repeated '+' growth left
+        // "{++x++++}" (body "x++"); a '}' at bodyEnd re-anchors the closer
+        // early, dropping the caret OUTSIDE the body into a leaked "++}"
+        // tail (MEDIUM). Self-calibration must refuse rather than corrupt.
+        let slice = "Alpha {++x++++} beta."
+        // {++x++++} at 6..15: bodyEnd (closerStart) = 12.
+        let outcome = SuggestTransform.outcome(
+            relativeRange: ByteRange(offset: 12, length: 0), replacement: "}", in: slice)
+        XCTAssertEqual(outcome, .refused, "a leaking brace insert must not apply")
+    }
+
+    func testTypingAPlainCharIntoABodyStillGrows() {
+        let slice = "Alpha {++x++} beta."
+        let outcome = SuggestTransform.outcome(
+            relativeRange: ByteRange(offset: 10, length: 0), replacement: "y", in: slice)
+        XCTAssertEqual(outcome, .plain, "ordinary growth is unaffected")
+    }
+
+    func testTypingAPlusThatStaysValidStillGrows() {
+        // A single '+' into the body yields "x+", still a valid mark with
+        // the caret in the body — that legitimately grows.
+        let slice = "Alpha {++x++} beta."
+        let outcome = SuggestTransform.outcome(
+            relativeRange: ByteRange(offset: 10, length: 0), replacement: "+", in: slice)
+        XCTAssertEqual(outcome, .plain)
+    }
+
 }

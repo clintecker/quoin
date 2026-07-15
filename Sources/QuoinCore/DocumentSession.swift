@@ -364,8 +364,23 @@ public actor DocumentSession {
     /// carries fresh ranges for the next click.
     @discardableResult
     public func applyResolution(
-        markRange: ByteRange, action: SuggestionResolver.Action, publishSnapshot: Bool = true
+        markRange: ByteRange, action: SuggestionResolver.Action,
+        expectedSlice: String? = nil, publishSnapshot: Bool = true
     ) throws -> QuoinDocument? {
+        // Identity check (review LOW): the range alone can point at a
+        // DIFFERENT equal-length whole mark after an intervening edit —
+        // resolving it would accept/reject the wrong suggestion. When the
+        // caller knows the bytes the card was rendered from, require them
+        // to still be there; a mismatch refuses (the re-rendered panel
+        // carries fresh ranges).
+        if let expectedSlice {
+            let bytes = Array(document.source.utf8)
+            guard markRange.offset >= 0,
+                  markRange.offset + markRange.length <= bytes.count,
+                  String(decoding: bytes[markRange.offset..<(markRange.offset + markRange.length)],
+                         as: UTF8.self) == expectedSlice
+            else { return nil }
+        }
         guard let edit = SuggestionResolver.combinedResolutionEdit(
             resolving: markRange, in: document.source, action: action) else { return nil }
         return try applyEdit(edit, publishSnapshot: publishSnapshot)

@@ -101,7 +101,7 @@ public enum FrontMatterEditing {
             .components(separatedBy: .newlines)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
-        let line = "\(key): \(ReviewEndmatter.fieldValue(normalized))"
+        let line = "\(key): \(stringScalar(normalized))"
         guard let placed = placement(
             for: key, line: line, in: source, canReplace: { !$0.isComplex })
         else { return nil }
@@ -512,6 +512,21 @@ extension FrontMatterEditing {
 
     /// The typed form `raw` parses CLEANLY as, or nil (= plain string).
     /// Bool is lowercase `true`/`false` ONLY — `True`/`yes` are strings.
+    /// The bytes to write for a value the user typed in a STRING field.
+    /// A value whose bare form would infer as a non-string type
+    /// (`true`, `123`, `2026-07-15`, `[a, b]`) is FORCE-QUOTED so it stays
+    /// a string — the string editor must never silently change a field's
+    /// YAML type (review MEDIUM: `setFieldEdit(key, "true")` wrote bare
+    /// `true`, which read back as a bool and flipped the panel to a
+    /// toggle). Ordinary strings pass through `fieldValue`'s bare/quoted
+    /// rules unchanged.
+    static func stringScalar(_ value: String) -> String {
+        if !value.isEmpty, typedForm(of: value) != nil {
+            return "\"\(ReviewEndmatter.escapedScalar(value))\""
+        }
+        return ReviewEndmatter.fieldValue(value)
+    }
+
     static func typedForm(of raw: String) -> FieldType? {
         if raw == "true" || raw == "false" { return .bool }
         if isNumberLiteral(raw) { return .number }
@@ -610,7 +625,13 @@ extension FrontMatterEditing {
             let item = String(part).trimmingCharacters(in: .whitespaces)
             guard !item.isEmpty else { return nil }
             if item.hasPrefix("\"") || item.hasPrefix("'") {
-                guard let content = quotedItemContent(item), !content.contains(",")
+                // A quoted EMPTY item (`""`) reads as valid but the CSV
+                // round-trip drops it (csvItems splits on ", " and discards
+                // empty components) — so `["", "a"]` would silently become
+                // `[a]` after any panel edit. Refuse the list editor, same
+                // as a bare empty item (review LOW).
+                guard let content = quotedItemContent(item),
+                      !content.contains(","), !content.isEmpty
                 else { return nil }
                 items.append(content)
             } else {

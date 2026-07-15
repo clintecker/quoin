@@ -262,4 +262,44 @@ final class FrontMatterTypingTests: XCTestCase {
         let document = await session.document
         XCTAssertEqual(document.source, doc, "a refusal must not touch the document")
     }
+
+    // MARK: - String editor must not coerce YAML type (review MEDIUM)
+
+    func testStringEditorQuotesReservedWordsAndTypedForms() throws {
+        let source = "---\nnote: hello\n---\nBody.\n"
+        for (typed, _) in [("true", "bool"), ("false", "bool"), ("123", "number"),
+                           ("2026-07-15", "date"), ("[a, b]", "list")] {
+            let edit = try XCTUnwrap(FrontMatterEditing.setFieldEdit(
+                key: "note", value: typed, in: source), "no edit for \(typed)")
+            var bytes = Array(source.utf8)
+            bytes.replaceSubrange(edit.range.offset..<(edit.range.offset + edit.range.length),
+                                  with: Array(edit.replacement.utf8))
+            let after = String(decoding: bytes, as: UTF8.self)
+            XCTAssertTrue(after.contains("note: \"\(typed)\""),
+                          "\(typed) must be quoted to stay a string: \(after.debugDescription)")
+            // And it reads back as a STRING, not the coerced type.
+            let field = try XCTUnwrap(
+                FrontMatterEditing.fields(in: after).first { $0.key == "note" })
+            XCTAssertEqual(FrontMatterEditing.inferredType(key: "note", rawValue: field.rawPreview),
+                           .string, "\(typed) reads back as a string")
+            XCTAssertEqual(field.value, typed, "resolved value is preserved")
+        }
+    }
+
+    func testStringEditorLeavesOrdinaryStringsBare() throws {
+        let source = "---\nnote: hello\n---\nBody.\n"
+        let edit = try XCTUnwrap(FrontMatterEditing.setFieldEdit(
+            key: "note", value: "a plain sentence", in: source))
+        XCTAssertTrue(edit.replacement.contains("note: a plain sentence"),
+                      "ordinary strings stay bare: \(edit.replacement)")
+    }
+
+
+    func testQuotedEmptyFlowListItemRefusesTheListEditor() {
+        XCTAssertNil(FrontMatterEditing.flowListItems("[\"\", \"a\"]"),
+                     "a quoted empty item can't round-trip through CSV — refuse")
+        XCTAssertNotNil(FrontMatterEditing.flowListItems("[\"x\", \"a\"]"),
+                        "non-empty quoted items are fine")
+    }
+
 }

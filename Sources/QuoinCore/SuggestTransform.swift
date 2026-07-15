@@ -78,7 +78,20 @@ public enum SuggestTransform {
 
         // INSERTION (typing at a caret).
         if relativeRange.length == 0, !replacement.isEmpty {
-            if growableBody(at: start) != nil { return .plain }
+            if let body = growableBody(at: start) {
+                // Growing a mark is a plain insert — UNLESS the typed text
+                // would re-scan the mark to a DIFFERENT structure (typing
+                // the body's own sigil, e.g. a `+` into `{++…++}`, makes
+                // the lazy scanner find an earlier closer, leaking the tail
+                // as literal source; review MEDIUM). Self-calibrate: apply
+                // the candidate and require the same mark count with the
+                // caret still inside a growable body.
+                if plainInsertKeepsStructure(
+                    at: start, insert: replacement, in: bytes, markCount: marks.count, body: body) {
+                    return .plain
+                }
+                return .refused
+            }
             if mark(containing: start) != nil { return .refused }
             return .transformed(
                 range: relativeRange,
@@ -125,13 +138,29 @@ public enum SuggestTransform {
             }) {
                 guard let previous = characterRange(endingAt: deletion.range.offset, in: slice)
                 else { return .refused }
+                // The character being absorbed must be PLAIN prose — never a
+                // byte of an abutting mark. Extending across a mark boundary
+                // ate the neighbor's closing `}` and destroyed an untouched
+                // suggestion (review BLOCKER). Refuse instead.
+                let absorbInsideOtherMark = marks.contains { other in
+                    other.range.offset != deletion.range.offset
+                        && previous.lowerBound < other.range.offset + other.range.length
+                        && previous.upperBound > other.range.offset
+                }
+                guard !absorbInsideOtherMark else { return .refused }
                 let char = String(decoding: bytes[previous.lowerBound..<previous.upperBound], as: UTF8.self)
                 let body = String(decoding: bytes[deletion.bodyStart..<deletion.bodyEnd], as: UTF8.self)
-                let replacementMark = "{--\(char)\(body)--}"
+                // Preserve the mark's `{#id}` reference: it sits after the
+                // closing `--}` (bytes bodyEnd+3 … markEnd). Dropping it
+                // silently orphaned the RDFM identity on a tail backspace
+                // (review HIGH).
+                let markEnd = deletion.range.offset + deletion.range.length
+                let idSuffix = String(decoding: bytes[(deletion.bodyEnd + 3)..<markEnd], as: UTF8.self)
+                let replacementMark = "{--\(char)\(body)--}\(idSuffix)"
                 return .transformed(
                     range: ByteRange(
                         offset: previous.lowerBound,
-                        length: (deletion.range.offset + deletion.range.length) - previous.lowerBound),
+                        length: markEnd - previous.lowerBound),
                     replacement: replacementMark,
                     caretDelta: replacementMark.utf8.count)
             }
@@ -164,6 +193,53 @@ public enum SuggestTransform {
         }
 
         return .plain // zero-length no-op
+    }
+
+    /// True when inserting `insert` at byte `start` leaves the mark family
+    /// intact: same mark count, and the caret still inside a growable body
+    /// of the SAME payload kind. Guards the stateless-scan hazard where
+    /// typing a sigil re-anchors the lazy closer (review MEDIUM).
+    private static func plainInsertKeepsStructure(
+        at start: Int, insert: String, in bytes: [UInt8], markCount: Int, body: Mark
+    ) -> Bool {
+        // Fast path: no sigil/brace character can't change parsing.
+        if !insert.utf8.contains(where: { b in
+            b == UInt8(ascii: "+") || b == UInt8(ascii: "-") || b == UInt8(ascii: "~")
+                || b == UInt8(ascii: "=") || b == UInt8(ascii: ">")
+                || b == UInt8(ascii: "{") || b == UInt8(ascii: "}")
+        }) {
+            return true
+        }
+        var candidate = bytes
+        candidate.insert(contentsOf: Array(insert.utf8), at: start)
+        let slice = String(decoding: candidate, as: UTF8.self)
+        let marks = scanMarks(in: slice)
+        guard marks.count == markCount else { return false }
+        let caret = start + insert.utf8.count
+        // The caret must land in a GROWABLE BODY of the same kind — not
+        // merely inside the mark's range. A `}` that re-anchors the closer
+        // early leaves the caret past the body (in the leaked tail), which
+        // this rejects even though the range still nominally contains it.
+        return marks.contains { m in
+            guard samePayloadKind(m.payload, body.payload) else { return false }
+            let lower: Int
+            if case .substitution = m.payload, let arrow = m.arrowOffset {
+                lower = arrow + 2
+            } else {
+                lower = m.bodyStart
+            }
+            return caret >= lower && caret <= m.bodyEnd
+        }
+    }
+
+    private static func samePayloadKind(_ a: CriticMark.Payload, _ b: CriticMark.Payload) -> Bool {
+        switch (a, b) {
+        case (.insertion, .insertion), (.deletion, .deletion),
+             (.substitution, .substitution), (.comment, .comment), (.highlight, .highlight):
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Scanning
