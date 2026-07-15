@@ -98,9 +98,25 @@ HTML export on Linux — diagrams and math included. Belongs in the
 MermaidKit/Vinculum repos (filed as enhancement issues when this phase
 starts, per the cross-repo rule).
 
-**L3 — Watch/serve niceties (S).** `quoin watch --review-index out.json`
-for agent loops; maybe `quoin serve` for a localhost HTML preview.
-Optional garnish, demand-driven.
+**L3 — `quoin serve`: Quoin you can USE on Linux (M).** (Elevated from
+garnish: the user runs Linux and wants Quoin there, not just a toolkit.)
+A localhost server on the session actor rendering the library and
+documents as SERVER-SIDE HTML — reader + reviewer, not a toy: outline,
+the field-grid front matter, review cards with Accept/Reject/Comment as
+plain HTTP form posts hitting the same in-actor APIs, live reload via
+the file watcher. The zero-JS-at-runtime principle HOLDS — no client
+framework, ideally zero script (form posts + meta-refresh/SSE degrade
+gracefully); all rendering is Swift. Diagrams/math arrive with the L2
+SVG scene writers (same layout geometry as the Mac, byte-identical
+documents). Field editing = a per-block textarea form riding the
+relative-edit session API — the same "focused sheet" shape as iOS R3.
+This is the honest Linux Quoin until Swift's native GUI story matures.
+
+**L4 — Native-shell spike (exploratory, no commitment).** Track
+SwiftCrossUI/Adwaita-Swift maturity; a native reader shell over the
+scene IR + HTML-free projection would be the long-game replacement for
+L3's browser chrome. Spike when the ecosystem earns it; the L1–L3
+layers are exactly the substrate it would sit on, so nothing is wasted.
 
 ## Sequencing recommendation
 
@@ -112,5 +128,7 @@ Optional garnish, demand-driven.
 
 ## Non-goals
 
-Mac Catalyst; a Linux GUI; any sync service (files + iCloud Drive/git are
-the sync layer); WYSIWYG phone editing before the reviewer is excellent.
+Mac Catalyst; a Linux GUI *toolkit port* (GTK/Qt reimplementation of the
+TextKit editor); any sync service (files + iCloud Drive/git are the sync
+layer); WYSIWYG phone editing before the reviewer is excellent; client-side
+JS frameworks anywhere, ever.
