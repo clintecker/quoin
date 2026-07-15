@@ -16,7 +16,7 @@ Feature groups are labeled **G1–G9** and referenced by shorthand throughout.
 | Name | Quoin |
 | Definition | A native macOS WYSIWYG markdown editor. Documents are plain `.md` files; the editor is a live projection of the source, never a separate representation. |
 | Status | Pre-release, active development (macOS shipping target; iOS/iPadOS and Linux directions in `docs/design/platforms.md`) |
-| License | Application source (repository terms) |
+| License | MIT |
 | Repository | github.com/clintecker/quoin |
 | Platforms | macOS 14+ (primary). `QuoinCore` is platform-free and builds + tests on Linux; iOS/iPadOS reader exists behind a UIKit path. |
 | Language / runtime | Swift 6.0 tools (QuoinCore in Swift 6 language mode), SwiftUI + TextKit 2. Zero JavaScript at runtime; local-only. |
