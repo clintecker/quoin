@@ -13896,31 +13896,24 @@
         "t" : "\n"
       },
       {
-        "f" : "26.00/0.40b",
-        "fg" : "#1D1D1F",
-        "p" : "lh1.25 ps12.00 psb32.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "f" : "10.50/0.00m",
+        "fg" : "accent",
+        "link" : "quoin-edit://block",
+        "p" : "lh1.70 ps2.00 psb16.00 fh8.00 hi8.00 ti-8.00 al2 tabs12",
         "q" : [
-
+          "embed",
+          "math"
         ],
-        "t" : "[ \\begin{bmatrix} 2 & -1 & 0 \\ -1 & 2 & -1 \\ 0 & -1 & 2 \\end{bmatrix} \\begin{bmatrix} x_1\\x_2\\x_3 \\end{bmatrix}"
+        "t" : "‹/› edit\n"
       },
       {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "p" : "lh1.70 ps16.00 psb0.00 fh0.00 hi0.00 ti0.00 al1 tabs12",
         "q" : [
-
+          "attachment",
+          "embed",
+          "math"
         ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\begin{bmatrix} 1\\0\\1 \\end{bmatrix} ]"
+        "t" : "￼"
       },
       {
         "f" : "14.00/0.00",
@@ -14991,121 +14984,24 @@
         "t" : "\n"
       },
       {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "f" : "10.50/0.00m",
+        "fg" : "accent",
+        "link" : "quoin-edit://block",
+        "p" : "lh1.70 ps2.00 psb16.00 fh8.00 hi8.00 ti-8.00 al2 tabs12",
         "q" : [
-
+          "embed",
+          "math"
         ],
-        "t" : "[ \\begin{aligned} L(\\theta) ={}& \\sum_{i=1}^{n}\\log p_\\theta(y_i\\mid x_i)"
+        "t" : "‹/› edit\n"
       },
       {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "p" : "lh1.70 ps16.00 psb0.00 fh0.00 hi0.00 ti0.00 al1 tabs12",
         "q" : [
-
+          "attachment",
+          "embed",
+          "math"
         ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  \\lambda_1\\sum_{j=1}^{m}|\\theta_j|"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  \\lambda_2\\sqrt{\\sum_{j=1}^{m}\\theta_j^2}"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  \\int_{\\Omega}\\left(\\nabla\\cdot \\mathbf{F}"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\theta\\right)^2,d\\Omega \\ &+ \\operatorname{KL}\\left(q"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\phi(z\\mid x),\\middle|,p_\\theta(z)\\right)"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\n"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "•  \\mathbb{E}"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "{z\\sim q"
-      },
-      {
-        "f" : "14.00/0.00",
-        "fg" : "#333333",
-        "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
-        "q" : [
-
-        ],
-        "t" : "\\phi}\\left[\\log p_\\theta(x\\mid z)\\right] \\end{aligned} ]"
+        "t" : "￼"
       },
       {
         "f" : "14.00/0.00",
@@ -25216,7 +25112,91 @@
         "q" : [
 
         ],
-        "t" : "20.4 Final Extension Paragraph"
+        "t" : "20.4 Display Math With Setext-Lookalike Interior Lines"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "A bare "
+      },
+      {
+        "bg" : "#F2F2F4",
+        "f" : "12.50/0.00m",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "="
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : " line inside display math looks like a setext underline to cmark; the span must stay ONE math block and never leak a phantom heading into the outline."
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "10.50/0.00m",
+        "fg" : "accent",
+        "link" : "quoin-edit://block",
+        "p" : "lh1.70 ps2.00 psb16.00 fh8.00 hi8.00 ti-8.00 al2 tabs12",
+        "q" : [
+          "embed",
+          "math"
+        ],
+        "t" : "‹/› edit\n"
+      },
+      {
+        "p" : "lh1.70 ps16.00 psb0.00 fh0.00 hi0.00 ti0.00 al1 tabs12",
+        "q" : [
+          "attachment",
+          "embed",
+          "math"
+        ],
+        "t" : "￼"
+      },
+      {
+        "f" : "14.00/0.00",
+        "fg" : "#333333",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "\n"
+      },
+      {
+        "f" : "16.00/0.30b",
+        "fg" : "#1D1D1F",
+        "p" : "lh1.35 ps8.00 psb22.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+
+        ],
+        "t" : "20.5 Final Extension Paragraph"
       },
       {
         "f" : "14.00/0.00",

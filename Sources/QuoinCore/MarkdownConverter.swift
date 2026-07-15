@@ -60,7 +60,6 @@ public enum MarkdownConverter {
                 as: UTF8.self)
         }
 
-        let document = Markdown.Document(parsing: parseInput)
         var builder = Builder(source: source, parseInput: parseInput, baseOffset: baseOffset)
         // Collect \newcommand/\def from every math segment first, so a
         // macro used before its definition still resolves (document scope).
@@ -73,7 +72,36 @@ public enum MarkdownConverter {
                 range: ByteRange(offset: 0, length: baseOffset)
             ))
         }
-        blocks.append(contentsOf: builder.convert(children: document.children))
+        // Standalone display-math spans are claimed from the raw source
+        // BEFORE cmark: a setext-lookalike interior line (bare `=`, `---`)
+        // would otherwise tear the span into paragraph + phantom heading +
+        // orphan tail. The segments between spans parse independently —
+        // safe because every claimed span is blank-line-separated from its
+        // neighbors, exactly where cmark closes blocks anyway.
+        let mathSpans = DisplayMathPrescan.spans(in: parseInput)
+        if mathSpans.isEmpty {
+            let document = Markdown.Document(parsing: parseInput)
+            blocks.append(contentsOf: builder.convert(children: document.children))
+        } else {
+            let inputBytes = Array(parseInput.utf8)
+            var cursor = 0
+            for span in mathSpans {
+                if span.range.offset > cursor {
+                    let segment = String(decoding: inputBytes[cursor..<span.range.offset], as: UTF8.self)
+                    blocks.append(contentsOf: builder.convert(segment: segment, at: baseOffset + cursor))
+                }
+                builder.stats.mathCount += 1
+                blocks.append(builder.makeBlock(
+                    kind: .mathBlock(latex: builder.expandMathBlock(span.latex)),
+                    range: ByteRange(offset: baseOffset + span.range.offset, length: span.range.length)
+                ))
+                cursor = span.resumeOffset
+            }
+            if cursor < inputBytes.count {
+                let segment = String(decoding: inputBytes[cursor...], as: UTF8.self)
+                blocks.append(contentsOf: builder.convert(segment: segment, at: baseOffset + cursor))
+            }
+        }
         if let endmatter {
             blocks.append(builder.makeBlock(
                 kind: .reviewEndmatter(yaml: endmatter.yaml),
@@ -523,10 +551,13 @@ public enum MarkdownConverter {
     private struct Builder {
         let source: String
         let sourceBytes: [UInt8]
-        let lineIndex: LineIndex
-        /// Byte offset of the parsed remainder within the full source
-        /// (nonzero when front matter was split off).
-        let baseOffset: Int
+        /// Line index of the segment currently being converted; rebound by
+        /// `convert(segment:at:)` when display-math spans split the input.
+        var lineIndex: LineIndex
+        /// Byte offset of the current segment within the full source
+        /// (nonzero when front matter was split off or a display-math span
+        /// precedes the segment).
+        var baseOffset: Int
         var slugger = Slugger()
         var outline: [HeadingInfo] = []
         var stats = DocumentStats()
@@ -572,6 +603,18 @@ public enum MarkdownConverter {
         }
 
         // MARK: Block conversion
+
+        /// Parses and converts one segment of the input (the text between
+        /// display-math spans), with ranges shifted to absolute offsets.
+        /// Builder state (slugger, outline, occurrences, stats, footnotes)
+        /// carries across segments, so identity and numbering match what a
+        /// single-pass parse of an unsplit document would assign.
+        mutating func convert(segment: String, at offset: Int) -> [Block] {
+            lineIndex = LineIndex(source: segment)
+            baseOffset = offset
+            let document = Markdown.Document(parsing: segment)
+            return convert(children: document.children)
+        }
 
         mutating func convert(children: MarkupChildren) -> [Block] {
             var blocks: [Block] = []

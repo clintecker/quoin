@@ -79,7 +79,13 @@ flowchart TD
   inline tree: cmark has no math extension and mangles `$a_b + c_d$` into
   emphasis. The scanner recognises `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`
   (`MathScanner`, a Vinculum type re-exported through QuoinCore); the
-  non-math remainder is re-parsed as inline markdown.
+  non-math remainder is re-parsed as inline markdown. Standalone display
+  blocks (`$$`/`\[` alone on their lines, blank-line separated) are claimed
+  from the raw source *before* cmark (`DisplayMathPrescan`, same
+  split-before-cmark precedent as front matter): a setext-lookalike
+  interior line (bare `=`, `---`) would otherwise tear the span into
+  paragraph + phantom heading + orphan tail. A span the scanner does not
+  confirm as exactly one display segment is left to cmark untouched.
 - **Extension post-passes** splice highlights (`==…==`), callout detection,
   front matter, `[TOC]`, and footnote gathering.
 

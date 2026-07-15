@@ -189,7 +189,26 @@ pie title Details Block Diagram
 
 </details>
 
-### 20.4 Final Extension Paragraph
+### 20.4 Display Math With Setext-Lookalike Interior Lines
+
+A bare `=` line inside display math looks like a setext underline to cmark; the span must stay ONE math block and never leak a phantom heading into the outline.
+
+\[
+\begin{bmatrix}
+2 & -1 & 0 \\
+-1 & 2 & -1 \\
+0 & -1 & 2
+\end{bmatrix}
+\begin{bmatrix}
+x_1\\x_2\\x_3
+\end{bmatrix}
+=
+\begin{bmatrix}
+1\\0\\1
+\end{bmatrix}
+\]
+
+### 20.5 Final Extension Paragraph
 
 Final extension stress line: `code`, \(inline\;math\), [link with math-looking query](https://example.com/?q=%5Cfrac%7B1%7D%7B2%7D), emoji 🧮, Mermaid-looking text `flowchart LR`, and a deliberately long TeX-ish code span `\begin{aligned} a&=b+c\\d&=e+f\end{aligned}` that should not typeset while inside backticks.
 
