@@ -7,8 +7,11 @@ struct QuoinApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup(id: "main") {
-            MainWindow()
+        // The window VALUE is a library-folder path: plain New Window opens
+        // with nil (most-recent library); Open Folder in New Window… passes
+        // the picked folder (#61).
+        WindowGroup(id: "main", for: String.self) { $rootPath in
+            MainWindow(requestedRootPath: rootPath)
         }
         .defaultSize(width: 1180, height: 760) // handoff: default ~1180×760pt
         .commands {
@@ -105,6 +108,17 @@ private struct FileCommands: Commands {
             Divider()
             Button("Open…") { post(AppDelegate.openFilePanelNotification) }
                 .keyboardShortcut("o", modifiers: .command)
+            Button("Open Folder in New Window…") {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.allowsMultipleSelection = false
+                panel.message = "Choose a folder to open in a new window."
+                panel.prompt = "Open Folder"
+                guard panel.runModal() == .OK, let url = panel.url else { return }
+                LibraryModel.saveBookmarks(for: url)
+                openWindow(id: "main", value: url.standardizedFileURL.path)
+            }
             Menu("Open Recent") {
                 let recents = (UserDefaults.standard.stringArray(forKey: "QuoinRecentDocuments") ?? [])
                     .prefix(10)
@@ -360,6 +374,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return .terminateLater
     }
+
+    /// True while the app is still inside its launch window — how a
+    /// restored-at-launch window is told apart from one the user opened
+    /// mid-session ("start empty" applies only to the former).
+    static var isLaunchRestoration: Bool {
+        ProcessInfo.processInfo.systemUptime - launchUptime < 5
+    }
+    private static let launchUptime = ProcessInfo.processInfo.systemUptime
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Quoin has its own document tabs; the system window-tab items

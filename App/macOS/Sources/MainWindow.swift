@@ -5,7 +5,15 @@ import QuoinCore
 /// The main window per the handoff: library sidebar (⌘0) · tab bar +
 /// editor · outline inspector (⌥⌘0), with quick open (⇧⌘O) floating above.
 struct MainWindow: View {
+    /// Folder this window was OPENED FOR (Open Folder in New Window…) —
+    /// nil for plain windows (#61).
+    var requestedRootPath: String?
+
     @State private var library = LibraryModel()
+    /// This window's library root, restored across relaunch (each window
+    /// remembers ITS folder — "the folder(s)/projects I was working on").
+    @SceneStorage("QuoinWindowRoot") private var persistedRootPath = ""
+    @AppStorage("QuoinLaunchBehavior") private var launchBehavior = "restore"
     /// One `ReaderModel` per file, shared across every window and tab — a tab
     /// acquires on open and releases on close (#12/#22).
     private let store = OpenDocumentStore.shared
@@ -179,8 +187,14 @@ struct MainWindow: View {
                 resource: "WelcomeToQuoin", as: "Welcome to Quoin.md") { open(url) }
         }
         .onAppear {
+            connectLibrary()
             restoreTabs()
             applyShotState()
+        }
+        // Every root change (chooser, starter library, folder-window) is
+        // remembered as THIS window's folder.
+        .onChange(of: library.rootURL) { _, url in
+            if let url { persistedRootPath = url.standardizedFileURL.path }
         }
         // Closing the window (red button) with tabs still open must release the
         // store's hold on each, or their sessions leak (kept watching + never
@@ -200,6 +214,32 @@ struct MainWindow: View {
                 open(url)
             }
         }
+        // With per-window folders, the title bar says WHICH folder this
+        // window is (#61).
+        .navigationTitle(library.rootURL?.lastPathComponent ?? "Quoin")
+    }
+
+    /// Which folder this window shows, decided in priority order:
+    /// automation override (already adopted in init) → the folder the
+    /// window was opened FOR → the window's own remembered folder → the
+    /// launch preference (most-recent library, or an empty window).
+    /// "Start empty" applies to LAUNCH restoration only — windows the user
+    /// opens mid-session still get the most recent library.
+    private func connectLibrary() {
+        guard !library.hasLibrary else { return }
+        if let requestedRootPath {
+            library.adoptFolder(path: requestedRootPath)
+            return
+        }
+        if !persistedRootPath.isEmpty, launchBehavior != "empty" || !AppDelegate.isLaunchRestoration {
+            library.adoptFolder(path: persistedRootPath)
+            return
+        }
+        if launchBehavior == "empty", AppDelegate.isLaunchRestoration {
+            persistedTabs = "" // an empty start restores no workspace either
+            return
+        }
+        library.restoreDefaultLibrary()
     }
 
     // MARK: - Workspace persistence (UI #4)

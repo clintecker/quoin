@@ -10,6 +10,11 @@ import QuoinCore
 final class LibraryModel {
 
     private static let bookmarkKey = "quoin.library.bookmark"
+    /// Per-folder bookmarks (path → bookmark data): every folder the user
+    /// has ever granted, so any window can reopen any of them (#61). The
+    /// legacy single key stays as "most recent" for default new windows
+    /// and migration.
+    private static let bookmarksKey = "quoin.library.bookmarks"
 
     // Formerly @Published; @Observable observes these plain properties. The
     // internal state below is @ObservationIgnored to match the old @Published
@@ -44,15 +49,73 @@ final class LibraryModel {
     /// Inverse file moves for ⌘Z (design rule: sidebar moves are undoable).
     @ObservationIgnored private var moveUndoStack: [(from: URL, to: URL)] = []
 
+    /// The restore decision is the WINDOW's (per-window roots + the launch
+    /// setting live in scene state, unreadable at init) — MainWindow calls
+    /// one of the restore/adopt entry points from onAppear. Only the
+    /// screenshot-automation override applies here.
     init() {
         // `-QuoinLibraryPath /path` (launch argument → UserDefaults) bypasses
         // the folder picker — used by UI tests/screenshot automation and
         // handy for local development.
         if let path = UserDefaults.standard.string(forKey: "QuoinLibraryPath") {
             adopt(rootURL: URL(fileURLWithPath: path, isDirectory: true))
-        } else {
-            restoreBookmark()
         }
+    }
+
+    /// Default restore: the most recently used library (legacy single key).
+    func restoreDefaultLibrary() {
+        guard rootURL == nil else { return }
+        restoreBookmark()
+    }
+
+    /// Reopen a SPECIFIC folder from the per-folder bookmark store — window
+    /// restoration and Open Folder in New Window… (#61). Falls back to the
+    /// legacy key when it points at the same path (migration).
+    func adoptFolder(path: String) {
+        guard rootURL?.standardizedFileURL.path != path else { return }
+        guard let url = Self.resolveBookmark(forPath: path) else {
+            bookmarkRestoreFailure = "Quoin lost access to \(URL(fileURLWithPath: path).lastPathComponent) — choose it again to reconnect; your documents are untouched on disk."
+            return
+        }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            bookmarkRestoreFailure = "\(url.lastPathComponent) is no longer at \(url.deletingLastPathComponent().path). If you moved it, choose its new location."
+            return
+        }
+        adopt(rootURL: url)
+        Self.saveBookmarks(for: url)
+    }
+
+    /// Every grant lands in BOTH stores: the per-folder dictionary (any
+    /// window can reopen it) and the legacy most-recent key.
+    static func saveBookmarks(for url: URL) {
+        guard let bookmark = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) else { return }
+        UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
+        var all = UserDefaults.standard.dictionary(forKey: bookmarksKey) as? [String: Data] ?? [:]
+        all[url.standardizedFileURL.path] = bookmark
+        UserDefaults.standard.set(all, forKey: bookmarksKey)
+    }
+
+    private static func resolveBookmark(forPath path: String) -> URL? {
+        let all = UserDefaults.standard.dictionary(forKey: bookmarksKey) as? [String: Data] ?? [:]
+        var candidates: [Data] = []
+        if let exact = all[path] { candidates.append(exact) }
+        if let legacy = UserDefaults.standard.data(forKey: bookmarkKey) { candidates.append(legacy) }
+        for data in candidates {
+            var stale = false
+            guard let url = try? URL(
+                resolvingBookmarkData: data,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            ) else { continue }
+            guard url.standardizedFileURL.path == path else { continue }
+            return url
+        }
+        return nil
     }
 
     deinit {
@@ -74,13 +137,7 @@ final class LibraryModel {
         panel.prompt = "Use as Library"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         adopt(rootURL: url)
-        if let bookmark = try? url.bookmarkData(
-            options: .withSecurityScope,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        ) {
-            UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
-        }
+        Self.saveBookmarks(for: url)
     }
 
     /// Why the saved library didn't come back (bookmark dead, folder
@@ -105,13 +162,9 @@ final class LibraryModel {
             return
         }
         adopt(rootURL: url)
-        if stale, let refreshed = try? url.bookmarkData(
-            options: .withSecurityScope,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        ) {
-            UserDefaults.standard.set(refreshed, forKey: Self.bookmarkKey)
-        }
+        // Migrate/refresh into the per-folder store so other windows can
+        // reopen this folder by path.
+        Self.saveBookmarks(for: url)
     }
 
     private func adopt(rootURL url: URL) {
@@ -309,13 +362,7 @@ final class LibraryModel {
             return nil
         }
         adopt(rootURL: url)
-        if let bookmark = try? url.bookmarkData(
-            options: .withSecurityScope,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        ) {
-            UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
-        }
+        Self.saveBookmarks(for: url)
         _ = materializeBundledDocument(resource: "MarkdownGuide", as: "Markdown Guide.md")
         return materializeBundledDocument(resource: "WelcomeToQuoin", as: "Welcome to Quoin.md")
     }

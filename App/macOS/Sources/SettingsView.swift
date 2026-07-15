@@ -49,6 +49,7 @@ struct SettingsView: View {
     @AppStorage("QuoinAppearance") private var appearanceRaw = AppAppearance.system.rawValue
     @AppStorage("QuoinShowStatusBar") private var showStatusBar = true
     @AppStorage("QuoinReviewerName") private var reviewerName = ""
+    @AppStorage("QuoinLaunchBehavior") private var launchBehavior = "restore"
 
     var body: some View {
         Form {
@@ -68,6 +69,19 @@ struct SettingsView: View {
             .padding(.bottom, 6)
 
             Toggle("Show status bar", isOn: $showStatusBar)
+
+            Picker("When Quoin opens:", selection: $launchBehavior) {
+                Text("Open the folders from last time").tag("restore")
+                Text("Start with an empty window").tag("empty")
+            }
+            .pickerStyle(.radioGroup)
+
+            LabeledContent("") {
+                Text("Each window remembers its own folder.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.bottom, 6)
 
             TextField("Review as:", text: $reviewerName, prompt: Text(NSUserName()))
                 .frame(maxWidth: 220)
