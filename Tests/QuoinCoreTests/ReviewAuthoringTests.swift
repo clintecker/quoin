@@ -269,4 +269,39 @@ final class ReviewAuthoringTests: XCTestCase {
         }
     }
 
+
+    // MARK: - Styling survives replacement (live report: **bold** → strong)
+
+    func testReplacingStyledTextKeepsItsDelimiters() throws {
+        let source = "Some **bold** words.\n"
+        // The model's snap hands annotationEdit the FULL **bold** range.
+        let edit = try XCTUnwrap(ReviewAuthoring.annotationEdit(
+            kind: .replacement(new: "strong"), range: range(of: "**bold**", in: source),
+            in: source, reviewer: "clint", timestamp: stamp))
+        let after = applying(edit, to: source)
+        XCTAssertTrue(after.contains("{~~**bold**~>**strong**~~}"),
+                      "the new half inherits the emphasis: \(after)")
+
+        // Accepting keeps the document bold.
+        let mark = try XCTUnwrap(SuggestionResolver.marks(in: MarkdownConverter.parse(after)).first)
+        let accept = try XCTUnwrap(SuggestionResolver.edit(
+            resolving: mark.range, in: after, action: .accept))
+        XCTAssertTrue(applying(accept, to: after).contains("Some **strong** words."))
+    }
+
+    func testUnstyledReplacementPassesThrough() {
+        XCTAssertEqual(
+            ReviewAuthoring.replacementPreservingDelimiters("new", around: "plain old"), "new")
+        XCTAssertEqual(
+            ReviewAuthoring.replacementPreservingDelimiters("new", around: "**wrapped**"), "**new**")
+        XCTAssertEqual(
+            ReviewAuthoring.replacementPreservingDelimiters("new", around: "~~struck~~"), "~~new~~")
+        XCTAssertEqual(
+            ReviewAuthoring.replacementPreservingDelimiters("new", around: "*lop**"), "new",
+            "asymmetric wraps pass through")
+        XCTAssertEqual(
+            ReviewAuthoring.replacementPreservingDelimiters("**already**", around: "**old**"),
+            "**already**", "user-typed styling is not double-wrapped")
+    }
+
 }

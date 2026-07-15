@@ -89,7 +89,13 @@ public enum ReviewAuthoring {
             guard !flattened.isEmpty else { return nil }
             markText = "{==\(slice)==}{>>\(flattened)<<}{#\(id)}"
         case .replacement(let new):
-            markText = "{~~\(slice)~>\(flattenedInline(new))~~}{#\(id)}"
+            // The new half inherits the styling delimiters the selection
+            // snap pulled into the old half: replacing rendered "bold"
+            // (source **bold**) with "strong" must suggest **strong**,
+            // not strip the emphasis (live report, 2026-07-15).
+            let preserved = replacementPreservingDelimiters(
+                flattenedInline(new), around: slice)
+            markText = "{~~\(slice)~>\(preserved)~~}{#\(id)}"
         case .deletion:
             markText = "{--\(slice)--}{#\(id)}"
         case .highlight:
@@ -228,6 +234,24 @@ public enum ReviewAuthoring {
             skipSpaces()
         }
         return max(position, min(i, chars.count))
+    }
+
+    /// When the OLD half is delimiter-wrapped (`**bold**`), the NEW half
+    /// wraps in the same delimiters — accepting must keep the styling.
+    /// Only symmetric wraps transfer (leading run == trailing run); a
+    /// lopsided snap passes the text through untouched, and the
+    /// self-calibration still owns final say.
+    static func replacementPreservingDelimiters(
+        _ new: String, around snappedSlice: String
+    ) -> String {
+        let delimiters: Set<Character> = ["*", "_", "~", "="]
+        let leading = String(snappedSlice.prefix(while: { delimiters.contains($0) }))
+        let trailing = String(snappedSlice.reversed().prefix(while: { delimiters.contains($0) }).reversed())
+        guard !leading.isEmpty, leading == trailing,
+              leading.count + trailing.count < snappedSlice.count,
+              !new.hasPrefix(leading) || !new.hasSuffix(trailing)
+        else { return new }
+        return leading + new + trailing
     }
 
     /// Mark bodies live INSIDE an inline span: line breaks would change
