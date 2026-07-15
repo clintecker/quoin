@@ -279,6 +279,13 @@ struct ReaderScreen: View {
                             .padding(.horizontal, 5.5)
                             .padding(.vertical, 1.5)
                             .background(Color.accentColor, in: Capsule())
+                            // The capsule must never clip: at the inspector's
+                            // 180pt minimum the bridged segmented control's
+                            // rigid intrinsic width otherwise squeezes the
+                            // badge into a partial curve. Incompressible badge;
+                            // the PICKER truncates its segment titles instead.
+                            .fixedSize()
+                            .layoutPriority(1)
                             .accessibilityLabel("\(open) open review items")
                     }
                 }
@@ -753,6 +760,12 @@ struct ReaderScreen: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1.5)
                         .background(Color.accentColor, in: Capsule())
+                        // Capsules never clip (same rule as the inspector's
+                        // count badge): the breadcrumb, at layoutPriority(1),
+                        // otherwise squeezes this into a partial shape at
+                        // narrow widths. Horizontal-only — the bar's 22pt
+                        // strip must stay immune to reported heights.
+                        .fixedSize(horizontal: true, vertical: false)
                         .help("Typing becomes suggestions — Format ▸ Review ▸ Suggest Edits (⌃⌘R) to turn off")
                 }
                 // Review counts (suggestions design §3.5): accent, mono,
@@ -765,6 +778,10 @@ struct ReaderScreen: View {
                             ? "\(reviewCounts.comments) comment\(reviewCounts.comments == 1 ? "" : "s")" : nil,
                     ].compactMap { $0 }.joined(separator: " · "))
                         .foregroundStyle(Color.accentColor)
+                        // Never a mid-word sliver: the truncating breadcrumb
+                        // absorbs the shortfall instead.
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 // Word-count goal (idea #3): quiet progress next to stats.
                 if wordGoal > 0 {
