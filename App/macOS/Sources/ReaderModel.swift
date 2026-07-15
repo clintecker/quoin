@@ -670,6 +670,34 @@ final class ReaderModel {
         }
     }
 
+    // MARK: - Front-matter properties (#70)
+
+    /// Sets or creates one front-matter field from the Properties panel —
+    /// computed in-actor at apply time like every resolution (the writer
+    /// re-reads the session's current source), one edit, one undo. A
+    /// writer refusal (complex value, drifted structure) is a banner,
+    /// never a silent no-op.
+    func setFrontMatterField(key: String, value: String) {
+        applySessionResolution(
+            refusalMessage: "Couldn't set “\(key)” — that property isn't a simple value.",
+            flashOffset: nil
+        ) { session in
+            try await session.applyFrontMatterEdit(
+                key: key, value: value, publishSnapshot: false)
+        }
+    }
+
+    /// Removes one front-matter field (removing the last one removes the
+    /// whole block). Same in-actor guarantees as `setFrontMatterField`.
+    func removeFrontMatterField(key: String) {
+        applySessionResolution(
+            refusalMessage: "Couldn't remove “\(key)” — the front matter changed underneath. Try again.",
+            flashOffset: nil
+        ) { session in
+            try await session.removeFrontMatterField(key: key, publishSnapshot: false)
+        }
+    }
+
     /// The name annotations are attributed to (`by:`). `AI` stays reserved
     /// for agents; the default is the macOS account name.
     static var reviewerName: String {

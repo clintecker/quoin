@@ -129,22 +129,14 @@ enum InlinePostPasses {
     /// Splits leading YAML front matter (`---\n…\n---`) from the source.
     /// Returns the YAML body and the byte length of the whole front-matter
     /// block including its closing delimiter line.
+    ///
+    /// Delegates to `FrontMatterEditing.block(in:)` — ONE recognizer for
+    /// the grammar (its writers depend on agreeing with the converter),
+    /// and its byte-level walk sees CRLF documents: the old Character
+    /// split never split `\r\n` lines (one grapheme), so CRLF front
+    /// matter silently parsed as a thematic break plus prose.
     static func frontMatter(in source: String) -> (yaml: String, byteLength: Int)? {
-        guard source.hasPrefix("---\n") || source.hasPrefix("---\r\n") else { return nil }
-        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
-        var yamlLines: [Substring] = []
-        var byteCount = lines[0].utf8.count + 1
-        for line in lines.dropFirst() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed == "---" || trimmed == "..." {
-                byteCount += line.utf8.count + 1
-                let yaml = yamlLines.joined(separator: "\n")
-                // The final newline may not exist at EOF; clamp.
-                return (yaml: yaml, byteLength: min(byteCount, source.utf8.count))
-            }
-            yamlLines.append(line)
-            byteCount += line.utf8.count + 1
-        }
-        return nil // unterminated — treat as regular content
+        guard let block = FrontMatterEditing.block(in: source) else { return nil }
+        return (yaml: block.yaml, byteLength: block.length)
     }
 }

@@ -30,12 +30,13 @@ struct ReaderScreen: View {
     @State private var editSourceToggleGeneration = 0
 
     @State private var isOutlineVisible = true
-    /// Inspector mode: the trailing panel hosts Outline or Review
+    /// Inspector mode: the trailing panel hosts Outline, Review
     /// (suggestions §3.5, redlined 2026-07-14: the in-canvas rail felt
     /// weird and needed a very wide window — the inspector works at every
-    /// width). Auto-selects Review when a document carries marks and the
-    /// user hasn't chosen this session.
-    private enum InspectorMode: String { case outline, review }
+    /// width), or Properties (#70: the front-matter field editor; the
+    /// in-document grid stays the projection). Auto-selects Review when a
+    /// document carries marks and the user hasn't chosen this session.
+    private enum InspectorMode: String { case outline, review, properties }
     @State private var inspectorMode: InspectorMode = .outline
     @State private var userPickedInspectorMode = false
     /// Card→document flash command (generation-fired, like scrollTarget).
@@ -92,6 +93,12 @@ struct ReaderScreen: View {
         let items = reviewItems.filter { !$0.isResolved }
         let suggestions = items.filter(\.isSuggestion).count
         return (suggestions, items.count - suggestions)
+    }
+    private var hasReviewData: Bool { !reviewItems.isEmpty || !resolvedRecords.isEmpty }
+    /// The Properties panel's rows, recomputed per projection (a cheap
+    /// line walk of the front-matter block).
+    private var frontMatterFields: [FrontMatterEditing.Field] {
+        FrontMatterEditing.fields(in: model.document.source)
     }
 
     var body: some View {
@@ -242,39 +249,48 @@ struct ReaderScreen: View {
         }
         .inspector(isPresented: $isOutlineVisible) {
             VStack(spacing: 0) {
-                if !reviewItems.isEmpty || !resolvedRecords.isEmpty {
-                    // The open count lives OUTSIDE the picker as an accent
-                    // badge: NSSegmentedControl flattens styled text, so a
-                    // count inside the segment could only ever render as
-                    // plain "Review 4" (user redline) — and the badge
-                    // doubles as the still-work-to-do indicator (#58).
-                    HStack(spacing: 6) {
-                        Picker("", selection: Binding(
-                            get: { inspectorMode },
-                            set: { inspectorMode = $0; userPickedInspectorMode = true }
-                        )) {
-                            Text("Outline").tag(InspectorMode.outline)
+                // The open count lives OUTSIDE the picker as an accent
+                // badge: NSSegmentedControl flattens styled text, so a
+                // count inside the segment could only ever render as
+                // plain "Review 4" (user redline) — and the badge
+                // doubles as the still-work-to-do indicator (#58). The
+                // Review segment appears only when review data exists;
+                // Outline and Properties are always available (#70).
+                HStack(spacing: 6) {
+                    Picker("", selection: Binding(
+                        get: { inspectorMode },
+                        set: { inspectorMode = $0; userPickedInspectorMode = true }
+                    )) {
+                        Text("Outline").tag(InspectorMode.outline)
+                        if hasReviewData {
                             Text("Review").tag(InspectorMode.review)
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .controlSize(.small)
-                        let open = reviewItems.filter { !$0.isResolved }.count
-                        if open > 0 {
-                            Text("\(open)")
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                .monospacedDigit()
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5.5)
-                                .padding(.vertical, 1.5)
-                                .background(Color.accentColor, in: Capsule())
-                                .accessibilityLabel("\(open) open review items")
-                        }
+                        Text("Properties").tag(InspectorMode.properties)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    let open = reviewItems.filter { !$0.isResolved }.count
+                    if open > 0 {
+                        Text("\(open)")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5.5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.accentColor, in: Capsule())
+                            .accessibilityLabel("\(open) open review items")
+                    }
                 }
-                if inspectorMode == .review, !reviewItems.isEmpty || !resolvedRecords.isEmpty {
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                if inspectorMode == .properties {
+                    PropertiesPanel(
+                        fields: frontMatterFields,
+                        onSet: { key, value in model.setFrontMatterField(key: key, value: value) },
+                        onRemove: { key in model.removeFrontMatterField(key: key) }
+                    )
+                } else if inspectorMode == .review, hasReviewData {
                     ReviewPanel(
                         items: reviewItems,
                         resolved: resolvedRecords,
@@ -307,7 +323,9 @@ struct ReaderScreen: View {
             }
             .inspectorColumnWidth(min: 180, ideal: 240, max: 340)
             .onChange(of: reviewItems.isEmpty && resolvedRecords.isEmpty) { _, empty in
-                if empty { inspectorMode = .outline }
+                // The Review segment vanished from under its own selection;
+                // Properties keeps its seat.
+                if empty, inspectorMode == .review { inspectorMode = .outline }
             }
             // Marks ARRIVING while the inspector sits on Outline surface
             // themselves (panel review: auto-switch only fired on appear).

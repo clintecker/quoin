@@ -407,6 +407,38 @@ public actor DocumentSession {
         return try applyEdit(edit, publishSnapshot: publishSnapshot)
     }
 
+    // MARK: - Front-matter fields (Properties panel, #70 — computed in-actor)
+
+    /// Sets or creates one front-matter field: replace the key's line,
+    /// append before the closing `---`, or create the whole block at byte
+    /// 0 when the document has none. The edit is computed against the
+    /// session's CURRENT source at apply time (the `applyResolution`
+    /// pattern — never compute-then-queue), so a landed edit can't shift
+    /// its offsets. One edit, one undo. Nil means the writer refused
+    /// (complex value under that key, unsafe key, failed self-calibration)
+    /// — no splice happened; the caller surfaces that.
+    @discardableResult
+    public func applyFrontMatterEdit(
+        key: String, value: String, publishSnapshot: Bool = true
+    ) throws -> QuoinDocument? {
+        guard let edit = FrontMatterEditing.setFieldEdit(
+            key: key, value: value, in: document.source) else { return nil }
+        return try applyEdit(edit, publishSnapshot: publishSnapshot)
+    }
+
+    /// Removes one front-matter field (nested continuation lines ride
+    /// along); removing the last field removes the whole block. Same
+    /// in-actor computation and one-undo guarantees as
+    /// `applyFrontMatterEdit`.
+    @discardableResult
+    public func removeFrontMatterField(
+        key: String, publishSnapshot: Bool = true
+    ) throws -> QuoinDocument? {
+        guard let edit = FrontMatterEditing.removeFieldEdit(
+            key: key, in: document.source) else { return nil }
+        return try applyEdit(edit, publishSnapshot: publishSnapshot)
+    }
+
     @discardableResult
     public func undo() throws -> QuoinDocument? {
         guard let edit = undoStack.popLast() else { return nil }
