@@ -23,7 +23,7 @@ of its own (all pinned in `Package.swift`):
 | Package | Version | Role | Policy |
 | --- | --- | --- | --- |
 | `swift-markdown` (swiftlang) | `from: 0.8.0` | CommonMark/GFM parse via cmark-gfm | the one allowed third-party dep |
-| `MermaidKit` (clintecker) | `from: 0.9.0` | Mermaid diagrams (`MermaidLayout` + `MermaidRender`) | first-party, exempt |
+| `MermaidKit` (clintecker) | `from: 0.10.0` | Mermaid diagrams (`MermaidLayout` + `MermaidRender`) | first-party, exempt |
 | `Vinculum` (clintecker) | `from: 0.23.0` | LaTeX math (`VinculumLayout` + `VinculumRender`) | first-party, exempt |
 
 MermaidKit and Vinculum are Quoin's own published packages, consumed from

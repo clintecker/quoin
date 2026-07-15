@@ -257,7 +257,7 @@ Requires Xcode 16+ / Swift 6 tools on macOS 14+.
 
 ```sh
 swift build            # QuoinCore + QuoinRender
-swift test             # full suite: 634 tests — unit, torture, performance, conformance
+swift test             # full suite: 641 tests — unit, torture, performance, conformance
 ```
 
 App targets are generated with XcodeGen:
