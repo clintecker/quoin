@@ -1,134 +1,165 @@
 # Quoin beyond the Mac: iPhone/iPad and Linux
 
-Status: DIRECTION (2026-07-15). Grounded in what exists; nothing here is
-started. Companion to the TRD's session model and `docs/design/suggestions.md`
-(the review loop is load-bearing for both platforms).
+Status: DIRECTION v2 (2026-07-15). v1 was debated by five adversarial
+product squads (iOS product, Linux/agent infra, macOS guardian,
+engineering reality, owner persona) across two rounds; this revision keeps
+only what survived. The decision log at the end records what changed and
+why. Companion to the TRD and `docs/design/suggestions.md`.
 
-## What already holds (the inventory that shapes everything)
+## Corrected inventory (what ACTUALLY holds)
 
-- **QuoinCore is platform-free in fact, not just intent**: zero
-  `canImport(AppKit)`, Linux-green by mandate, and it contains the ENTIRE
-  document brain — parse, session actor, undo, autosave, search, stats,
-  exporters (plain/markdown/HTML), and the whole review machinery
-  (CriticScanner, SuggestionResolver, ReviewAuthoring, ReviewEndmatter,
-  FrontMatterEditing, SuggestTransform). Every atomic-edit API added this
-  cycle (`applyResolution`, `applyAnnotation`, `applyFrontMatterEdit`) is
-  in-actor core code that runs anywhere Swift runs.
-- **The iOS reader exists**: `QuoinRender/UIKit/MarkdownReaderViewIOS` +
-  `App/iOS` shell (IOSReaderScreen), compiled in CI.
-- **Diagram/math layout is platform-free** (MermaidLayout / VinculumLayout
-  scene IR); only RASTERIZATION is CoreGraphics/CoreText.
-- `ReaderModel` is ~2 AppKit touches away from platform-free (NSSound +
-  the import) — the handoff rule ("view models are platform-free; only
-  navigation containers differ") is one small extraction from true.
-- Mac Catalyst stays a NON-goal (CLAUDE.md: the AppKit guards would
-  mis-route; the UIKit path is the real iOS story anyway).
+- QuoinCore has zero AppKit imports and contains the entire document brain
+  including all review machinery — TRUE and verified.
+- **"Linux-green" is currently FALSE**: a swift:6.0 container build fails
+  twice — `CGVector` in MermaidLayout (absent from corelibs Foundation;
+  upstream, filed) and `NSString` `.byWords` enumeration in
+  MarkdownConverter (two sites, the word-count path). CI runs macOS only;
+  the Linux mandate is unenforced. Nothing in the Linux sections is
+  citable until a Linux CI job is green.
+- The iOS "reader" is a 98-line UITextView WITHOUT the decoration layer
+  (code canvases, callout boxes, quote/table rules live in macOS
+  `drawBackground` and have no UIKit counterpart), without Dynamic Type,
+  behind a single-document viewer shell that the library replaces
+  wholesale. It is a spike, not a reader.
+- ReaderModel is NOT "~2 AppKit touches from platform-free": it is ~1,161
+  lines of untested orchestration with 14+ QuoinRender couplings, and
+  `CaretHint` is defined in the AppKit view layer. The honest framing is
+  two tiers — UIKit-shareable vs. truly platform-free — reached via
+  characterization tests first, extraction later.
+- The session actor's atomicity is SINGLE-PROCESS. Any second writer (the
+  CLI, an agent) racing the app's open session + autosave is a corruption
+  seam the current design does not cover. Cross-process write safety is a
+  designed contract, not an assumption.
+- iCloud on iOS is not "free sync": picker-granted folders hold dataless
+  placeholders, kqueue watchers see nothing, conflicts arrive as
+  NSFileVersion versions, and reads/writes must be coordinated. The
+  couch-review demo is exactly as good as this section.
 
-## iPhone / iPad: reader + reviewer first, editor later
+## Phase 0 — enforce the claims (days, Mac-risk-free)
 
-**Thesis.** Phone Quoin is not a small Mac Quoin. Its killer loop is the
-one nothing else has: an agent (or collaborator) writes RDFM marks into
-your files at a desk or on a server; you read the document and
-accept/reject from the couch, byte-safe, one undo per action. Reading and
-reviewing are PERFECT touch interactions; block-level source editing is
-not, and pretending otherwise would ship a bad editor instead of a great
-reviewer.
+1. Linux CI job in Quoin's ci.yml building + testing QuoinCore (and a
+   matching job upstream in MermaidKit; issue filed for the CGVector
+   breaks). Fix the two `byWords` sites with a Linux word-break fallback
+   and a cross-platform word-count parity test.
+2. ReaderModel characterization tests — the step that "pays macOS
+   immediately" and the prerequisite for ever extracting it. No
+   extraction yet.
+3. In parallel (already queued): adversarial review of the review-machinery
+   surge (SuggestionResolver / ReviewAuthoring / SuggestTransform /
+   FrontMatterEditing splice paths); #60 forensics continue when the
+   owner can supply a live trace.
 
-**R1 — Reader parity (S).** Library via `UIDocumentPickerViewController`
-folder grant + security-scoped bookmark (same pattern as the Mac, iOS
-flavor); the iCloud Drive folder IS the sync story — same files, no
-service, conflicts already handled by the session's banner machinery.
-Outline as a sheet/sidebar (iPad gets the real sidebar). Recents + quick
-open. The reader view exists; this phase is library plumbing + navigation
-chrome around it.
+## Phase 1 — L1: the `quoin` CLI (M, was S)
 
-**R2 — The review loop (M). The reason to build any of this.** Cards
-render in a bottom sheet (iPhone) / trailing column (iPad). Swipe right
-on a card = accept, left = reject; tap = jump-and-flash (the linkage
-machinery is renderer-level and already compiles for UIKit). Creation
-gestures: select text → Comment/Suggest in the edit menu
-(`UIEditMenuInteraction`), riding `applyAnnotation` unchanged. This phase
-also forces the ReaderModel extraction (below) — the review flows are the
-first thing both shells genuinely share.
+The agent-side story and the owner's own Linux tool, scoped honestly:
 
-**R3 — Properties + field editing (M).** The Properties inspector
-translates 1:1 (it's a form). "Field editing": tap a paragraph → edit
-THAT block's source in a focused sheet with a commit button — the
-session's relative-edit API already thinks in blocks, and a one-block
-sheet dodges the whole caret/reveal/viewport problem class on touch.
-Review Mode typing works here naturally (SuggestTransform is pure core).
+- `quoin stats|outline|lint`, `quoin export --format html|md|txt`,
+  `quoin review list --json` (VERSIONED schema — agents will pin to it),
+  `quoin review add|accept|reject|reply` through the same in-actor,
+  self-calibrating, refuse-on-drift core APIs.
+- **Cross-process write contract** (the part that makes it an M): CLI
+  writes are compare-and-swap against a content hash with the same
+  refuse-don't-corrupt posture as in-app drift checks; the app's file
+  watcher absorbs external CLI writes as it does any external edit. A
+  torture test drives CLI writes against an open session.
+- Ships WITH a Claude Code skill (`/quoin-review` or similar) so the
+  handoff story is usable the day it lands, and dogfoodable immediately.
+- Gated behind the Phase 0 CI and the adversarial review of the APIs it
+  exposes.
 
-**R4 — The full in-place editor (L, iPad-first).** A TextKit 2
-`UITextView` port of the coordinator (reveal flips, caret anchoring,
-decorations). Large, deliberate, and NOT a prerequisite for shipping
-R1–R3 as a real product.
+## Phase 2 — the phone, behind a dogfood gate
 
-**Prerequisite refactor (do first, benefits macOS too):** split
-`ReaderModel` into a platform-free core (App-agnostic target or QuoinCore
-extension: document/session/undo/review/properties state) + a thin macOS
-adapter (beep, pasteboard, AppKit-only affordances). The macOS app keeps
-behavior; iOS imports the core.
+The squads' sharpest finding: the async couch-review behavior the phone
+bet rests on is UNDEMONSTRATED — the owner's observed review loop is
+synchronous, live, at the Mac. So the phone earns its build with an
+experiment, not a hunch:
 
-## Linux: the agent-side toolkit, not a GUI
+- **Dogfood gate (≈3 weeks, near-zero cost):** with the L1 CLI live,
+  agents write marks into the iCloud-synced library during normal work.
+  If the owner repeatedly finds himself WANTING to triage from the phone
+  (observed, not imagined), R1 starts. If not, the phone stays a reader
+  idea and no months were spent.
+- **R1 (M, was S) — "a reader that passes the Jobs bar":** folder-grant
+  library (UIDocumentPicker + bookmark), UIKit port of the decoration
+  draw/measure pass over TextKit 2 fragment frames, Dynamic Type via
+  UIFontMetrics scaling of the theme ramp, explicit iOS behavior for
+  every quoin-* URL scheme, replacement of the DocumentGroup shell.
+- **R1.5 — field editing pulled forward:** tap a block → focused source
+  sheet → commit via the relative-edit session API. Reader + fix-a-typo
+  is the minimum app that isn't embarrassing; it ships before the
+  review loop, not after.
+- **R2 — the review loop:** cards in sheet/column; primary interaction is
+  tap → jump-and-flash diff in context → explicit Accept/Reject → undo
+  toast. Swipe survives only as an opt-in full-swipe accelerator with
+  haptic confirm (gesture conflicts + destructive-action muscle memory
+  killed it as the headline). Requires the **iCloud mechanics section**:
+  NSMetadataQuery discovery + download of dataless files, coordinated
+  reads/writes, NSFileVersion conflict UX, and the pull-only answer —
+  BGAppRefresh scan + local notification + badge ("3 new suggestions in
+  Weekly Notes"), because a reviewer nobody is told about is a room
+  nobody enters.
+- **R3 — Properties panel** (translates 1:1). **R4 — the full editor:**
+  demoted to an unsized, demand-gated note; no iPad usage is in
+  evidence, and the TextKit2/UITextView coordinator port is XL, not L.
+- iPad throughout R1–R3: hardware-keyboard citizenship (arrow-key card
+  nav, ⌘-return accept, ⌘F) and pointer hover — cheap, and the
+  difference between an iPad app and a stretched iPhone app.
 
-**Thesis.** Nobody wants a GTK Quoin. Linux is where agents live —
-servers, CI, containers — and Quoin's differentiator there is SAFE
-programmatic review: the same atomic, self-calibrating, refuse-on-drift
-edits the app uses, exposed as a CLI instead of hand-spliced regex
-CriticMarkup. Linux Quoin completes the agent handoff story: Claude Code
-on any machine runs `quoin review add`, and the marks appear live in the
-Mac/iPhone panel through ordinary file sync.
+## Phase 3 — L3: `quoin serve`, demoted to a sketch
 
-**L1 — `quoin` CLI (S).** An `executableTarget` on QuoinCore only:
-- `quoin stats|outline|lint <file>` — parse-backed inspection.
-- `quoin export --format html|md|txt` — the pure exporters.
-- `quoin review list <file> --json` — marks + metadata (the
-  "review index" agents consume).
-- `quoin review add|accept|reject|reply` — ReviewAuthoring /
-  SuggestionResolver through the session APIs: atomic, recorded,
-  structure-preserving, refusing rather than corrupting. This is the
-  payload; everything else is garnish.
-CI gains a Linux job running the CLI's tests (the core suite already has
-to pass there by mandate).
+The owner wants usable Quoin on Linux; a localhost server over the
+session actor is still the honest medium-term answer — but v1's spec
+overclaimed and it is NOT a committed phase until three problems have
+designs:
 
-**L2 — SVG scene writers (M, upstream).** Mermaid/Vinculum layout is
-platform-free; only CG rasterization isn't. An SVG writer over the scene
-IR (pure string generation from typed geometry) unlocks full-fidelity
-HTML export on Linux — diagrams and math included. Belongs in the
-MermaidKit/Vinculum repos (filed as enhancement issues when this phase
-starts, per the cross-repo rule).
+1. **HTTP server vs. the one-dependency policy**: swift-nio needs TRD
+   justification or a minimal vendored/hand-rolled epoll server —
+   decided, not discovered.
+2. **The zero-script claim, corrected**: SSE without JS does not exist
+   and meta-refresh loses scroll/form state (killed). The honest stance:
+   server-rendered HTML, no frameworks ever, and AT MOST one small
+   inline script for live-reload/scroll-preservation — an explicit,
+   documented exception to the letter of zero-JS that preserves its
+   spirit, or no live reload at all.
+3. **FileWatcher needs an inotify backend** (kqueue is Darwin-only) —
+   also a prerequisite for `quoin watch`.
 
-**L3 — `quoin serve`: Quoin you can USE on Linux (M).** (Elevated from
-garnish: the user runs Linux and wants Quoin there, not just a toolkit.)
-A localhost server on the session actor rendering the library and
-documents as SERVER-SIDE HTML — reader + reviewer, not a toy: outline,
-the field-grid front matter, review cards with Accept/Reject/Comment as
-plain HTTP form posts hitting the same in-actor APIs, live reload via
-the file watcher. The zero-JS-at-runtime principle HOLDS — no client
-framework, ideally zero script (form posts + meta-refresh/SSE degrade
-gracefully); all rendering is Swift. Diagrams/math arrive with the L2
-SVG scene writers (same layout geometry as the Mac, byte-identical
-documents). Field editing = a per-block textarea form riding the
-relative-edit session API — the same "focused sheet" shape as iOS R3.
-This is the honest Linux Quoin until Swift's native GUI story matures.
+Interim Linux reality: the CLI + `$EDITOR` + `quoin export html` opened
+in a browser. Less romantic, shippable in Phase 1.
 
-**L4 — Native-shell spike (exploratory, no commitment).** Track
-SwiftCrossUI/Adwaita-Swift maturity; a native reader shell over the
-scene IR + HTML-free projection would be the long-game replacement for
-L3's browser chrome. Spike when the ecosystem earns it; the L1–L3
-layers are exactly the substrate it would sit on, so nothing is wasted.
+## L2 — SVG scene writers (unchanged, upstream)
 
-## Sequencing recommendation
+Platform-free scene IR → SVG strings in MermaidKit/Vinculum unlocks
+full-fidelity export everywhere. Enhancement issues at phase start.
 
-1. ReaderModel extraction (unlocks iOS, pays macOS immediately).
-2. L1 CLI (small, ships the agent story end-to-end, exercises the
-   Linux mandate for real).
-3. R1+R2 (the phone reviewer — the demo that sells the whole design).
-4. L2 SVG upstream ↔ R3 in parallel-ish; R4 when the iPad demands it.
+## Sequencing (post-debate consensus, all five squads)
+
+1. **Phase 0** now: Linux CI + two compile fixes + ReaderModel
+   characterization tests; adversarial review + #60 in parallel lanes.
+2. **L1 CLI** with the cross-process contract + versioned JSON + skill.
+3. **Dogfood gate** runs during/after L1 → decides the phone.
+4. R1/R1.5/R2 if the gate passes; L3 when its three designs exist; L2
+   upstream when export demands it; R4 on demonstrated iPad demand.
+
+## Decision log (what the debate changed)
+
+- KILLED: "Linux-green in fact" (container build fails; CI now required
+  first); "~2 AppKit touches" (replaced with tiered coupling truth);
+  R1 as S ("reader exists" — it doesn't, at the polish bar); swipe as
+  headline interaction; zero-script SSE/meta-refresh fiction; L3 as a
+  committed phase; R4 as a sized phase; "conflicts already handled"
+  (single-process only; iOS/iCloud unaddressed).
+- ADDED: Phase 0 CI enforcement; cross-process CAS write contract +
+  torture test; versioned CLI JSON schema + Claude Code skill; the
+  dogfood gate; R1.5 field editing before the review loop; iCloud
+  mechanics + notification/badge requirements; Dynamic Type/VoiceOver/
+  hardware-keyboard citizenship; ReaderModel characterization-first.
+- SURVIVED INTACT: reviewer-first on touch; editor-last; no Catalyst;
+  no GTK port; no sync service; no client-side JS frameworks, ever;
+  files as the only truth.
 
 ## Non-goals
 
-Mac Catalyst; a Linux GUI *toolkit port* (GTK/Qt reimplementation of the
-TextKit editor); any sync service (files + iCloud Drive/git are the sync
-layer); WYSIWYG phone editing before the reviewer is excellent; client-side
-JS frameworks anywhere, ever.
+Mac Catalyst; a Linux GUI toolkit port; any sync service; WYSIWYG phone
+editing before the reviewer is excellent; client-side JS frameworks
+anywhere, ever.
