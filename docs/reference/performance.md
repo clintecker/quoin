@@ -1,12 +1,12 @@
 # Performance characteristics
 
 Quoin treats the markdown **file** as the source of truth and the editor as a
-live projection of it. Every keystroke mutates the source string, and the
-editor re-derives what you see from that string. That design is what makes
-round-trips byte-lossless and keeps the format open — but it also means the
-per-keystroke cost is, in the naive case, "re-parse the whole document and
-rebuild the whole attributed string." On a book-sized file that is hundreds of
-milliseconds, far past a single frame.
+live [projection](../design/editor-modes.md) of it. Every keystroke mutates the
+source string, and the editor re-derives what you see from that string. That
+design is what makes round-trips [byte-lossless](invariants.md) and keeps the
+format open — but it also means the per-keystroke cost is, in the naive case,
+"re-parse the whole document and rebuild the whole attributed string." On a
+book-sized file that is hundreds of milliseconds, far past a single frame.
 
 Quoin stays responsive by never doing the naive thing when it can avoid it.
 Three mechanisms cooperate so that a keystroke in a large document costs
@@ -54,24 +54,34 @@ keystroke path.
 So the optimization problem is: given that we re-derive from source, how do we
 re-derive *as little as possible* while producing exactly what a full
 re-derivation would have produced? The answer is that both the parser and the
-renderer are structured so a single-block edit can be proven local, and only
-that block is redone.
+renderer — mapped in full in the [architecture reference](architecture.md) —
+are structured so a single-block edit can be proven local, and only that block
+is redone.
 
 ---
 
 ## Incremental parsing (fast paths)
 
 `MarkdownConverter.parseAfterEdit(previous:edit:)` is the parser's keystroke
-entry point. It applies the byte edit, then tries two fast paths before it will
-fall back to a full parse:
+entry point (see the [architecture map](architecture.md) for where it sits
+relative to `DocumentSession`). It applies the byte edit, then tries two fast
+paths before it will fall back to a full parse:
 
 ```mermaid
 flowchart TD
-  E[Edit applied to source] --> A{Plain-paragraph<br/>fast path?}
-  A -->|yes| AP[.plainParagraphFastPath<br/>re-parse block slice]
-  A -->|no| B{Fenced-block<br/>fast path?}
-  B -->|yes| BP[.fencedBlockFastPath<br/>re-parse block slice]
-  B -->|no| F[.full<br/>re-parse whole document]
+  E[Edit applied to source] --> G{Live suggestions<br/>or footnotes?}
+  G -->|yes| F[.full<br/>re-parse whole document]
+  G -->|no| A{Edit inserts a<br/>newline?}
+  A -->|yes| F
+  A -->|no| B{Target block is a<br/>plain paragraph?}
+  B -->|yes| C{Slice re-parse<br/>round-trips?}
+  C -->|yes| AP[.plainParagraphFastPath<br/>splice one block]
+  C -->|no| F
+  B -->|no| D{Target block is a<br/>fenced embed,<br/>edit inside content region?}
+  D -->|yes| E2{Slice re-parse stays<br/>one block, same family?}
+  E2 -->|yes| BP[.fencedBlockFastPath<br/>splice one block]
+  E2 -->|no| F
+  D -->|no| F
   AP --> OUT[New QuoinDocument]
   BP --> OUT
   F --> OUT
@@ -79,7 +89,11 @@ flowchart TD
 
 The result carries the `ParseStrategy` it used (`.plainParagraphFastPath`,
 `.fencedBlockFastPath`, or `.full`) — the benchmark harness reads this back to
-confirm which path an edit actually took.
+confirm which path an edit actually took. The "live suggestions or footnotes"
+gate exists because both carry absolute byte ranges into inline content; see
+[When the fast paths deliberately stand down](#when-the-fast-paths-deliberately-stand-down)
+below, and the review loop's byte-range discipline in
+[invariants.md](invariants.md).
 
 ### The self-calibrating slice re-parse
 
@@ -124,12 +138,12 @@ The common case: typing inside an ordinary prose paragraph. It fires only when
 
 ### Fenced-block fast path
 
-The other thing a caret does all day: typing inside a fenced embed — a code
-block, a Mermaid diagram, or a math block. Editing a chart's revealed source
-would otherwise re-parse the entire document on every keystroke, which is why a
-diagram in a long file could feel sluggish while prose stayed snappy. This path
-re-parses only the fenced block's slice, with two extra guards specific to
-fences:
+The other thing a caret does all day: typing inside a fenced
+[embed](../design/embed-editing-ux.md) — a code block, a Mermaid diagram, or a
+math block. Editing a chart's revealed source would otherwise re-parse the
+entire document on every keystroke, which is why a diagram in a long file
+could feel sluggish while prose stayed snappy. This path re-parses only the
+fenced block's slice, with two extra guards specific to fences:
 
 - the edit must stay **strictly inside the content region** — past the opening
   fence line (so the info string can't change) and before the closing fence
@@ -138,11 +152,21 @@ fences:
 - the new slice must stay in the **same embed family** (a Mermaid block can't
   silently become plain code without the full parse seeing it).
 
+![Math and diagrams rendered side by side in one viewport](../images/native-engines.png)
+
+This is why a document dense with [Vinculum](https://github.com/clintecker/Vinculum)
+math and [MermaidKit](https://github.com/clintecker/MermaidKit) diagrams —
+see [dependencies.md](dependencies.md) for how both are consumed — doesn't cost
+extra to *edit*: each embed's revealed source is its own fenced block, so
+typing inside one only ever re-parses and re-renders that one slice. The
+diagram or equation you're not touching never re-enters the pipeline.
+
 ### When the fast paths deliberately stand down
 
 Both fast paths require zero live suggestions and no footnotes. Review marks
-(the CriticMarkup/RDFM suggestions and comments that power the review loop) and
-footnotes carry **absolute** byte ranges inside their inline content — ranges
+(the CriticMarkup/RDFM suggestions and comments that power the
+[review loop](../design/suggestions.md)) and footnotes carry **absolute** byte
+ranges inside their inline content — ranges
 that block-range shifting can't reach. A fast-path edit *before* such a mark
 would leave the mark's stored range and content hash stale, and a later
 accept/reject would compute against drifted offsets. So the presence of any
@@ -175,12 +199,16 @@ sequenceDiagram
   participant M as ReaderModel
   participant R as AttributedRenderer
   participant S as NSTextStorage
+  participant L as TextKit 2<br/>layout manager
   U->>M: byte edit in active block
   M->>R: render(activeBlockID, caret)
   R->>R: rebuild ONE fragment
   R-->>M: RenderedDocument<br/>+ storagePatches + patchBaseLength
   M->>S: apply patch IF storage.length == patchBaseLength
   Note over M,S: mismatch → one O(scan) splice resync
+  S->>L: invalidate patched region only
+  L->>L: re-layout ONLY<br/>the affected fragment range
+  L-->>M: viewport redraws<br/>(caret line pinned)
 ```
 
 The published projection carries its `storagePatches` and a `patchBaseLength` —
@@ -217,11 +245,53 @@ thousand-page document does not pay to lay out a thousand pages to show you one;
 scrolling lays out the newly exposed region as it comes into view. This is what
 keeps very large documents scrolling at full frame rate regardless of length.
 
-This is also why block decorations (code canvases, callout boxes, quote rules,
-diagram frames, table rules, the front-matter chip) are drawn in
-`drawBackground(in:)` using TextKit 2 fragment frames rather than per-glyph
-`.backgroundColor` attributes: the shapes track reflow, and only visible
-fragments are ever measured or drawn.
+```mermaid
+flowchart TD
+  subgraph Doc["Attributed string (whole document)"]
+    B1[Blocks above viewport<br/>— not laid out]
+    B2[Blocks in viewport<br/>— laid out and drawn]
+    B3[Blocks below viewport<br/>— not laid out]
+  end
+  Scroll[Scroll / reveal] -->|expands viewport rect| Newly[Newly exposed blocks]
+  Newly --> LayNow[Laid out on demand]
+  LayNow --> B2
+  B1 -. "stays unlaid until scrolled into view" .-> B2
+  B3 -. "stays unlaid until scrolled into view" .-> B2
+```
+
+Only the blocks inside the current viewport rect ever get measured glyph runs
+or fragment frames; everything above and below is tracked by range only until
+scrolling brings it on screen. This is also why block decorations (code
+canvases, callout boxes, quote rules, diagram frames, table rules, the
+front-matter chip) are drawn in `drawBackground(in:)` using TextKit 2 fragment
+frames rather than per-glyph `.backgroundColor` attributes: the shapes track
+reflow, and only visible fragments are ever measured or drawn.
+
+---
+
+## Keystroke-to-paint budget
+
+Putting the three mechanisms together end to end gives the full budget for one
+keystroke in the active block — the path the
+[caret/viewport invariant](invariants.md) has to hold across:
+
+```mermaid
+flowchart LR
+  K["Keystroke"] --> SE["source.applyEdit<br/>byte splice<br/>~0.8 ms"]
+  SE --> PA["parseAfterEdit<br/>fast-path slice re-parse<br/>~9 ms"]
+  PA --> RF["render.activeBlockPatch<br/>rebuild one fragment<br/>~0.2 ms"]
+  RF --> ST["storage patch applied<br/>(or full splice resync)"]
+  ST --> LO["TextKit 2 layout<br/>affected region only"]
+  LO --> PT["Paint<br/>viewport redraw,<br/>caret line pinned"]
+```
+
+Every number on this path is dominated by the same thing it would be without
+any optimization at all: the full parse and full render are still *possible*
+fallbacks (the `.full` branches in the fast-path decision tree above), but on
+the common case — typing inside one paragraph or one revealed embed — each
+stage does O(one block) work instead of O(document) work. The
+[Benchmarks](#benchmarks) section below has the measured numbers this diagram
+is built from.
 
 ---
 
@@ -294,3 +364,22 @@ are regression guards, not the target. If an enforced run fails, either a fast
 path stopped firing or a stage regressed; check the reported
 `parseAfterEdit.strategy` first, since a fast path silently falling back to
 `.full` is the usual culprit.
+
+---
+
+## See also
+
+- [architecture.md](architecture.md) — the machinery map these fast paths and
+  the patch renderer live inside.
+- [invariants.md](invariants.md) — the correctness guarantees (byte-lossless
+  round-trips, the caret/viewport invariant) that constrain how aggressive a
+  fast path is allowed to be.
+- [../design/editor-modes.md](../design/editor-modes.md) — the projection and
+  syntax-reveal model that makes "re-derive from source" the whole game.
+- [../design/embed-editing-ux.md](../design/embed-editing-ux.md) — how
+  fenced embeds (code, Mermaid, math) are edited, and why they get their own
+  fast path.
+- [../design/suggestions.md](../design/suggestions.md) — the review loop whose
+  absolute byte ranges force a full parse while marks are live.
+- [dependencies.md](dependencies.md) — how the first-party Vinculum and
+  MermaidKit engines are consumed.

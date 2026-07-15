@@ -1,5 +1,7 @@
 # Documentation map
 
+![Quoin rendering a document, with sidebar, outline, and format pill](images/hero.png)
+
 Where to look, by question. The tree is organized by audience:
 
 ```
@@ -14,6 +16,23 @@ docs/
   images/             the images the docs and README embed
 ```
 
+The categories build on each other more than the flat list suggests: the guide
+is the front door, [PRODUCT.md](PRODUCT.md) is the capability spec everything
+else answers to, `design/` explains how it looks and behaves, `reference/` is
+how it's built underneath, and `context/` is a code-verified digest of
+`PRODUCT.md` for people writing about Quoin rather than building it.
+
+```mermaid
+flowchart LR
+    Guide["guide/<br/>for users"] -->|"want the full picture"| Product["PRODUCT.md<br/>capability spec"]
+    Product -->|"how it looks + behaves"| Design["design/<br/>systems + design language"]
+    Product -->|"how it's built"| Reference["reference/<br/>architecture, invariants, ADRs"]
+    Design -->|"why this choice"| Reference
+    Reference -->|"the record of past choices"| ADR["reference/adr/<br/>decision records"]
+    Product -->|"code-verified excerpts"| Context["context/<br/>marketing/website packs"]
+    Product -.->|"superseded by"| Archive["archive/<br/>legacy TRD + PRD"]
+```
+
 ## New here? Start with the guide
 
 - **[guide/getting-started.md](guide/getting-started.md)** — open Quoin, pick a
@@ -26,7 +45,7 @@ docs/
 - **[PRODUCT.md](PRODUCT.md)** — the reference-grade capability spec; every
   claim backed by a test, doc, or screenshot. The source of truth for
   capabilities; downstream surfaces (marketing, website) lift from here.
-- `../README.md` — the public overview and support matrix.
+- **[`../README.md`](../README.md)** — the public overview and support matrix.
 
 ## How does the review & commenting system work?
 
@@ -46,9 +65,12 @@ docs/
 - **[reference/adr/](reference/adr/README.md)** — the key architectural
   decisions and *why* they were made.
 - **[reference/dependencies.md](reference/dependencies.md)** — the
-  one-third-party-dependency philosophy and the full graph.
+  one-third-party-dependency philosophy and the full graph, including the
+  platform-free/platform-render split for the first-party engines.
 - **[reference/performance.md](reference/performance.md)** — how Quoin stays
   fast: incremental parsing, patch rendering, viewport-lazy layout.
+- **[reference/distribution.md](reference/distribution.md)** — how a release
+  actually ships: notarization, the Sparkle appcast, and the signing keys.
 
 ## How does editing work?
 
@@ -61,7 +83,10 @@ docs/
 ## What does it look like, and where does it run?
 
 - **[design/handoff.md](design/handoff.md)** — Quoin's visual and interaction
-  design language (the Graphite aesthetic, type ramp, spacing, principles).
+  design language (the Graphite aesthetic, type ramp, spacing, principles);
+  the high-fidelity mockup it's drawn from sits alongside it as
+  [`design/Markdown Editor Design Doc.dc.html`](design/Markdown%20Editor%20Design%20Doc.dc.html)
+  (and a PDF export).
 - **[design/platforms.md](design/platforms.md)** — Quoin across platforms:
   macOS today, and the iPhone/iPad and Linux directions.
 - **[guide/screenshots.md](guide/screenshots.md)** — the screenshot manifest:
@@ -70,19 +95,32 @@ docs/
 
 ## What can it render?
 
-- `../README.md` — the public support matrix.
+- **[`../README.md`](../README.md)** — the public support matrix.
 - **Engines:** [MermaidKit](https://github.com/clintecker/MermaidKit) (diagrams)
   and [Vinculum](https://github.com/clintecker/Vinculum) (math) document
-  themselves — their repos are the source of truth for coverage. Quoin's docs
-  deliberately don't duplicate those matrices (they drift; see
+  themselves — their repos are the source of truth for coverage, described in
+  more depth in [reference/dependencies.md](reference/dependencies.md). Quoin's
+  docs deliberately don't duplicate those matrices (they drift; see
   [ADR 0003](reference/adr/0003-first-party-engines.md)).
 - **[context/quoin-features.md](context/quoin-features.md)** /
   **[context/mermaidkit-features.md](context/mermaidkit-features.md)** —
   code-verified feature packs for marketing and website work.
 
+## Where do the original specs live?
+
+Superseded by the documents above for scope and detail, but kept for the
+architectural reasoning they still carry:
+
+- **[archive/TRD.html](archive/TRD.html)** — the original technical
+  requirements doc: native engines, the session model. Where it conflicts with
+  [design/handoff.md](design/handoff.md), the handoff wins.
+- **[archive/PRD.html](archive/PRD.html)** — the original viewer-scoped
+  product spec, superseded in scope by [PRODUCT.md](PRODUCT.md) but still
+  valid for performance budgets and the privacy stance.
+
 ## Contributor conventions
 
-- `../CLAUDE.md` — working conventions, build/debug recipes, and hard-won
-  pitfalls.
-- `internal/` — development records (ledgers, plans, extraction notes). Useful
-  history, but not part of the reader-facing documentation.
+- **[`../CLAUDE.md`](../CLAUDE.md)** — working conventions, build/debug
+  recipes, and hard-won pitfalls.
+- **`internal/`** — development records (ledgers, plans, extraction notes).
+  Useful history, but not part of the reader-facing documentation.

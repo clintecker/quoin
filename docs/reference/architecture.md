@@ -18,10 +18,12 @@ re-projected.
 Why go to this trouble instead of editing an attributed string directly? Three
 consequences fall out of it, and none of them is achievable the other way:
 
-- **The round-trip is byte-lossless.** Untouched regions of the file are never
-  re-serialized, because the file is never serialized *from* the view at all —
-  only the bytes an edit actually spans ever change on disk. Your document is
-  the file you wrote, not a lossy re-emission of a rich-text model.
+- **The round-trip is [byte-lossless](invariants.md).** Untouched regions of
+  the file are never re-serialized, because the file is never serialized
+  *from* the view at all — only the bytes an edit actually spans ever change
+  on disk. Your document is the file you wrote, not a lossy re-emission of a
+  rich-text model. The full guarantee, and the tests that enforce it, are
+  catalogued in [`invariants.md`](invariants.md).
 - **The `.md` file is portable and permanent.** It opens in any editor,
   diffs cleanly in git, and outlives Quoin. Quoin is a lens over your file,
   not a container that owns it.
@@ -35,7 +37,8 @@ This is [ADR 0001](adr/0001-source-string-truth.md).
 ## Dependencies
 
 Quoin has exactly **one third-party dependency** and two first-party packages
-of its own (all pinned in `Package.swift`):
+of its own (all pinned in `Package.swift`); the full graph and the policy
+behind it live in [`dependencies.md`](dependencies.md):
 
 | Package | Version | Role | Policy |
 | --- | --- | --- | --- |
@@ -43,12 +46,14 @@ of its own (all pinned in `Package.swift`):
 | `MermaidKit` (clintecker) | `from: 0.10.0` | Mermaid diagrams (`MermaidLayout` + `MermaidRender`) | first-party, exempt |
 | `Vinculum` (clintecker) | `from: 0.23.0` | LaTeX math (`VinculumLayout` + `VinculumRender`) | first-party, exempt |
 
-MermaidKit and Vinculum are Quoin's own published packages, consumed from
-GitHub exactly like any other host app would — their engines are versioned and
-CI-tested on their own, so they are exempt from the dependency policy (the
-policy script allowlists them). The one-third-party-dependency rule still bites
-for anything genuinely external: a new outside dependency requires a written
-TRD case first, and the default answer is no. Each first-party package splits a
+[MermaidKit](https://github.com/clintecker/MermaidKit) and
+[Vinculum](https://github.com/clintecker/Vinculum) are Quoin's own published
+packages, consumed from GitHub exactly like any other host app would — their
+engines are versioned and CI-tested on their own, so they are exempt from the
+dependency policy (the policy script allowlists them). The
+one-third-party-dependency rule still bites for anything genuinely external: a
+new outside dependency requires a written TRD case first, and the default
+answer is no. Each first-party package splits a
 platform-free layout product (Foundation-only, Linux-clean) from an Apple-only
 render product; QuoinCore `@_exported import`s the layout product of each
 (`MermaidReexport.swift`, `VinculumReexport.swift`) so their public types stay
@@ -146,7 +151,28 @@ ranges and moves with every byte inserted above it. The editing-latency
 contract — every keystroke's core slice fits in a 60 Hz frame at ANY document
 size, charts or not — is enforced in CI by `EditingLatencyTests` (strategy
 assertions + wall-clock ceilings over generated small/medium/large/novel
-fixtures) and, for the render slice, by `EditingRenderLatencyTests`.
+fixtures) and, for the render slice, by `EditingRenderLatencyTests`. Budgets
+and methodology are cataloged in [`performance.md`](performance.md).
+
+`parseAfterEdit`'s decision is conservative by construction: every fast path
+re-parses with the real parser and self-calibrates against the old slice
+before it trusts the new one, so a wrong guess always degrades to the
+always-correct full parse rather than corrupting the document.
+
+```mermaid
+flowchart TD
+    E[SourceEdit] --> K{Where does the edit land?}
+    K -->|inside a plain paragraph| P[Plain-paragraph fast path]
+    K -->|inside a fenced embed\ncode / mermaid / math| F[Embed fast path]
+    K -->|new fence, list to paragraph,\na footnote, anything structural| Full[Full document parse]
+    P --> Cal{Self-calibrate:\nold slice re-parses to\nthe old block exactly?}
+    F --> Cal
+    Cal -->|yes, and the new slice stays\none block of the same family| Grow[Re-parse only the\nedited block's slice]
+    Cal -->|no| Full
+    Grow --> Ids[Re-derive BlockIDs for\ncontainers below the edit]
+    Ids --> Snap[New QuoinDocument snapshot]
+    Full --> Snap
+```
 
 ### Project (QuoinRender)
 
@@ -228,13 +254,34 @@ the preview-panel anchor, and the accessibility element all derive from
 draws in `draw(_:)`, ABOVE the glyphs, and is exposed to VoiceOver as a
 pressable "Done editing" button.
 
+One measured box feeding every consumer is what keeps the chrome from ever
+disagreeing with itself:
+
+```mermaid
+flowchart TD
+    Tick[Draw tick] --> Settle["viewWillDraw:\nfinish viewport layout + settle\n(caret line holds its screen position)"]
+    Settle --> Measure["measureVisibleRuns\n(one pass, viewport-culled)"]
+    Measure --> Chrome[EditingChrome\none measured box]
+    Chrome --> BG["drawBackground(in:)\ncode canvases · callouts · quote rules\ndiagram frames · table rules · front-matter chip"]
+    Chrome --> Chip["draw(_:): accent frame +\n'done editing' chip, above the glyphs"]
+    Chrome --> Hit[Chip hit-test + tooltip]
+    Chrome --> AX[VoiceOver element]
+    BG --> Pixels[Pixels on screen]
+    Chip --> Pixels
+```
+
 ## Editing model (syntax reveal)
 
 Clicking a block activates it: the renderer swaps that block's projection for
 its **literal source**, styled but character-for-character 1:1 with the file.
 This is the mechanism behind "WYSIWYG that is still just markdown" — you never
 leave a rendered surface for a separate raw-text mode, and the caret you place
-in the rendered text lands in the exact source byte it visually sits on.
+in the rendered text lands in the exact source byte it visually sits on. The
+projection model and the reveal behavior are specified from the user-facing
+side in [`editor-modes.md`](../design/editor-modes.md); this section is the
+machinery underneath it.
+
+![An active block revealed as its literal markdown source, hidden delimiters visible only where the caret sits inside a span](../images/syntax-reveal.png)
 
 ```mermaid
 sequenceDiagram
@@ -281,7 +328,9 @@ before emphasis).
 ### Editing embeds (code, math, diagrams)
 
 Rendered embeds are artifacts, not text, so activating one has extra
-machinery — but it obeys the same 1:1-source rule:
+machinery — but it obeys the same 1:1-source rule. The full UX spec for this
+mechanism, including the flip animation and the live-preview panel, is
+[`embed-editing-ux.md`](../design/embed-editing-ux.md):
 
 - **Caret hints carry their coordinate space.** `CaretHint.rendered` and
   `CaretHint.source` are two coordinate spaces for one caret — an embed hint is
@@ -330,7 +379,9 @@ byte-safe source edit. Because the annotations are text, an agent or a
 collaborator can propose edits by writing the raw file, and you triage them as
 rendered cards without either side needing a shared database. The subsystem is
 entirely platform-free (QuoinCore), so the app and any future CLI reuse it
-unchanged. Design in `docs/design/suggestions.md`.
+unchanged. Design in [`suggestions.md`](../design/suggestions.md).
+
+![The review inspector showing a suggestion card and a comment card anchored to their marks in the document](../images/review-panel.png)
 
 ```mermaid
 flowchart LR
@@ -415,6 +466,48 @@ Quoin owns only the *seam*: it projects its design system onto a small theme
 struct, calls one attachment-building entry point, and falls back to a labelled
 source card when the engine reports the source unsupported.
 
+![A math expression and a Mermaid diagram rendered natively in the same document viewport](../images/native-engines.png)
+
+The static shape of the seam is a re-export on one side and a theme-projecting
+call on the other — QuoinCore never links the render halves at all:
+
+```mermaid
+classDiagram
+    class QuoinCore {
+        <<platform-free>>
+        MathParser / MathScanner
+        MermaidParser
+    }
+    class QuoinRender {
+        <<Apple-only>>
+        Theme.mathTheme
+        Theme.diagramTheme
+        AttributedRenderer
+    }
+    class VinculumLayout {
+        <<platform-free>>
+        MathScene IR
+    }
+    class VinculumRender {
+        <<Apple-only>>
+        MathImageRenderer
+    }
+    class MermaidLayout {
+        <<platform-free>>
+        diagram scene IR
+    }
+    class MermaidRender {
+        <<Apple-only>>
+        MermaidRenderer
+    }
+    VinculumLayout ..> QuoinCore : "@_exported import"
+    MermaidLayout ..> QuoinCore : "@_exported import"
+    QuoinRender ..> VinculumRender : "attachmentString(...)"
+    QuoinRender ..> MermaidRender : "attachmentString(...)"
+```
+
+At runtime, one source slice walks through that seam once per render:
+
 ```mermaid
 flowchart TD
     Src["raw source slice\n$...$  or  fenced mermaid"]
@@ -431,8 +524,9 @@ This is [ADR 0003](adr/0003-first-party-engines.md).
 
 ### Math (Vinculum)
 
-Math lives in **Vinculum** (`github.com/clintecker/Vinculum`). It ships
-`VinculumLayout` (Foundation-only, builds/tests on Linux — parsing, macros, all
+Math lives in **Vinculum**
+([`github.com/clintecker/Vinculum`](https://github.com/clintecker/Vinculum)). It
+ships `VinculumLayout` (Foundation-only, builds/tests on Linux — parsing, macros, all
 typesetting geometry, the OpenType MATH-table constants, the device-independent
 `MathScene` IR) and `VinculumRender` (Apple-only — measuring, drawing via
 CoreText/CoreGraphics, the bundled font, the cached `NSTextAttachment`).
@@ -475,8 +569,9 @@ version here.
 
 ### Diagrams (MermaidKit)
 
-Diagrams live in **MermaidKit** (`github.com/clintecker/MermaidKit`) and split
-the same way: `MermaidLayout` (platform-free parser + layout + scene IR +
+Diagrams live in **MermaidKit**
+([`github.com/clintecker/MermaidKit`](https://github.com/clintecker/MermaidKit))
+and split the same way: `MermaidLayout` (platform-free parser + layout + scene IR +
 geometry linter, Linux-clean) and `MermaidRender` (CoreGraphics/CoreText
 drawing behind a `DiagramTheme` seam). QuoinCore `@_exported import`s
 `MermaidLayout` (`MermaidReexport.swift`), so `MermaidParser` and friends stay
@@ -555,7 +650,9 @@ to be found and fixed, never dismissed as environmental
   search, exporters — all platform-free, run on Linux in principle.
 - **Torture** (`TortureTests`): pathological inputs must parse to *something* —
   10k-deep nesting, null bytes, unclosed everything, brace bombs.
-- **Performance** (`PerformanceTests`): the PRD budgets as assertions.
+- **Performance** (`PerformanceTests`): the PRD budgets as assertions; the
+  budgets themselves and the reasoning behind them live in
+  [`performance.md`](performance.md).
 - **Conformance** (`RendererConformanceTests`): parses every fixture module in
   `Fixtures/renderer/`, snapshots structural metrics
   (`Snapshots/renderer-metrics.json`), and asserts every native diagram lays
@@ -580,8 +677,10 @@ to be found and fixed, never dismissed as environmental
   projection paths fails CI forever. Extend its interaction script when adding
   projection paths.
 - **Viewport / caret fidelity** (`RevealFidelityTests`, `CaretLineAnchorTests`):
-  the line the caret is on must not move on screen across any projection change.
-  Extend BOTH when adding block types or projection paths.
+  the line the caret is on must not move on screen across any projection
+  change — the viewport invariant cataloged in
+  [`invariants.md`](invariants.md). Extend BOTH when adding block types or
+  projection paths.
 - **Editing latency** (`EditingLatencyTests`, `EditingRenderLatencyTests`):
   every keystroke's core + render slice fits in a 60 Hz frame at any document
   size.
@@ -608,5 +707,22 @@ to be found and fixed, never dismissed as environmental
 7. Exactly one block edits at a time; every mutation is computed inside
    `DocumentSession` against current truth, refusing on drift.
 
-The full rule-book with enforcing tests is `docs/reference/invariants.md`; the
-decisions behind these rules are the [ADRs](adr/README.md).
+The full rule-book with enforcing tests is [`invariants.md`](invariants.md);
+the decisions behind these rules are the [ADRs](adr/README.md).
+
+## Related
+
+- [`invariants.md`](invariants.md) — the full correctness rule-book, one
+  invariant per enforcing test.
+- [`dependencies.md`](dependencies.md) — the dependency graph and the
+  one-third-party-dependency policy in full.
+- [`performance.md`](performance.md) — the performance budgets this doc's
+  fast paths and latency tests are held to.
+- [`../design/editor-modes.md`](../design/editor-modes.md) — the projection
+  model and syntax reveal, specified from the interaction side.
+- [`../design/embed-editing-ux.md`](../design/embed-editing-ux.md) — editing
+  code, math, and diagram embeds in full UX detail.
+- [`../design/suggestions.md`](../design/suggestions.md) — the review/
+  CriticMarkup loop this doc's review subsystem section implements.
+- [`adr/README.md`](adr/README.md) — the architecture decision records cited
+  throughout this map.

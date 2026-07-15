@@ -17,8 +17,12 @@ natively with TextKit 2 — and math and diagrams get best-in-class native
 rendering from two first-party partner projects,
 **[Vinculum](https://github.com/clintecker/Vinculum)** (TeX-quality LaTeX) and
 **[MermaidKit](https://github.com/clintecker/MermaidKit)** (native Mermaid),
-drawn with CoreText and CoreGraphics. There is no embedded browser, no JS
-bridge, and no network at runtime.
+drawn with CoreText and CoreGraphics. Both are consumed under Quoin's
+[dependency policy](docs/reference/dependencies.md) like any other package.
+There is no embedded browser, no JS bridge, and no network at runtime.
+
+New to Quoin? The [getting-started guide](docs/guide/getting-started.md) walks
+through opening a library and making a first edit.
 
 A *quoin* is the wedge a letterpress printer uses to lock type into the
 chase — the small, precise tool that makes the whole page hold.
@@ -79,16 +83,18 @@ sequenceDiagram
 
 Design + rationale: [`docs/design/suggestions.md`](docs/design/suggestions.md).
 
-<!-- SCREENSHOT: review-panel — Review inspector cards beside a marked document; see docs/guide/screenshots.md -->
-<!-- SCREENSHOT: review-mode — status-bar "Suggesting" chip while typing produces marks; see docs/guide/screenshots.md -->
+![Review inspector cards beside a marked-up document, showing suggestion and comment cards with author and timestamp](docs/images/review-panel.png)
+
+![The status-bar Suggesting chip active in Review Mode, so ordinary typing becomes suggestion marks](docs/images/review-mode.png)
 
 ### The source is the document
 
-The markdown string + AST are authoritative; the editor is a *projection*. Edits
-mutate the source through a session actor, and the renderer re-projects. This one
-decision is why round-trips are lossless, why an agent can safely rewrite a file
-Quoin has open, and why there is no hidden document model to drift out of sync
-with the bytes on disk.
+The markdown string + AST are authoritative; the editor is a *projection* — see
+[`docs/design/editor-modes.md`](docs/design/editor-modes.md) for the full
+projection model. Edits mutate the source through a session actor, and the
+renderer re-projects. This one decision is why round-trips are lossless, why an
+agent can safely rewrite a file Quoin has open, and why there is no hidden
+document model to drift out of sync with the bytes on disk.
 
 ```mermaid
 flowchart LR
@@ -105,14 +111,33 @@ flowchart LR
     truth -->|save, byte-lossless| disk
 ```
 
-Round-trip (open → edit → save) is **byte-lossless for every untouched region**,
-by rule — enforced by conformance and round-trip tests. Click into a paragraph
-and it re-renders as its literal source, character-for-character 1:1 with the
-file: hidden delimiters become 1-point clear glyphs rather than being removed,
-so caret math never lies. Only the span under the caret reveals its `**` / `*` /
-`==` delimiters; structural prefixes (`>`, `- [ ]`) stay faded-visible. Escape
-flips back to rendered — and on any projection change the line the caret is on
-does not move on screen.
+Round-trip (open → edit → save) is **[byte-lossless](docs/reference/invariants.md)
+for every untouched region**, by rule — enforced by conformance and round-trip
+tests. Click into a paragraph and it re-renders as its literal source,
+character-for-character 1:1 with the file: hidden delimiters become 1-point
+clear glyphs rather than being removed, so caret math never lies. Only the span
+under the caret reveals its `**` / `*` / `==` delimiters; structural prefixes
+(`>`, `- [ ]`) stay faded-visible. Escape flips back to rendered — and on any
+projection change the line the caret is on does not move on screen (the
+[viewport invariant](docs/reference/invariants.md)).
+
+Each block toggles independently between its rendered and revealed
+projections — this is what makes syntax-reveal editing feel instant rather
+than modal:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Rendered
+    Rendered --> Revealed: click / double-click\n(caret enters the block)
+    Revealed --> Revealed: keystroke\n(source edit, same block)
+    Revealed --> Rendered: Escape / caret leaves\n(viewport-anchored re-render)
+    Rendered --> [*]
+    note right of Revealed
+        literal source, 1:1 with the file;
+        hidden delimiters are 1pt clear glyphs,
+        never removed
+    end note
+```
 
 ### Best-in-class native math and diagrams — no JavaScript
 
@@ -137,6 +162,8 @@ command* that isn't typeset — legible, not a shrug. Pathological input
 (10k-deep nesting, unclosed everything) parses to *something* without crashing;
 the torture suite keeps it that way.
 
+![Math and diagrams rendering natively side by side in one viewport](docs/images/native-engines.png)
+
 ---
 
 ## Feature overview
@@ -144,9 +171,10 @@ the torture suite keeps it that way.
 A scannable tour; the full walkthrough is in
 [`docs/guide/features.md`](docs/guide/features.md).
 
-- **Write** — WYSIWYG editing on a plain-text source, syntax-reveal on the
-  active block, smart pairs and wrap-selection, ⌘B / ⌘I / ⌘K / ⇧⌘H and a
-  floating format pill, live formatting as source edits.
+- **Write** — WYSIWYG editing on a plain-text source,
+  [syntax-reveal](docs/design/editor-modes.md) on the active block, smart pairs
+  and wrap-selection, ⌘B / ⌘I / ⌘K / ⇧⌘H and a floating format pill, live
+  formatting as source edits.
 - **Review** — CriticMarkup suggestions + comments, a review inspector, Review
   Mode, block-adjacent comments for opaque blocks (code, tables, diagrams,
   math), atomic byte-safe accept/reject.
@@ -195,7 +223,7 @@ A scannable tour; the full walkthrough is in
 | :--- | :---: |
 | Syntax-reveal editing (click to edit, Esc to close) | ✅ |
 | Double-click to edit code, tables, and TOC | ✅ |
-| Diagrams & math open via the explicit ‹/› edit chip, ⌘↩, or the context menu | ✅ |
+| [Diagrams & math](docs/design/embed-editing-ux.md) open via the explicit ‹/› edit chip, ⌘↩, or the context menu | ✅ |
 | Side-by-side live preview while editing diagrams & math (last-good render held while mid-edit source is broken) | ✅ |
 | Review inspector — suggestion/comment cards with Accept / Reject / Dismiss and Accept All / Reject All | ✅ |
 | Review Mode (⌃⌘R) — typing becomes suggestion marks, with coalescing | ✅ |
@@ -217,9 +245,11 @@ A scannable tour; the full walkthrough is in
 | Focus mode, typewriter scrolling, jump history (⌘[ / ⌘]) | ✅ |
 | Dark mode (code canvas constant across appearances, per design spec) | ✅ |
 
-<!-- SCREENSHOT: properties-panel — Properties inspector editing front-matter fields; see docs/guide/screenshots.md -->
-<!-- SCREENSHOT: footnotes — footnote reference with hover-preview bubble; see docs/guide/screenshots.md -->
-<!-- SCREENSHOT: code-theme — a code block in a selectable syntax theme; see docs/guide/screenshots.md -->
+![Properties inspector editing YAML front-matter fields with typed editors](docs/images/properties-panel.png)
+
+![A footnote reference marker with its hover-preview bubble](docs/images/footnotes.png)
+
+![A code block rendered in a selectable syntax theme](docs/images/code-theme.png)
 
 ## Math (LaTeX)
 
@@ -258,15 +288,12 @@ quietly drift. Unsupported diagram types fall back to a named source card.
 
 ## Screenshots
 
-The images above (`hero.png` and the three galleries) are committed under
-[`docs/images/`](docs/images/). Live application screenshots — library,
-syntax-reveal, find, export, review, properties, and code-theme states — are
-automated, regenerated on every push and published to the `ci-screenshots`
-branch. The full catalogue, launch arguments, and committed paths are in the
-[screenshot manifest](docs/guide/screenshots.md). The `<!-- SCREENSHOT: … -->`
-placeholders above mark shots whose curated copy is not committed — a broken
-image link is worse than a missing one, so nothing is linked before the pixels
-exist.
+Every image on this page is a real capture of the running app, committed under
+[`docs/images/`](docs/images/). They're automated: launch arguments preset app
+state (library, syntax-reveal, find, export, review, properties, code-theme),
+CI regenerates them on every push, and the full set is also published to the
+`ci-screenshots` branch. The full catalogue, launch arguments, and committed
+paths are in the [screenshot manifest](docs/guide/screenshots.md).
 
 ## Performance
 
@@ -281,6 +308,20 @@ representative benchmarks on a ~1.2 MB / 5,402-line / 2,701-block document
   cache + text-storage splicing)
 - 70k-character stress documents scroll at full frame rate — TextKit 2 lays out
   only the visible viewport
+
+The ~9 ms figure is a *fast path*, not the only path: an edit is only
+reparsed incrementally when it's provably safe to do so, and falls back to a
+full parse otherwise.
+
+```mermaid
+flowchart TD
+    e["SourceEdit arrives"] --> q{"Edit confined to\none block's byte range?"}
+    q -->|no| full["Full re-parse\n(~345 ms / MB)"]
+    q -->|yes| s{"Any absolute-offset\nnodes in the document?\n(e.g. suggestion marks)"}
+    s -->|"yes (stats.suggestionCount > 0)"| full
+    s -->|no| fast["Incremental parse-after-edit\n(~9 ms): re-parse the touched\nblock, splice its range"]
+    fast --> eq["ProjectorEquivalenceTests:\nmust match a full re-parse"]
+```
 
 ## Architecture
 
@@ -382,16 +423,25 @@ The docs tree is organized by audience — full index in
 
 - **Capability spec:** [`docs/PRODUCT.md`](docs/PRODUCT.md) — what Quoin is and
   does, every claim backed by a test, doc, or CI screenshot.
-- **User guide:** [`docs/guide/features.md`](docs/guide/features.md) (feature
+- **User guide:** [`docs/guide/getting-started.md`](docs/guide/getting-started.md)
+  (first run) · [`docs/guide/features.md`](docs/guide/features.md) (feature
   tour) · [`docs/guide/screenshots.md`](docs/guide/screenshots.md) (shot
   manifest).
 - **Reference:** [`docs/reference/architecture.md`](docs/reference/architecture.md) ·
   [`docs/reference/invariants.md`](docs/reference/invariants.md) ·
   [`docs/reference/performance.md`](docs/reference/performance.md) ·
   [`docs/reference/dependencies.md`](docs/reference/dependencies.md) ·
+  [`docs/reference/distribution.md`](docs/reference/distribution.md)
+  (release, notarization, Sparkle updates) ·
   [`docs/reference/adr/`](docs/reference/adr/README.md) (decision records).
-- **Design specs:** [`docs/design/`](docs/design/) — the visual/interaction
-  handoff, editor modes, the review-loop design, and embed editing.
+- **Design specs:** [`docs/design/handoff.md`](docs/design/handoff.md) (the
+  visual/interaction handoff) ·
+  [`docs/design/editor-modes.md`](docs/design/editor-modes.md) (projection
+  model) · [`docs/design/suggestions.md`](docs/design/suggestions.md) (the
+  review-loop design) ·
+  [`docs/design/embed-editing-ux.md`](docs/design/embed-editing-ux.md) (embed
+  editing) · [`docs/design/platforms.md`](docs/design/platforms.md)
+  (macOS/iOS/Linux directions).
 - **Engines:** [MermaidKit](https://github.com/clintecker/MermaidKit) (diagram
   capability matrix) · [Vinculum](https://github.com/clintecker/Vinculum) (math
   coverage).

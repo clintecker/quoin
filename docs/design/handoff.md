@@ -6,10 +6,12 @@ principles that give the editor its feel. It is the canonical answer to "what
 should this look like, and why does it behave this way." Where another document
 disagrees on visuals, this one wins.
 
-Quoin is a native macOS WYSIWYG markdown editor (portable to iPadOS/iOS). The
-markdown *file* is the source of truth; the editor is a live projection of it.
+Quoin is a native macOS WYSIWYG markdown editor (portable to iPadOS/iOS — see
+[platforms.md](platforms.md) for the shape of those ports). The markdown
+*file* is the source of truth; the editor is a live projection of it.
 Everything renders natively — no web view, no JavaScript at runtime, everything
-local.
+local. For what the app actually does, feature by feature, see the capability
+spec in [PRODUCT.md](../PRODUCT.md).
 
 ---
 
@@ -56,7 +58,9 @@ looks the way it does.
 
 Quoin looks and feels like a Mac app because it *is* one. It defers to the
 system accent color (`controlAccentColor`), uses the SF font family, and draws
-its chrome as ink behind TextKit 2 text rather than faking it with CSS. The
+its chrome as ink behind TextKit 2 text rather than faking it with CSS (the
+rendering pipeline behind that ink is mapped in
+[architecture.md](../reference/architecture.md)). The
 aesthetic — **Graphite** — is a white canvas, a light graphite sidebar, hairline
 rules, and generous whitespace. Restraint is the brand.
 
@@ -92,6 +96,8 @@ flowchart LR
     end
     S --- E --- O
 ```
+
+![Quoin's three-column layout in practice: the library sidebar, a centered editor with the format pill, and the outline panel](../images/hero.png)
 
 ### Library sidebar
 
@@ -135,6 +141,8 @@ toggle** (`sidebar.trailing`).
 The reading surface. Caret and selection use the accent color. The text column
 never exceeds 680pt regardless of window size — long measure hurts reading, and
 the cap is non-negotiable. See the element spec below.
+
+![A rendered document showing the heading type ramp, the collapsed front-matter chip, and the outline panel tracking the current section](../images/document.png)
 
 ### Status bar
 
@@ -186,7 +194,8 @@ sequenceDiagram
 Because the marks *are* the file, the review loop is the entire interface
 between a human and an agent — there is no side channel, no database, no
 proprietary diff. The document you accept into is the document you had, minus
-exactly the bytes the mark named.
+exactly the bytes the mark named. The full mark syntax, card model, and
+resolution rules are covered in [suggestions.md](suggestions.md).
 
 ---
 
@@ -203,6 +212,18 @@ exactly the bytes the mark named.
 | **H3** | 16 / 1.35 | 600 | above 22, below 8 | ink |
 | **H4–H6** | 14 | 600 | above 16, below 8 | 55% ink |
 | **Body** | 14 / 1.7 | 400 | paragraph gap 12 | `#333` |
+
+The ramp steps down in size, weight, and surrounding space together — each
+level's whitespace shrinks along with its type, so hierarchy reads from
+spacing as much as from size:
+
+```mermaid
+flowchart TD
+    H1["H1 · 26pt / 700<br/>above 32 · below 12"] --> H2["H2 · 20pt / 700<br/>above 28 · below 10"]
+    H2 --> H3["H3 · 16pt / 600<br/>above 22 · below 8"]
+    H3 --> H4["H4–H6 · 14pt / 600<br/>above 16 · below 8 · 55% ink"]
+    H4 --> Body["Body · 14pt / 400<br/>paragraph gap 12"]
+```
 
 ### Inline
 
@@ -231,10 +252,12 @@ exactly the bytes the mark named.
   cell pad 6×10; numeric columns tabular-nums, right-aligned; hover reveals
   add-row / add-column controls at the edges.
 - **Math** — inline `$…$` / `\(…\)`, display `$$…$$` / `\[…\]` centered with 16
-  above/below. Typeset natively by **Vinculum** (TeX-style geometry, no
-  MathJax/KaTeX).
-- **Mermaid** — laid out natively by **MermaidKit** (no Mermaid.js) inside a
-  radius-8 bordered block.
+  above/below. Typeset natively by
+  **[Vinculum](https://github.com/clintecker/Vinculum)** (TeX-style geometry,
+  no MathJax/KaTeX).
+- **Mermaid** — laid out natively by
+  **[MermaidKit](https://github.com/clintecker/MermaidKit)** (no Mermaid.js)
+  inside a radius-8 bordered block.
 - **Images** — max-width 100%, radius 8; drag-drop or paste copies the asset
   into the library; alt text renders as an 11pt centered caption.
 - **HR** — 1px hairline @12%, 20 above/below.
@@ -243,6 +266,12 @@ exactly the bytes the mark named.
 - **[TOC]** — an inline linked list mirroring the outline.
 - **YAML front matter** — collapses to a compact metadata chip above the H1;
   click to edit as a field grid (Properties).
+
+![Math typeset by Vinculum and a diagram laid out by MermaidKit, rendered natively side by side in one viewport](../images/native-engines.png)
+
+Both engines are first-party packages with their own dependency-policy
+exemption; see [dependencies.md](../reference/dependencies.md) for how that
+policy works.
 
 Why the code canvas stays dark in light mode: code wants maximum contrast and a
 stable token palette, and a light-on-light code block reads as an afterthought.
@@ -253,7 +282,9 @@ The dark canvas signals "this is machine text" instantly, in either appearance.
 ## Syntax reveal — the core WYSIWYG rule
 
 Quoin is WYSIWYG on a plain `.md` file: the rendered document *is* the editor.
-The mechanism is syntax reveal.
+The mechanism is syntax reveal, whose full machinery — reveal, activation,
+patch-vs-render equivalence — lives in [editor-modes.md](editor-modes.md);
+this section covers only its visual contract.
 
 ```mermaid
 flowchart LR
@@ -380,6 +411,20 @@ legible without glowing. Every color resolves per-appearance at draw time from a
 single stable instance, so light and dark are the same projection under two
 palettes.
 
+Light and dark are not two designs to maintain but one token instance resolved
+two ways at draw time — the only holdout is the code canvas, which refuses to
+invert on purpose:
+
+```mermaid
+flowchart LR
+    T["Single token instance<br/>(ink, canvas, accent, highlights)"] -->|"resolved light"| L["Light appearance<br/>white canvas · dark ink"]
+    T -->|"resolved dark"| D["Dark appearance<br/>dark canvas · light ink"]
+    L -.->|"surface.code stays #1E2430"| Code["Code canvas<br/>(never inverts)"]
+    D -.->|"surface.code stays #1E2430"| Code
+```
+
+![The same document in dark appearance: ink and canvas invert while the code canvas and highlight pills stay legible](../images/dark-document.png)
+
 ### Spacing & shape
 
 - **Spacing scale** — 4 · 8 · 12 · 16 · 24 · 32.
@@ -399,7 +444,8 @@ set; the system family carries the whole UI.
 The behaviors this design promises, testable end to end:
 
 - [ ] The markdown string + AST is the only source of truth; round-trip
-      (open → edit → save) is byte-lossless for untouched regions.
+      (open → edit → save) is byte-lossless for untouched regions (the full
+      rule set is [invariants.md](../reference/invariants.md)).
 - [ ] Syntax reveal shows delimiters only for the span containing the caret.
 - [ ] On any projection change, the caret/click line does not move on screen.
 - [ ] The first H1 renames the file live; duplicate names get a " 2" suffix

@@ -6,7 +6,8 @@ setup wizard. Quoin is a native macOS editor for the markdown files you
 already own, so most of "getting started" is just pointing it at a folder.
 
 If you want the full capability tour afterward, read
-[What you can do with Quoin](features.md).
+[What you can do with Quoin](features.md) — or the complete capability spec in
+[docs/PRODUCT.md](../PRODUCT.md).
 
 ---
 
@@ -14,7 +15,8 @@ If you want the full capability tour afterward, read
 
 Your document is a plain `.md` file on disk. Quoin does **not** import it into
 a database or convert it to some internal format. The file *is* the document,
-and what you see on screen is a live **projection** of that file:
+and what you see on screen is a live
+**[projection](../design/editor-modes.md)** of that file:
 
 ```mermaid
 flowchart LR
@@ -27,15 +29,34 @@ flowchart LR
 ```
 
 Every keystroke changes the markdown string; the renderer re-projects. Nothing
-you don't touch is ever rewritten — round-trips are byte-lossless. That is why
+you don't touch is ever rewritten — round-trips are
+[byte-lossless](../reference/invariants.md). That is why
 Quoin can be a true WYSIWYG editor *and* leave you with clean markdown you can
 open in any other tool, commit to git, or hand to an agent.
 
-Everything below is a consequence of this one idea.
+Everything below is a consequence of this one idea; the full parse → session →
+project pipeline behind it is mapped in
+[docs/reference/architecture.md](../reference/architecture.md).
 
 ---
 
 ## 1. First launch: choose where your documents live
+
+Here's the whole first-run path in one picture — the rest of this guide is
+each of these steps in detail:
+
+```mermaid
+flowchart TD
+    Launch["Launch Quoin"] --> Choose{"Choose a library folder"}
+    Choose -->|"Create a Starter Library"| Starter["Sample documents open,<br/>ready to explore"]
+    Choose -->|"Choose an Existing Folder…"| Existing["Your own folder,<br/>nothing changed yet"]
+    Starter --> Open["Open or create a .md document"]
+    Existing --> Open
+    Open --> Edit["Edit — click a block<br/>to reveal its source"]
+    Edit -->|DocumentSession| Save["Autosaved to disk<br/>as plain markdown"]
+    style Launch fill:#2d6cdf,color:#fff
+    style Save fill:#1f9d55,color:#fff
+```
 
 The first time you open Quoin, it asks one question:
 
@@ -49,6 +70,10 @@ You have two ways forward:
 | :--- | :--- |
 | **Create a Starter Library** | Quoin makes a new folder with a couple of welcome documents so your first screen is a real rendered document, not an empty tree. Best if you're just trying it out. |
 | **Choose an Existing Folder…** | Point Quoin at any folder of markdown you already have — your notes, a docs repo, a vault. Quoin reads what's there and changes nothing until you do. |
+
+![Quoin's library sidebar showing a folder's documents as a file tree](../images/library.png)
+*The library sidebar: your folder, unchanged, as a file tree you can browse
+and reorganize.*
 
 That folder is your **library**. Folders inside it are just directories;
 documents are just files. You can switch libraries any time from
@@ -77,6 +102,9 @@ flowchart LR
     style Editor fill:#eafaf0,stroke:#1f9d55,color:#111
     style Inspector fill:#fdf1e3,stroke:#d98324,color:#111
 ```
+
+![Quoin's window showing the sidebar, a rendered document, and the outline together, with the format pill visible](../images/hero.png)
+*The three regions together: sidebar, editor, and inspector.*
 
 Three regions, two of them toggleable:
 
@@ -122,6 +150,10 @@ A paragraph with **bold**, *italic*, and a [link](https://example.com).
 Headings size up, the checkbox becomes clickable, the callout gets its tinted
 box — all as native drawing, with no web view and no JavaScript anywhere.
 
+![A rendered Quoin document with front-matter fields, headings, and an outline](../images/document.png)
+*The same source, rendered: headings, a front-matter grid, and the live
+outline — all native drawing, not HTML.*
+
 ---
 
 ## 4. How editing works: click a block, the line never jumps
@@ -142,6 +174,10 @@ stateDiagram-v2
 character-for-character with the file. The `##`, the `*emphasis*` asterisks,
 the link brackets: they're all right there to edit. Click away (or press
 **Esc**, or **⌘Return** to toggle) and the block re-renders.
+
+![An active block revealed as its literal markdown source, with delimiters visible for editing](../images/syntax-reveal.png)
+*Click into a block and its hidden markdown — headings, emphasis markers,
+link syntax — becomes literal, editable text.*
 
 The rule that makes this comfortable: **the line you're on does not move on
 screen.** When a block flips between rendered and source, Quoin preserves the
@@ -195,15 +231,27 @@ Enough to be fluent on day one:
 Quoin deliberately leaves the system's own shortcuts alone (print, hide, and
 so on), so nothing you rely on across macOS breaks here.
 
+Two of those are worth seeing in action. **⇧⌘O** opens Quick Open, a fuzzy
+jump to any document in the library without touching the sidebar:
+
+![Quick-open panel with a fuzzy-matched list of documents from the library](../images/quick-open.png)
+*Quick Open: type a few letters, land on the document.*
+
+**⌘F** opens the in-document find bar, with a live match count as you type:
+
+![Find bar showing a search query and its match count inside the current document](../images/find-bar.png)
+*Find in document: matches count and highlight as you type.*
+
 ---
 
 ## 6. A first taste of the review loop
 
-The review loop is Quoin's signature feature, and it works precisely because of
-the source-of-truth idea: **suggestions and comments live inside the `.md`
-file** as [CriticMarkup](https://criticmarkup.com/)-style marks. They travel
-with the document, survive in git, and can be written by a collaborator — or by
-an agent — and then triaged by you in a real UI.
+The [review loop](../design/suggestions.md) is Quoin's signature feature, and
+it works precisely because of the source-of-truth idea: **suggestions and
+comments live inside the `.md` file** as
+[CriticMarkup](https://criticmarkup.com/)-style marks. They travel with the
+document, survive in git, and can be written by a collaborator — or by an
+agent — and then triaged by you in a real UI.
 
 ```mermaid
 sequenceDiagram
@@ -279,12 +327,19 @@ You're productive now. When you want more:
 
 - **[What you can do with Quoin](features.md)** — the full feature tour:
   callouts, footnotes, code themes, math, diagrams, focus mode, and more.
+- **[docs/PRODUCT.md](../PRODUCT.md)** — the complete capability spec, if
+  you want the ground truth of what's implemented.
 - **Math and diagrams** — write LaTeX with `$…$` / `$$…$$` and Mermaid in a
   ` ```mermaid ` fence; both render natively via the
   [Vinculum](https://github.com/clintecker/Vinculum) and
-  [MermaidKit](https://github.com/clintecker/MermaidKit) engines. Click into an
-  embed to edit its source with a live side-panel preview.
+  [MermaidKit](https://github.com/clintecker/MermaidKit) engines — first-party
+  packages under Quoin's own
+  [dependency policy](../reference/dependencies.md). Click into an
+  embed to [edit its source with a live side-panel
+  preview](../design/embed-editing-ux.md).
 - **In-app help** — **Help ▸ Welcome to Quoin** and **Help ▸ Markdown Guide**
   open live documents you can poke at without leaving the app.
+- **[Screenshot manifest](screenshots.md)** — how every screenshot in these
+  docs, including the ones above, is captured from the real app.
 
 Everything you write stays a plain `.md` file you own. That's the whole idea.

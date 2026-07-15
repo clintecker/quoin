@@ -12,7 +12,13 @@ Guarantees like that don't survive on good intentions. Each one below is an
 every keystroke — and a named **guard** (a test or a structural constraint) that
 fails loudly the moment it's violated. If you're adding a feature, find the
 invariants it touches and extend their guards; a rule without a guard is just an
-opinion, and these are not opinions.
+opinion, and these are not opinions ([ADR 0008](adr/0008-drift-by-guards.md)
+codifies this as policy, not habit).
+
+For the machinery these invariants protect — the parse → session → project →
+display pipeline, module layout, engine seams — see
+[architecture.md](architecture.md). For how the projection actually looks and
+behaves block-by-block, see [editor-modes.md](../design/editor-modes.md).
 
 Each invariant is written the same way: **what it guarantees**, **why it matters
 to the person using Quoin**, and **how the code enforces it**.
@@ -44,7 +50,9 @@ The file is authoritative (green). Everything else is derived (grey). The only
 arrow that flows *back* to the file is an explicit byte splice — a `SourceEdit`.
 There is deliberately no path from the on-screen attributed string back into the
 source. Reading the sections below, keep this picture in mind: every invariant
-is protecting one of these arrows.
+is protecting one of these arrows. This layering is [ADR
+0001](adr/0001-source-string-truth.md) — the project's founding decision, made
+once and reaffirmed by every phase since.
 
 ---
 
@@ -78,8 +86,33 @@ explicit `SourceEdit` splices bytes, and only the bytes it names.
 your file — reflowing lists, swapping `*` for `-`, restyling your fences,
 reordering front matter. Quoin doesn't touch what you didn't touch. Your commits
 stay small and honest; a one-word fix is a one-word diff, not a whole-file churn.
-This is also what makes the review loop safe: accepting a suggestion is a
-*surgical* splice, so the surrounding document is provably unchanged.
+This is also what makes the [review loop](../design/suggestions.md) safe:
+accepting a suggestion is a *surgical* splice, so the surrounding document is
+provably unchanged.
+
+```mermaid
+flowchart LR
+    Open["open<br/>document.md"] --> Edit["edit one word<br/>in block C"]
+    Edit -->|"SourceEdit<br/>(named byte range)"| Save["save"]
+    Save --> Disk
+
+    subgraph Disk["document.md on disk — regions A, B, D untouched byte-for-byte"]
+        direction LR
+        A["block A<br/>(bytes identical)"]
+        B["block B<br/>(bytes identical)"]
+        C["block C<br/>(the named splice)"]
+        D["block D<br/>(bytes identical)"]
+    end
+
+    classDef untouched fill:#495057,stroke:#343a40,color:#fff
+    classDef touched fill:#2d6a4f,stroke:#1b4332,color:#fff
+    class A,B,D untouched
+    class C touched
+```
+
+Only the bytes the `SourceEdit` names change; every other region — including
+whitespace, list-marker style, and fence formatting — survives the round-trip
+identically, because there is no reserialize-from-model step to drift through.
 
 **How it's enforced.** `SourceEdit.apply(to:)` is a pure UTF-8 range splice that
 also returns its exact inverse (for undo). Exporters read the *source*, never the
@@ -96,7 +129,11 @@ caret offset inside the revealed text **is** a source offset.
 **Why it matters.** Editing feels like editing the real file, because it is. The
 caret can never land "between" a rendered glyph and its hidden markup, and a
 keystroke goes exactly where you'd expect in the underlying bytes. This is the
-mechanical basis of Quoin's WYSIWYG-without-lying promise.
+mechanical basis of Quoin's WYSIWYG-without-lying promise — the full mechanism
+(caret-scoped reveal, the rendered/source duality per block) is documented in
+[editor-modes.md](../design/editor-modes.md).
+
+![Active block revealed as its literal markdown source, hidden delimiters dimmed rather than removed](../images/syntax-reveal.png)
 
 **How it's enforced.** `MarkdownSourceStyler` produces the revealed text and
 carries the contract that delimiters are dimmed, never deleted. `EditMapping`
@@ -113,7 +150,31 @@ string equals the source slice for every block kind.
 keystroke, a flip, for *every* block type — the line the caret (or click) is on
 stays put on screen. Edit mode also keeps the block's vertical skeleton (its
 per-line layout is transplanted, not rebuilt). Quoin scrolls only when the caret
-would otherwise leave the viewport, and then by the minimum needed.
+would otherwise leave the viewport, and then by the minimum needed. This holds
+for embeds too — see [embed-editing-ux.md](../design/embed-editing-ux.md) for
+how it survives the rendered↔source flip specifically.
+
+Every trigger funnels through the same settle step before a pixel paints:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Settled: initial layout
+
+    Settled --> Recomputing: keystroke
+    Settled --> Recomputing: reveal block
+    Settled --> Recomputing: close block
+    Settled --> Recomputing: flip (rendered ↔ source)
+
+    Recomputing --> AnchorHeld: viewWillDraw settle —<br/>pin caret line's screen Y
+    AnchorHeld --> Settled: paint
+
+    note right of AnchorHeld
+        growth/shrink absorbed
+        below the anchor line;
+        scroll only if the caret
+        would leave the viewport
+    end note
+```
 
 **Why it matters.** This is the difference between an editor that feels solid and
 one that feels haunted. When a block expands from its rendered form into taller
@@ -162,7 +223,9 @@ are translated through `EditMapping`; source offsets are used verbatim.
 **Why it matters.** Prose and embeds (math, Mermaid) live in different coordinate
 systems — projected text has hidden glyphs, an embed's editable body is 1:1 with
 its source. Mixing them up lands the caret a few characters early. Tagging each
-hint with its space keeps clicks precise across both kinds of content.
+hint with its space keeps clicks precise across both kinds of content. Embeds —
+what they are and how their caret hints are produced — are covered in
+[embed-editing-ux.md](../design/embed-editing-ux.md).
 
 **How it's enforced.** The coordinate space is part of the hint type, so a caller
 physically cannot feed a source offset through the rendered mapping.
@@ -176,6 +239,9 @@ For speed, Quoin doesn't re-render the whole document on every keystroke. It
 applies a *bounded patch* to live storage — restyle one block, splice one edit.
 That optimization is only safe if a patched result is **indistinguishable** from
 a full re-render, and if any doubt falls back to the always-correct full render.
+The full performance picture — incremental parsing, patch rendering,
+viewport-lazy layout, and their budgets — lives in
+[performance.md](performance.md).
 
 ```mermaid
 flowchart TB
@@ -210,6 +276,9 @@ interaction and asserts patch output equals full-render output. Patch builders i
 "full render, please." The equivalence comparison must cover *every* field of the
 compared model — adding a field to `QuoinDocument` means extending the equivalence
 helpers in the same change, or a fast-path bug can hide behind an unchecked field.
+This whole strategy — proving impossibility of drift via CI equivalence rather
+than a single literal projector function — is [ADR
+0008](adr/0008-drift-by-guards.md).
 
 ### 7. Each derivation lives in exactly one place
 
@@ -228,13 +297,21 @@ equivalence corpus catches any consumer that re-derives and drifts.
 
 ### 8. A revealed fragment's editable range starts at 0
 
-**Guarantees.** For an embed (math/Mermaid), the editable source *is* the
-fragment — `RevealedFragment.editableRange.location == 0`. The live preview
-renders in a side panel, never spliced inline.
+**Guarantees.** For an embed (math, rendered by the first-party
+[Vinculum](https://github.com/clintecker/Vinculum) engine, or a diagram,
+rendered by the first-party [MermaidKit](https://github.com/clintecker/MermaidKit)
+engine — see [dependencies.md](dependencies.md) for why both are separate
+packages), the editable source *is* the fragment —
+`RevealedFragment.editableRange.location == 0`. The live preview renders in a
+side panel, never spliced inline.
 
 **Why it matters.** Editing a diagram means editing its literal source with a
 preview beside it; the preview can hold its last good render while your in-progress
 source is momentarily unparseable, without the caret or the source ever shifting.
+The full editing UX for embeds — the `‹/› edit` chip, the side panel, the flip —
+is [embed-editing-ux.md](../design/embed-editing-ux.md); the decision to make the
+preview a side panel rather than an inline run is [ADR
+0004](adr/0004-side-panel-preview.md).
 
 **How it's enforced.** Documented at the type and exercised by the equivalence
 corpus.
@@ -259,7 +336,9 @@ projection. The length gate turns a possible corruption into a clean resync.
 and there is exactly one caret.
 
 **Why it matters.** It keeps the mental model simple and the projection tractable —
-there's always one "active" block and everything else is rendered.
+there's always one "active" block and everything else is rendered. The rendered
+↔ source duality this presentation model resolves, per block, is the subject of
+[editor-modes.md](../design/editor-modes.md).
 
 **How it's enforced.** Structural: `PresentationMap` can only represent a single
 `.editing` block, so multiple simultaneous edits are unrepresentable.
@@ -311,7 +390,9 @@ transition can't strand you in a half-rendered view or swallow a keystroke.
 
 **How it's enforced.** `FlipTransitionController` owns the snapshot overlay
 (Reduce-Motion-aware, with a 500ms watchdog); `FlipTransitionFidelityTests`
-verifies the animation is purely a cover over already-applied layout.
+verifies the animation is purely a cover over already-applied layout. The
+decision to make the flip cosmetic rather than animate real layout is [ADR
+0006](adr/0006-cosmetic-flip.md).
 
 ---
 
@@ -345,12 +426,13 @@ task — the resulting `SourceEdit` is computed against the session's *current*
 source, *inside* the `DocumentSession` actor, and applied as one atomic edit with
 one undo. It is never computed against a stale projection snapshot.
 
-**Why it matters.** In the review loop, offsets are everything. If a card were
-resolved using offsets computed from an old render, a second quick "Accept" could
-splice mid-mark and corrupt the document — and autosave would persist the
-corruption. Computing in-actor against live bytes makes each resolution a clean,
-whole-mark edit. When the bytes no longer match, the session *refuses* (returns
-nil) and the re-rendered panel hands back fresh ranges for the next click.
+**Why it matters.** In the [review loop](../design/suggestions.md), offsets are
+everything. If a card were resolved using offsets computed from an old render, a
+second quick "Accept" could splice mid-mark and corrupt the document — and
+autosave would persist the corruption. Computing in-actor against live bytes
+makes each resolution a clean, whole-mark edit. When the bytes no longer match,
+the session *refuses* (returns nil) and the re-rendered panel hands back fresh
+ranges for the next click.
 
 **How it's enforced.** `applyResolution` / `applyBulkResolution` /
 `applyFrontMatterEdit` all live on the `DocumentSession` actor and recompute
@@ -424,7 +506,8 @@ cover the reload-between-compute-and-apply window.
 An intermittent failure is never dismissed as "environmental." It is either a
 nondeterministic measurement channel — fix the channel — or a real race — fix the
 race. A test that sometimes passes for the wrong reason is worse than no test,
-because it launders a bug into a green checkmark.
+because it launders a bug into a green checkmark ([ADR
+0007](adr/0007-no-flaky-tests.md) records the case that established this rule).
 
 ### 20. Loop-driven tests assert a coverage floor
 

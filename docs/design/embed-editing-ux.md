@@ -1,36 +1,52 @@
 # Editing embeds: code, diagrams, math, and tables
 
 Most of a Quoin document is prose, and prose edits with no ceremony: put the
-caret in a paragraph and it reveals its own markdown source, character for
-character, right where you're reading. The caret *is* the mode. There is no
-button to press and nothing to enter or leave.
+caret in a paragraph and it [reveals its own markdown source](editor-modes.md),
+character for character, right where you're reading. The caret *is* the
+mode. There is no button to press and nothing to enter or leave.
 
 A few block types can't work that way. A Mermaid diagram, a LaTeX equation,
-and a syntax-highlighted code block are all *projections* of markdown that
-looks nothing like the thing you see — a rendered flowchart has no
-per-character correspondence to its `graph TD` source, and an integral sign
-is not editable text. These are **embeds**, and they get a deliberate,
-visible editing affordance instead of silent caret-driven reveal.
+and a syntax-highlighted code block are all [*projections*](editor-modes.md)
+of markdown that looks nothing like the thing you see — a rendered flowchart
+has no per-character correspondence to its `graph TD` source, and an
+integral sign is not editable text. These are **embeds** (see the
+[embeds capability group](../PRODUCT.md) in the product spec), and they get
+a deliberate, visible editing affordance instead of silent caret-driven
+reveal.
 
 This document explains what an embed is, how you edit one, and how the
-machinery behind it upholds Quoin's core promise: the markdown file is the
-source of truth, the editor is a live projection, and nothing on screen ever
-jumps, disappears, or asks what mode you're in.
+machinery behind it upholds Quoin's core promise: [the markdown file is the
+source of truth](../reference/invariants.md), the editor is a live
+projection, and nothing on screen ever jumps, disappears, or asks what mode
+you're in.
 
 ## What counts as an embed
 
 | Block type | Rendered as | Editable source is… |
 |---|---|---|
 | Fenced code | Highlighted canvas (12 themes) | The code between the fences |
-| Mermaid | A drawn diagram (via MermaidKit) | The `mermaid` fence body |
-| Math | A typeset equation (via Vinculum) | The `$$…$$` / `\[…\]` body |
+| Mermaid | A drawn diagram (via [MermaidKit](https://github.com/clintecker/MermaidKit)) | The `mermaid` fence body |
+| Math | A typeset equation (via [Vinculum](https://github.com/clintecker/Vinculum)) | The `$$…$$` / `\[…\]` body |
 | Table | Ruled grid | The pipe-and-dash markdown |
 | Front matter | The Properties chip | The YAML key/value block |
+
+Both engines are first-party and platform-free — see
+[dependencies](../reference/dependencies.md) for the policy that keeps
+Quoin at a single third-party dependency (swift-markdown) plus these two
+exempt, self-published engines. A code block's highlighted canvas, in one
+of its twelve selectable syntax themes, looks like this:
+
+![A fenced code block rendered in a selectable syntax theme, with the ‹/› edit and ⧉ copy affordances in its header row](../images/code-theme.png)
 
 What unites them: the rendered form **hides that it is markdown**. You
 cannot see, and could not usefully place a caret inside, the source. So each
 one carries an explicit invitation to edit — the `‹/› edit` chip — and each,
 when open, wears an unmistakable editing frame.
+
+Math and diagrams rendering side by side in one document, both fully
+native — no webview, no JavaScript:
+
+![A math equation and a Mermaid diagram rendered natively in the same document viewport](../images/native-engines.png)
 
 ## The promise
 
@@ -51,19 +67,24 @@ Four ideas make that possible, and they are non-negotiable:
    Backing out is what `⌘Z` is for, and undo behaves identically whether the
    block is open or rendered. A reverting exit would be a data-loss bug by
    definition.
-2. **The 1:1 mapping is untouchable.** When a block is open, its revealed
-   text is byte-for-byte the file's source. Edits mutate that source
-   directly. Nothing — no animation, no affordance — is allowed to write to
-   storage or move the scroll position on its own behalf.
-3. **The viewport invariant holds through every flip.** The line you're
-   working on does not move on screen when a block opens or closes. Motion
-   radiates outward from that pinned line; the line itself is still.
+2. **[The 1:1 mapping](../reference/invariants.md) is untouchable.** When a
+   block is open, its revealed text is byte-for-byte the file's source.
+   Edits mutate that source directly. Nothing — no animation, no affordance
+   — is allowed to write to storage or move the scroll position on its own
+   behalf.
+3. **[The viewport invariant](../reference/invariants.md) holds through
+   every flip.** The line you're working on does not move on screen when a
+   block opens or closes. Motion radiates outward from that pinned line;
+   the line itself is still.
 4. **Rendering is native and instant.** Diagrams and equations render
    through CoreGraphics/CoreText in milliseconds, so the live preview can
    re-render on *every keystroke* with no webview, no worker, no debounce on
    success. Latency is the product.
 
 ## The edit flow
+
+All of it runs through a single [activation path](../reference/architecture.md)
+in the rendering pipeline, no matter which embed kind is opening:
 
 ```mermaid
 flowchart TD
@@ -127,7 +148,10 @@ forward into the next block.
 For Mermaid and math embeds, the rendered artifact does not disappear while
 you edit. It stays on screen in a **side panel** beside the source, anchored
 where the diagram already was. The source unfolds below; the panel holds the
-image.
+image. This is the same
+[live preview and flip motion machinery](../reference/architecture.md)
+described in the architecture map, applied to the two embed kinds tall
+enough to make it matter.
 
 ```mermaid
 flowchart LR
@@ -138,6 +162,16 @@ flowchart LR
         S ==>|"every keystroke"| P
     end
 ```
+
+The two engines behind that preview cover a wide surface each: the
+[Vinculum](https://github.com/clintecker/Vinculum) math gallery —
+
+![A gallery of LaTeX math notation rendered by Vinculum, from simple fractions to multi-line aligned equations](../images/gallery-math.png)
+
+— and the [MermaidKit](https://github.com/clintecker/MermaidKit) diagram
+gallery:
+
+![A gallery of Mermaid diagram types rendered by MermaidKit, including flowcharts, sequence diagrams, and state diagrams](../images/gallery-diagrams.png)
 
 This is the centerpiece of embed editing, and it exists because a diagram is
 tall. If the rendered image vanished the moment you opened the source, the
@@ -168,6 +202,21 @@ So the panel **holds the last successful render** and never blinks:
 - Recovery is synchronous: the fixing keystroke clears the badge and swaps
   the good render in the same frame.
 
+That grace period is a small state machine, driven by keystroke validity and
+a clock rather than by anything visual:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Showing: valid render
+    Showing --> Showing: valid keystroke — swap instantly
+    Showing --> Grace: invalid keystroke — image unchanged
+    Grace --> Showing: valid keystroke — timer cancels
+    Grace --> Grace: invalid keystroke — timer resets
+    Grace --> Paused: 500ms idle, still invalid — badge + amber frame
+    Paused --> Showing: valid keystroke — badge clears in same frame
+    Paused --> Paused: invalid keystroke
+```
+
 The retention is session state. Each editing session owns exactly one held
 preview (there is only ever one open block at a time), and it is cleared the
 instant a different block activates — a stale artifact can never appear over a
@@ -191,8 +240,8 @@ injected clock — deterministic and testable in isolation.
 ## Caret and coordinate handling
 
 The subtle correctness problem in embed editing is that an embed lives in
-*two coordinate spaces at once*, and a caret offset means something different
-in each:
+*[two coordinate spaces at once](../reference/invariants.md)*, and a caret
+offset means something different in each:
 
 - **Rendered space** — an offset into the projected text the reader sees,
   where delimiters and prefixes the projection dropped (`**`, `### `, hard-
@@ -206,6 +255,18 @@ with what you'll edit, so the offset is a source offset and must be used
 verbatim. Feeding a source offset through the rendered mapper (or vice versa)
 lands the caret a few characters off — early in a code body by the width of
 the header run.
+
+```mermaid
+flowchart TD
+    Click["Caret-placing gesture<br/>(click, reveal, activation)"]
+    Click --> Q{"Which block owns<br/>this offset?"}
+    Q -->|"Prose"| RS["Rendered-space offset<br/>CaretHint.rendered(_)"]
+    Q -->|"Embed body<br/>(code · math · mermaid)"| SS["Source-space offset<br/>CaretHint.source(_)"]
+    RS --> Map["Projection mapper<br/>rendered → source"]
+    SS --> Direct["Used verbatim<br/>— already 1:1 with the file"]
+    Map --> Land["Caret lands in the<br/>revealed fragment"]
+    Direct --> Land
+```
 
 Quoin makes the coordinate space explicit in the type system rather than
 trusting every call site to remember:
@@ -247,7 +308,8 @@ Opening and closing a block changes its height — a one-line `$E=mc^2$` and
 its typeset form are different sizes. Rather than hard-cutting between them,
 the flip is choreographed so it reads as one continuous change.
 
-The choreography is **cosmetic by construction.** The real layout applies
+The choreography is **[cosmetic by construction](../reference/invariants.md).**
+The real layout applies
 *instantly* — splice the new fragment, pin the caret line, settle the
 viewport — with nothing written to storage or scroll position. Just before
 the splice, the current pixels are frozen into an overlay covering the
@@ -315,3 +377,21 @@ and selection never break across a flip.
 - **Overloading Return** — plain Return in text always inserts a newline;
   opening an embed is `⌘↩` or the chip, never a naked keystroke that would
   collide with typing.
+
+## Related
+
+- [Editor modes](editor-modes.md) — the projection model and syntax reveal
+  for prose, which embed editing extends to blocks that can't reveal
+  line-by-line.
+- [Architecture](../reference/architecture.md) — where embed editing, the
+  live preview, and flip motion fit in the parse → session → project →
+  display pipeline.
+- [Invariants](../reference/invariants.md) — the full rule book: byte-lossless
+  round-trip, the 1:1 revealed-source guarantee, the viewport invariant, and
+  caret coordinate spaces.
+- [Dependencies](../reference/dependencies.md) — the policy behind consuming
+  [MermaidKit](https://github.com/clintecker/MermaidKit) and
+  [Vinculum](https://github.com/clintecker/Vinculum) as exempt first-party
+  packages.
+- [Product spec](../PRODUCT.md) — where embeds sit in the overall capability
+  map.

@@ -15,9 +15,10 @@ locally, right where the caret is.
 **"Modes" are not a feature — they are the mechanism that resolves this
 duality, per element, per moment.** This document defines that mechanism: the
 presentation model, caret-scoped syntax reveal for prose, the rendered↔source
-flip for embeds, and the side-panel live preview for diagrams and math. It sits
-below `docs/design/handoff.md` in authority; where they conflict, the handoff
-(the visual spec) wins. This is the machinery behind the handoff's visuals.
+flip for [embeds](embed-editing-ux.md), and the side-panel live preview for
+diagrams and math. It sits below `docs/design/handoff.md` in authority; where
+they conflict, the handoff (the visual spec) wins. This is the
+[machinery](../reference/architecture.md) behind the handoff's visuals.
 
 ---
 
@@ -29,6 +30,8 @@ into a `QuoinDocument` (an ordered list of blocks, each with a stable
 TextKit 2 typesets it; a subclassed `NSTextView` draws block-level chrome behind
 the glyphs. Every keystroke edits the underlying source through
 `DocumentSession`, which re-parses the touched region and re-projects.
+
+![A rendered document showing the read projection — front-matter grid, headings, and outline, with no markdown punctuation visible](../images/document.png)
 
 ```mermaid
 flowchart LR
@@ -52,11 +55,14 @@ truth?
   lossy import/export step to drift through. Your markdown stays yours.
 - **The file is portable and durable.** It opens in any editor, diffs cleanly in
   git, and outlives Quoin. A collaborator or an agent can propose edits to the
-  same `.md` and you triage them — the review loop is byte-safe because the
-  substrate is bytes.
-- **Native rendering, no webview.** Math (via the Vinculum package), diagrams
-  (via MermaidKit), code, and tables are drawn with CoreText/CoreGraphics, not
-  HTML. There is zero JavaScript at runtime and nothing leaves the machine.
+  same `.md` and you triage them — the [review loop](suggestions.md) is
+  byte-safe because the substrate is bytes.
+- **Native rendering, no webview.** Math (via the first-party
+  [Vinculum](https://github.com/clintecker/Vinculum) package), diagrams (via
+  first-party [MermaidKit](https://github.com/clintecker/MermaidKit)), code,
+  and tables are drawn with CoreText/CoreGraphics, not HTML — see
+  [dependencies](../reference/dependencies.md) for the policy. There is zero
+  JavaScript at runtime and nothing leaves the machine.
 
 Because the projection is a pure function of source plus a little activation
 state, the same input always yields the same screen — the property that lets
@@ -77,7 +83,41 @@ is small:
 | **Editing · preview** | Raw source **plus** a side-panel live artifact (last-good held while unparseable) | Mermaid, math |
 
 Exactly one block can be in an editing state at a time — one active block, one
-caret. That is an invariant the model relies on, not a coincidence.
+caret. That is an [invariant](../reference/invariants.md) the model relies on,
+not a coincidence.
+
+Every block moves through the same small state machine — this is the
+projection/reveal model in one picture:
+
+```mermaid
+stateDiagram-v2
+  [*] --> Rendered
+  Rendered --> EditingProse: caret enters (prose block)
+  Rendered --> EditingVerbatim: open (code / HTML / front matter)
+  Rendered --> EditingPreview: open (mermaid / math)
+
+  EditingProse --> Rendered: caret leaves block
+  EditingVerbatim --> Rendered: Escape / Done / ⌘↩ / click away
+  EditingPreview --> Rendered: Escape / Done / ⌘↩ / click away
+
+  state Rendered {
+    [*] --> drawn : formatted text or artifact\ndelimiters hidden
+  }
+  state EditingProse {
+    [*] --> reveal : literal source styled\ncaret-scoped delimiter reveal
+  }
+  state EditingVerbatim {
+    [*] --> raw : literal source\nno markdown styling
+  }
+  state EditingPreview {
+    [*] --> both : literal source +\nside-panel live artifact
+  }
+```
+
+Only `EditingProse` reveals on mere caret transit; `EditingVerbatim` and
+`EditingPreview` are embeds, and embeds open only on a deliberate action (see
+§4). Every keystroke inside any editing state mutates the source and re-enters
+the same state — the machine only ever exits back to `Rendered`.
 
 Two things are **orthogonal** to this state and never change *which*
 representation is shown:
@@ -130,6 +170,8 @@ still looks close to final while the delimiters obey a caret-scoped rule:
 
 This is a Raskin-clean quasimode: the caret is the mode selector, there is no
 chrome, and prose stays instant with no animation.
+
+![A paragraph block activated as prose, showing its literal markdown source with structural prefixes faded-visible](../images/syntax-reveal.png)
 
 **The crucial constraint: nothing is inserted or removed.** Every character of
 the source is present exactly once. Hidden delimiters are not deleted — they are
@@ -242,11 +284,14 @@ flowchart LR
   end
 ```
 
+![Math and a diagram rendered natively in one viewport, via Vinculum and MermaidKit](../images/native-engines.png)
+
 The panel's behavior:
 
-- **Live, not debounced.** The native engines render in milliseconds, so every
-  keystroke re-renders. Latency is the product; the morphing artifact is the
-  feedback.
+- **Live, not debounced.** The native engines render inside the
+  [performance budget](../reference/performance.md), so every keystroke
+  re-renders in milliseconds. Latency is the product; the morphing artifact is
+  the feedback.
 - **Never flickers.** While mid-edit source is unparseable, the **last good
   render is held** — never blank, never flashing. That retention is a
   `HeldPreview` value owned by the model (one entry: one active block at a time)
@@ -278,7 +323,7 @@ refreshes the panel without disturbing the 1:1 source below it.
 
 Every presentation state and transition is constrained by a small set of
 non-negotiable rules. They are why the model is shaped the way it is; the full
-rule-book lives in `docs/reference/invariants.md`.
+rule-book lives in [`docs/reference/invariants.md`](../reference/invariants.md).
 
 ```mermaid
 flowchart TD
@@ -292,6 +337,32 @@ flowchart TD
   I3 --> M["Caret + edit mapping stay invertible;<br/>affordances are drawn ink, never characters"]
   I4 --> P["PresentationMap has one non-.rendered entry"]
 ```
+
+The most load-bearing of these — the caret line never moving — is a timing
+guarantee, not just a layout rule. Every projection change runs the same
+settle sequence before a single pixel paints:
+
+```mermaid
+sequenceDiagram
+  participant Trigger as Reveal / close / keystroke
+  participant Measure as measureVisibleRuns
+  participant Pin as pinCaretLine
+  participant Draw as viewWillDraw (settled)
+
+  Note over Trigger: caret's line renders at screen y = Y
+  Trigger->>Measure: projection changes (block reflows)
+  Measure->>Pin: new fragment geometry for all visible runs
+  Pin->>Pin: compute scroll delta so the<br/>caret's line still lands at y = Y
+  Pin->>Draw: apply correction, then settle
+  Note over Draw: caret's line still at y = Y — no jump,<br/>no flash of intermediate layout
+```
+
+Content above the caret's line never moves, so it is never covered — the same
+mechanism the embed flip's crossfade (§4) and the syntax reveal's per-line
+style transplant (§3) both depend on. This diagram and the invariants above
+are enforced in code by `RevealFidelityTests` and `CaretLineAnchorTests`; see
+[`docs/reference/invariants.md`](../reference/invariants.md) for the complete
+rule-book.
 
 - **The caret line never moves.** On *any* projection change — reveal, close,
   keystroke, for every block type — the line the caret or click is on must hold
@@ -337,7 +408,18 @@ settled measure pass, never interleaved with writes.** These are the moves every
 mature structured editor (CodeMirror, ProseMirror, Zed's display map) shares,
 adapted here to TextKit 2 and AppKit.
 
-For the interaction design behind embed editing — chip placement, keyboard
-grammar, the motion budget — see `docs/design/embed-editing-ux.md`. For the
-contributor-level machinery map, see `docs/reference/architecture.md`; for the
-product-level feature list, see `docs/PRODUCT.md` and `docs/guide/features.md`.
+### Related
+
+- [`embed-editing-ux.md`](embed-editing-ux.md) — the interaction design behind
+  embed editing: chip placement, keyboard grammar, the motion budget.
+- [`docs/reference/architecture.md`](../reference/architecture.md) — the
+  contributor-level machinery map this document's mechanism sits inside.
+- [`docs/reference/invariants.md`](../reference/invariants.md) — the complete
+  correctness rule-book, including the caret-line and round-trip guarantees
+  this document explains.
+- [`docs/reference/performance.md`](../reference/performance.md) — the perf
+  budgets that make live preview and per-keystroke reprojection feel instant.
+- [`suggestions.md`](suggestions.md) — the review/CriticMarkup loop that
+  depends on this document's byte-lossless projection.
+- `docs/PRODUCT.md` and `docs/guide/features.md` — the product-level feature
+  list this machinery serves.

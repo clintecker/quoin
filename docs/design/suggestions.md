@@ -9,9 +9,10 @@ appended after them. The editor renders those bytes as tracked changes and
 comment cards; accepting or rejecting one is an ordinary, undoable edit to the
 file.
 
-This is Quoin's headline capability. This document explains what the marks
-are, why the design is shaped the way it is, and how the whole loop works end
-to end.
+This is Quoin's headline capability — see it in the feature tour at
+[`docs/guide/features.md`](../guide/features.md). This document explains what
+the marks are, why the design is shaped the way it is, and how the whole loop
+works end to end.
 
 ---
 
@@ -83,6 +84,31 @@ left of the arrow, the new text to the right. (The original CriticMarkup
 reference tooling forbids a bare `>` in the old half; Quoin implements the
 plain intent instead and accepts it.)
 
+The five shapes split cleanly into two families, and the family predicts what
+resolution does to the text — a **change** proposes different bytes; an
+**annotation** never does:
+
+```mermaid
+flowchart TD
+    Mark["CriticMark"] --> Change["Change<br/>(proposes different bytes)"]
+    Mark --> Annotation["Annotation<br/>(text is never in question)"]
+
+    Change --> Ins["Insertion {++new++}<br/>accept → new · reject → (removed)"]
+    Change --> Del["Deletion {--old--}<br/>accept → (removed) · reject → old"]
+    Change --> Sub["Substitution {~~old~>new~~}<br/>accept → new · reject → old"]
+
+    Annotation --> Com["Comment {>>note<<}<br/>removed either way"]
+    Annotation --> High["Highlight {==span==}<br/>unwrapped either way"]
+
+    classDef change fill:#d9f0d9,stroke:#27ae60,color:#000;
+    classDef ann fill:#e8e0ff,stroke:#7d5fff,color:#000;
+    class Ins,Del,Sub change
+    class Com,High ann
+```
+
+Accept All / Reject All only walks the **Change** family for exactly this
+reason — comments and highlights carry no proposed bytes to accept or reject.
+
 ### Anatomy of a mark
 
 Marks can carry an optional identity reference — `{#id}` — right after the
@@ -124,7 +150,9 @@ changes:
 When your caret enters a marked span in edit mode, the block reveals its
 literal source — the actual `{++…++}` bytes, character-for-character with the
 file — because that revealed source is what your keystrokes edit. Everywhere
-else, you see the change, not the syntax.
+else, you see the change, not the syntax. This is the same syntax-reveal
+projection used for every other span type; see
+[`docs/design/editor-modes.md`](editor-modes.md) for the general model.
 
 ### Marks are intra-block, and inert inside code and math
 
@@ -202,6 +230,31 @@ new dependencies), tolerant of both flow form (`c1: { by: user }`) and block
 form, and tolerant of CRLF line endings.
 
 ---
+
+## The mark lifecycle, end to end
+
+Zooming out from any one mark's anatomy, every mark travels the same road from
+the moment it's written to the moment it settles into history:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Proposed: author writes a\n{++/--/~~/>>/==} mark
+    Proposed --> Rendered: file opens/reloads —\nCriticScanner recognizes it
+    Rendered --> Rendered: caret enters the span\n(reveals literal source)
+    Rendered --> Accepted: Accept
+    Rendered --> Rejected: Reject
+    Rendered --> Dismissed: Dismiss (comments only)
+    Accepted --> ResolvedRDFM: one atomic splice —\nprose + endmatter status:resolved
+    Rejected --> ResolvedRDFM: one atomic splice —\nprose + endmatter status:resolved
+    Dismissed --> ResolvedRDFM: one atomic splice —\nmark removed + status:resolved
+    ResolvedRDFM --> Rendered: undo (⌘Z) restores the mark —\nthe mark wins over stale metadata
+    ResolvedRDFM --> [*]: history entry persists\nin the endmatter (RDFM)
+```
+
+The last two transitions are the subtle part: undoing a resolution doesn't
+just restore text, it restores a *live, actionable* mark, because the review
+data model below treats a live mark as always authoritative over whatever its
+metadata claims.
 
 ## The review data model
 
@@ -356,6 +409,13 @@ for suggestions, dismiss for comments. Threaded replies nest under a hairline.
 Resolved items dim and their actions disappear; a separate history section
 lists them, read back from the endmatter's `status: resolved` records.
 
+![Review inspector showing suggestion and comment cards beside marked-up text in the document canvas](../images/review-panel.png)
+
+The inspector follows the app's appearance, light or dark, with the same
+tints and layout:
+
+![Review inspector in dark appearance, cards beside the marked text](../images/review-panel-dark.png)
+
 **Linkage runs both ways.** Placing your caret inside a mark highlights its
 card; clicking a card scrolls its mark to the center of the viewport and
 flashes an accent ring. A resolution pulses the spliced location so you can see
@@ -446,7 +506,9 @@ are opaque by the normative rules above. So those blocks are commented
 *beside* rather than *inside*: **Add Block Comment** inserts a standalone
 `{>>comment<<}{#cN}` paragraph immediately after the block, plus its endmatter
 entry, as one atomic edit. The comment is fully portable and never injects a
-mark into content that must parse cleanly.
+mark into content that must parse cleanly. Editing the embed itself — as
+opposed to commenting on it — is a separate flow; see
+[`docs/design/embed-editing-ux.md`](embed-editing-ux.md).
 
 ---
 
@@ -465,6 +527,8 @@ ordinary typing produces marks instead of direct edits.
 The mode is loud — a **Suggesting** chip in the status bar, and the review
 counts tick up live — and it is per-window and never persisted on across
 launch, so you cannot accidentally leave it on.
+
+![The SUGGESTING status chip active in the toolbar while Review Mode is on](../images/review-mode.png)
 
 ### Coalescing without state
 
@@ -532,7 +596,9 @@ guard that keeps offsets always correct.
 
 ## Byte-lossless, always
 
-The review system inherits and preserves Quoin's byte-lossless contract:
+The review system inherits and preserves Quoin's byte-lossless contract (see
+[`docs/reference/invariants.md`](../reference/invariants.md) for the full
+rule-book):
 
 - **Untouched entries stay byte-exact.** Resolving one item rewrites only that
   entry's lines in the endmatter; every other entry keeps its original bytes.
@@ -542,6 +608,46 @@ The review system inherits and preserves Quoin's byte-lossless contract:
 - **Endmatter YAML is written safely.** Any value written into the endmatter is
   escaped and flattened to one physical line, so a comment containing a
   newline or a quote can never split a YAML scalar and break the block.
+
+### One pattern, three call sites
+
+Resolving a suggestion (above) and authoring an annotation (above) look like
+separate mechanisms, but they — and Review Mode's keystroke handling — are the
+same pattern instantiated three times: never trust a stale offset, validate
+the candidate against current truth, and apply as one spanning edit or refuse
+outright.
+
+```mermaid
+flowchart TB
+    subgraph resolve["Resolving · SuggestionResolver"]
+        R1["Accept / Reject clicked"] --> R2["re-scan mark's bytes<br/>in CURRENT source"]
+        R2 --> R3{"still exactly<br/>one whole mark?"}
+        R3 -- no --> R4["refuse ·<br/>'suggestion moved' banner"]
+        R3 -- yes --> R5["one spanning splice"]
+    end
+    subgraph author["Annotating · ReviewAuthoring"]
+        A1["selection + gesture"] --> A2["build candidate source,<br/>re-parse it"]
+        A2 --> A3{"exactly our mark,<br/>structure unchanged?"}
+        A3 -- no --> A4["refuse ·<br/>beep / disabled tooltip"]
+        A3 -- yes --> A5["one spanning splice"]
+    end
+    subgraph suggest["Review Mode · SuggestTransform"]
+        S1["keystroke"] --> S2{"caret already<br/>inside a mark body?"}
+        S2 -- yes --> S3["plain edit —<br/>mark grows"]
+        S2 -- no --> S4{"faithful suggestion<br/>form exists?"}
+        S4 -- no --> S5["refuse · beep"]
+        S4 -- yes --> S6["mint mark,<br/>park caret inside"]
+    end
+    R5 --> DS["DocumentSession.applyEdit<br/>(one actor, one pipeline)"]
+    A5 --> DS
+    S3 --> DS
+    S6 --> DS
+```
+
+Refuse-on-drift, self-calibration-by-construction, and stateless coalescing
+are three names for one discipline: an edit is computed where it is applied,
+against current bytes, never against a projection that might already be
+stale.
 
 ---
 

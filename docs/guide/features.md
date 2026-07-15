@@ -2,12 +2,16 @@
 
 A tour of Quoin organized by what you *do* — write, review, organize, read,
 reference — not by how it's built. Every feature names its keyboard shortcut
-and describes the real behavior you'll see.
+and describes the real behavior you'll see. New to Quoin? Start with
+[Getting started](getting-started.md) for a five-minute walkthrough instead.
 
 Quoin is a native macOS WYSIWYG editor for plain `.md` files. The file on disk
 is the source of truth; what you see is a live projection of it. There is no
 web view, no JavaScript at runtime, and nothing leaves your machine. When you
 edit, you're editing the markdown — the rendered view just re-projects it.
+See [architecture](../reference/architecture.md) for the machinery behind
+this, and [PRODUCT.md](../PRODUCT.md) for the full capability spec this tour
+summarizes.
 
 ```mermaid
 flowchart LR
@@ -22,6 +26,20 @@ Because the file *is* the document, any tool that writes markdown — a
 collaborator, a script, or an AI agent — writes Quoin documents. That is the
 foundation of the review loop, the feature nothing else quite does.
 
+The four clusters below map onto one flow: you write in a live projection,
+optionally route changes through review, organize documents around it, and
+read it back comfortably.
+
+```mermaid
+flowchart TD
+    write["Write<br/>WYSIWYG on plain markdown"] --> review["Review<br/>suggestions & comments in-file"]
+    write --> organize["Organize<br/>library, outline, properties, find"]
+    write --> read["Read<br/>focus, typewriter scroll, code themes"]
+    review -.->|accepted marks change prose| write
+    organize -.->|navigate to a document| write
+    read -.->|math & diagrams rendered natively| ref["Reference: math & diagrams"]
+```
+
 ---
 
 ## Write
@@ -34,7 +52,9 @@ the file on disk stays clean markdown you own.
   and Mermaid diagrams, all drawn natively (no web view, no JavaScript).
 - **Edit in place** — click into any block and it reveals its literal markdown
   source, character-for-character with the file. Edit it, click away, it
-  re-renders. The line you're on never jumps on screen.
+  re-renders. The line you're on never jumps on screen. This projection model
+  — rendered by default, literal source while active — is documented in
+  [editor modes](../design/editor-modes.md).
 - **Formatting that writes real markdown** — every command below edits the
   source, so the file stays clean and portable:
 
@@ -110,6 +130,8 @@ The right-hand inspector has three modes — **Outline**, **Review**, and
 **Properties** — toggled with ⌥⌘0. In **Review** mode, every mark in the
 document is a card showing its author and relative time.
 
+![Review inspector showing suggestion and comment cards, each with an author and relative time](../images/review-panel.png)
+
 ```mermaid
 flowchart TB
     subgraph win["Quoin window"]
@@ -164,6 +186,8 @@ overwrites as `{~~old~>new~~}`. A single keystroke grows the current mark rather
 than minting a fresh one each time. An accent **SUGGESTING** chip shows while
 the mode is on, so you always know your edits are being tracked.
 
+![The accent SUGGESTING status chip active in the toolbar during Suggest Edits mode](../images/review-mode.png)
+
 ```mermaid
 stateDiagram-v2
     [*] --> Pending: mark created (you or an agent)
@@ -203,6 +227,9 @@ resolution can never quietly corrupt the document.
   byte-conservative: a value that doesn't parse cleanly as its type stays a
   string, and typed writes preserve the original precision. In the document,
   front matter renders as a tidy field grid.
+
+  ![Properties inspector editing YAML front-matter fields with type-appropriate controls](../images/properties-panel.png)
+
 - **Find & search**:
 
   | Action | Shortcut |
@@ -214,9 +241,15 @@ resolution can never quietly corrupt the document.
   | Quick Open… | ⇧⌘O |
   | Daily Note | ⌘D |
 
+  ![Find bar showing a search term and match count within the current document](../images/find-bar.png)
+
+  ![Search Library panel showing full-text results across the library](../images/library-search.png)
+
 - **Tabs & navigation** — document tabs (⌘1–9 select by position), jump history
   **Back** ⌘[ and **Forward** ⌘], a breadcrumb path, and footnote
   click-to-jump with a hover preview and an ↩ backlink to return.
+
+  ![Footnote reference marker with a hover preview popover](../images/footnotes.png)
 
 ---
 
@@ -233,16 +266,25 @@ Twelve selectable code themes are available for fenced code blocks; the default
 follows the app's light/dark appearance. A reading-progress hairline and
 word-count goals live in the status bar.
 
+![A fenced code block rendered in one of the twelve selectable syntax themes](../images/code-theme.png)
+
+Every rendered element — front matter, callouts, tables, code, math, diagrams —
+carries its own light and dark styling; there's no separate "dark mode" theme
+to fight with your content.
+
+![A document rendered in dark appearance, headings and front-matter grid intact](../images/dark-document.png)
+
 ---
 
 ## Reference: math & diagrams
 
 Math and diagrams are rendered natively — no MathJax, no KaTeX, no Mermaid.js.
-Quoin edits them in place with a live side-panel preview: the source reveals
-beside a rendered pane, and the last good render is held while your mid-edit
-source is temporarily invalid, so the panel never flashes blank. Anything
-unsupported degrades to a labeled source card with a specific reason — never a
-blank, never a crash.
+Quoin edits them in place with a live side-panel preview (see
+[embed editing](../design/embed-editing-ux.md) for how the source and preview
+panes stay in sync): the source reveals beside a rendered pane, and the last
+good render is held while your mid-edit source is temporarily invalid, so the
+panel never flashes blank. Anything unsupported degrades to a labeled source
+card with a specific reason — never a blank, never a crash.
 
 ```mermaid
 flowchart LR
@@ -257,11 +299,20 @@ flowchart LR
   operators with correct limits, matrices, alignment environments). Inline
   `$…$` and `\(…\)`, display `$$…$$` and `\[…\]`. The full coverage matrix
   lives in Vinculum's docs.
+
+  ![Gallery of LaTeX math rendered natively by Vinculum: fractions, roots, matrices, alignment environments](../images/gallery-math.png)
+
 - **Diagrams** — Mermaid via
   **[MermaidKit](https://github.com/clintecker/MermaidKit)**, parsed and laid
   out natively (flowcharts, sequence, state, and more). Front-matter
   `title`/`config` and `accTitle`/`accDescr` are supported. The full
   diagram-type catalog lives in MermaidKit's docs.
+
+  ![Gallery of Mermaid diagrams rendered natively by MermaidKit: flowchart, sequence, and state diagrams](../images/gallery-diagrams.png)
+
+Both engines are first-party, GitHub-hosted dependencies — see
+[dependencies](../reference/dependencies.md) for why Quoin keeps its
+dependency list this short.
 
 ### Why native rendering, not a web view
 
@@ -277,6 +328,9 @@ degrade predictably instead of failing in an opaque sandbox.
 
 - Export to **Markdown** (round-trip), **plain text**, or **HTML** (via
   **Export…**, ⇧⌘E), and **Print…** with ⌘P.
+
+  ![Export sheet with Markdown, plain text, and HTML options](../images/export-sheet.png)
+
 - Everything is a plain file. Any tool that writes markdown — or RDFM /
   CriticMarkup — produces Quoin documents. There is no lock-in and no service:
   files on disk are the whole story.

@@ -17,10 +17,10 @@ review-loop design (`docs/design/suggestions.md`), and the product spec
 
 Quoin's source of truth is the markdown **file** — the string plus its parsed
 AST — never an attributed string or an app-specific document format. The
-editor is a *projection* of that file; every edit mutates the source and the
-renderer re-projects. (Why this matters is covered in
-`docs/reference/architecture.md`, but the one-line version: the file is the
-thing you own, and the app is just a lens on it.)
+editor is a [*projection*](editor-modes.md) of that file; every edit
+mutates the source and the renderer re-projects. (Why this matters is covered
+in `docs/reference/architecture.md`, but the one-line version: the file is
+the thing you own, and the app is just a lens on it.)
 
 That single decision has a portability consequence. Because the document, the
 sessions that mutate it, and all the review machinery are expressed in terms
@@ -73,7 +73,7 @@ between platforms is the shell that draws the projection and routes input.
 | Concern | Layer | Platform-bound? |
 | :--- | :--- | :--- |
 | Parse markdown, hold the AST | QuoinCore | No — Linux-clean |
-| Edit sessions, byte-lossless splices, drift checks | QuoinCore (`DocumentSession` actor) | No |
+| Edit sessions, [byte-lossless](../reference/invariants.md) splices, drift checks | QuoinCore (`DocumentSession` actor) | No |
 | Review marks: author, resolve, accept/reject | QuoinCore (`SuggestionResolver`, `ReviewAuthoring`, `ReviewEndmatter`) | No |
 | Search, stats, outline, exporters | QuoinCore | No |
 | Diagram + math layout → device-independent scene IR | MermaidLayout / VinculumLayout | No |
@@ -93,14 +93,22 @@ The shipping product is the macOS app: a `SwiftUI` shell around an
 `NSTextView` subclass (`QuoinTextView`) that draws Quoin's decorations behind
 the text using TextKit 2 fragment frames. It is the full editor —
 CommonMark + GFM, callouts, highlights, footnotes, front-matter Properties,
-code with twelve themes, native LaTeX math (Vinculum) and Mermaid diagrams
-(MermaidKit), and the complete review loop. Everything the rest of this
-document describes as a "direction" is measured against this bar.
+code with twelve themes, native LaTeX math ([Vinculum](https://github.com/clintecker/Vinculum))
+and Mermaid diagrams ([MermaidKit](https://github.com/clintecker/MermaidKit)),
+and the complete review loop. Both engines are first-party dependencies —
+see `docs/reference/dependencies.md` for how that fits Quoin's one-dependency
+policy. Everything the rest of this document describes as a "direction" is
+measured against this bar.
+
+![Quoin's rendered showcase document on macOS, with sidebar, outline, and format pill](../images/hero.png)
 
 macOS is where the review loop is used live: an agent or collaborator writes
-suggestion marks into the file, they render as cards in the Review inspector,
-and Accept/Reject is a single atomic, byte-safe edit. See
+suggestion marks into the file, they render as cards in the Review
+inspector, and Accept/Reject is a single atomic, byte-safe edit (the same
+invariant behind `docs/reference/invariants.md`). See
 `docs/guide/features.md` for the feature tour.
+
+![The Review inspector on macOS: suggestion and comment cards next to the document they annotate](../images/review-panel.png)
 
 ---
 
@@ -152,8 +160,9 @@ before the thing that is expensive and ordinary.
 A UIKit reader path already exists and compiles in CI, but it is a spike, not
 the product: a small `UITextView`-based view without the decoration layer that
 gives the Mac its code canvases, callout boxes, and ruled quotes. Bringing the
-phone to the Mac's bar is a real port of the *draw* layer, not a new engine.
-The likely order:
+phone to the Mac's bar is a real port of the *draw* layer, not a new engine —
+the target is the visual language fixed in `docs/design/handoff.md`, not a
+phone-native reinterpretation of it. The likely order:
 
 ```mermaid
 flowchart LR
@@ -265,9 +274,9 @@ Linux a real editing surface in a browser without a GUI toolkit port. It is a
 sketch, not a commitment, because it has genuine design questions to answer
 first:
 
-1. **An HTTP server against the one-dependency policy.** `swift-nio` would
-   need TRD justification, or a minimal hand-rolled epoll server — a decision
-   to make deliberately, not a library to reach for.
+1. **An HTTP server against the [one-dependency policy](../reference/dependencies.md).**
+   `swift-nio` would need TRD justification, or a minimal hand-rolled epoll
+   server — a decision to make deliberately, not a library to reach for.
 2. **The zero-JavaScript stance, honestly.** Server-rendered HTML with no
    frameworks, ever. Live reload without any client script does not really
    exist and meta-refresh loses scroll and form state, so the honest position
@@ -292,6 +301,22 @@ layout engines also accept an injected text measurer, so a Linux font stack
 can supply the one thing Linux genuinely lacks — real text metrics — and
 produce the *same geometry* as the Mac. SVG stays the zero-dependency path;
 raster export is an optional upstream enhancement, never an app dependency.
+
+The same scene IR forks into two consumers, and only one of them is
+platform-bound:
+
+```mermaid
+flowchart TD
+    source["Mermaid / LaTeX source in the .md file"] --> layout["MermaidLayout / VinculumLayout<br/>parse + layout, text measurer injected"]
+    layout --> ir["Scene IR<br/>scene graph · MathScene<br/>device-independent"]
+    ir --> raster["MermaidRender / VinculumRender<br/>CoreGraphics + CoreText"]
+    ir --> svg["SVG writer<br/>platform-free, zero graphics deps"]
+    raster --> pixels["Mac / iPhone / iPad pixels"]
+    svg --> anywhere["Any platform, including<br/>headless Linux export"]
+```
+
+The layout half is shared engine code; only the last step — turning IR into
+pixels versus turning it into a string — ever asks what platform it's on.
 
 ---
 
