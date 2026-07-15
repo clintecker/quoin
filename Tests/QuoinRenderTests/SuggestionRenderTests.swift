@@ -89,10 +89,13 @@ extension SuggestionRenderTests {
     }
 }
 
-// MARK: - The endmatter chip is panel UI, never inline YAML (redline)
+// MARK: - The endmatter is INVISIBLE in the document (redline 2026-07-15)
 
 extension SuggestionRenderTests {
-    func testEndmatterChipLinksToReviewPanelAndHasNoEditAffordance() throws {
+    func testEndmatterRendersNothingButKeepsItsBlockRange() throws {
+        // v1 rendered the YAML, v2 a summary chip — both redlined. The
+        // Review panel is the endmatter's ENTIRE UI; the document shows
+        // nothing, and the caret can't land inside phantom metadata text.
         let source = "Body {++x++}{#s1}.\n\n---\nsuggestions:\n  s1: { by: AI }\n"
         let document = MarkdownConverter.parse(source)
         let rendered = AttributedRenderer().render(document)
@@ -100,16 +103,12 @@ extension SuggestionRenderTests {
             if case .reviewEndmatter = $0.kind { return true }
             return false
         })
-        let range = try XCTUnwrap(rendered.blockRanges[block.id])
-        var foundReviewLink = false
-        var foundEditLink = false
-        rendered.attributed.enumerateAttribute(.link, in: range) { value, _, _ in
-            guard let url = value as? URL else { return }
-            if QuoinLink.isReviewURL(url) { foundReviewLink = true }
-            if QuoinLink.isEditURL(url) { foundEditLink = true }
-        }
-        XCTAssertTrue(foundReviewLink, "the chip opens the Review panel")
-        XCTAssertFalse(foundEditLink, "no inline-YAML edit affordance")
+        let range = try XCTUnwrap(rendered.blockRanges[block.id], "block bookkeeping survives")
+        let text = (rendered.attributed.string as NSString).substring(with: range)
+        XCTAssertTrue(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      "no visible endmatter text, got: \(text.debugDescription)")
+        XCTAssertFalse(rendered.attributed.string.contains("review metadata"),
+                       "the chip is gone")
     }
 }
 #endif

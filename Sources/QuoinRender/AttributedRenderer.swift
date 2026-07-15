@@ -1148,26 +1148,39 @@ public struct AttributedRenderer {
             content = renderCallout(kind: kind, children: children, depth: depth, document: document)
         case .frontMatter(let yaml):
             content = renderFrontMatter(yaml: yaml)
-        case .reviewEndmatter(let yaml):
-            // Review metadata chip (RDFM endmatter): a SHORT summary — the
-            // review inspector surfaces the metadata meaningfully; the chip
-            // just marks that it exists and opens the YAML on activation.
-            // (v1 rendered the condensed YAML itself: a full-width mono
-            // soup strip — redlined 2026-07-14.)
-            let metadata = ReviewEndmatter.parse(yaml: yaml)
-            let comments = metadata?.comments.count ?? 0
-            let suggestions = metadata?.suggestions.count ?? 0
-            let summary = "review metadata · "
-                + [suggestions > 0 ? "\(suggestions) suggestion\(suggestions == 1 ? "" : "s")" : nil,
-                   comments > 0 ? "\(comments) comment\(comments == 1 ? "" : "s")" : nil]
-                    .compactMap { $0 }.joined(separator: " · ")
-            content = renderFrontMatter(yaml: summary, editable: false)
+        case .reviewEndmatter:
+            // The endmatter is NOT rendered at all: the Review panel (tab,
+            // badge, cards, history) is its entire UI. v1 rendered the
+            // condensed YAML (redlined 2026-07-14), v2 a summary chip
+            // (redlined 2026-07-15: "shouldn't be literally rendered in
+            // the document" — the caret could even land inside it). An
+            // empty run keeps the block's range in the projection maps so
+            // byte-lossless round-trip and block bookkeeping are untouched.
+            content = NSAttributedString(string: "", attributes: bodyAttributes())
         case .tableOfContents:
             content = renderTOC(outline: document.outline)
         case .thematicBreak:
             content = renderThematicBreak()
         case .htmlBlock(let html):
-            content = renderCodeBlock(language: "html", code: html)
+            // An HTML COMMENT is metadata, not code: render it as a faint
+            // literal line, never a code canvas (live redline 2026-07-15 —
+            // `<!-- section_id: … -->` blocks dressed up as html snippets).
+            let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("<!--"), trimmed.hasSuffix("-->"),
+               // Only a PURE comment block: a comment followed by markup
+               // is real HTML and keeps the code canvas.
+               trimmed.range(of: "-->")!.upperBound == trimmed.endIndex {
+                var attributes = bodyAttributes()
+                attributes[.font] = theme.inlineCodeFont()
+                attributes[.foregroundColor] = theme.secondaryTextColor.withAlphaComponent(0.6)
+                let style = paragraphStyle()
+                style.paragraphSpacing = 4
+                style.lineBreakMode = .byTruncatingTail
+                attributes[.paragraphStyle] = style
+                content = NSAttributedString(string: trimmed, attributes: attributes)
+            } else {
+                content = renderCodeBlock(language: "html", code: html)
+            }
         }
 
         let tagged = NSMutableAttributedString(attributedString: content)

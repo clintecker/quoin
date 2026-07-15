@@ -385,7 +385,14 @@ extension MarkdownReaderView {
                         captureDeactivationCaret(in: textView)
                         parent.onActivateBlock?(nil, nil, nil)
                     } else {
-                        let hint: CaretHint? = embedCaretHint(atCharIndex: charIndex).map { .source($0) }
+                        // The chip run has no body mapping, and a nil hint
+                        // parks the caret at the source END — for a tall
+                        // diagram the caret-line pin then anchored the LAST
+                        // source line at the chip's Y and scrolled the whole
+                        // reveal out of view (live report, 2026-07-15). The
+                        // chip means "edit this" — start at the top.
+                        let hint: CaretHint = embedCaretHint(atCharIndex: charIndex)
+                            .map { .source($0) } ?? .source(0)
                         parent.onActivateBlock?(id, hint, nil)
                     }
                 }
@@ -986,16 +993,18 @@ extension MarkdownReaderView {
         /// Adds the 30% dim to every block intersecting `range` except the
         /// caret's — binary-searched via the block-range index, so the
         /// cost is O(visible blocks), never O(document blocks).
+        /// Each run dims to 30% OF ITS OWN COLOR — a flat ink-tinted dim
+        /// painted near-black over the dark code canvas and code vanished
+        /// entirely in focus mode (live report, 2026-07-15); per-run
+        /// dimming keeps token hues and stays visible on any surface.
         private func paintFocusDim(
             in range: NSRange, sparing currentBlock: BlockID?, theme: Theme,
             layoutManager: NSTextLayoutManager, contentStorage: NSTextContentStorage
         ) {
-            let dimmed = theme.ink.withAlphaComponent(0.3)
             forEachBlockRange(intersecting: range) { id, blockRange in
-                guard id != currentBlock,
-                      let textRange = nsTextRange(blockRange, in: contentStorage) else { return }
-                layoutManager.addRenderingAttribute(
-                    .foregroundColor, value: dimmed, for: textRange)
+                guard id != currentBlock else { return }
+                dimRuns(in: blockRange, alpha: 0.3, theme: theme,
+                        layoutManager: layoutManager, contentStorage: contentStorage)
             }
         }
 
@@ -1004,16 +1013,30 @@ extension MarkdownReaderView {
             layoutManager: NSTextLayoutManager, contentStorage: NSTextContentStorage
         ) {
             guard let sentence else { return }
-            let softDim = theme.ink.withAlphaComponent(0.4)
             let before = NSRange(location: blockRange.location,
                                  length: sentence.location - blockRange.location)
             let after = NSRange(location: NSMaxRange(sentence),
                                 length: NSMaxRange(blockRange) - NSMaxRange(sentence))
             for part in [before, after] where part.length > 0 {
-                if let textRange = nsTextRange(part, in: contentStorage) {
-                    layoutManager.addRenderingAttribute(
-                        .foregroundColor, value: softDim, for: textRange)
-                }
+                dimRuns(in: part, alpha: 0.4, theme: theme,
+                        layoutManager: layoutManager, contentStorage: contentStorage)
+            }
+        }
+
+        /// One dim engine: every foreground-color run in `range` gets a
+        /// rendering attribute of ITS color at `alpha` (runs without an
+        /// explicit color dim from the theme ink).
+        private func dimRuns(
+            in range: NSRange, alpha: CGFloat, theme: Theme,
+            layoutManager: NSTextLayoutManager, contentStorage: NSTextContentStorage
+        ) {
+            guard let storage = contentStorage.textStorage,
+                  NSMaxRange(range) <= storage.length else { return }
+            storage.enumerateAttribute(.foregroundColor, in: range) { value, runRange, _ in
+                let base = (value as? NSColor) ?? theme.ink
+                guard let textRange = nsTextRange(runRange, in: contentStorage) else { return }
+                layoutManager.addRenderingAttribute(
+                    .foregroundColor, value: base.withAlphaComponent(alpha), for: textRange)
             }
         }
 
@@ -1604,6 +1627,15 @@ extension MarkdownReaderView {
             }
             if commandSelector == #selector(NSTextView.insertBacktab(_:)) {
                 return indentListLines(outdent: true, in: textView)
+            }
+            // ⌘A while EDITING selects the active block's editable range,
+            // not the whole document (live redline 2026-07-15) — the block
+            // is the editing scope, and whole-doc selection from inside a
+            // code block invited accidental whole-doc deletes.
+            if commandSelector == #selector(NSTextView.selectAll(_:)),
+               let active = parent.rendered.activeEditableRange {
+                textView.setSelectedRange(active)
+                return true
             }
             // Home/End while EDITING move the caret to the line ends (user
             // redline, #60); reading mode keeps the system scroll behavior.
