@@ -22,8 +22,41 @@ Feature groups are labeled **G1–G9** and referenced by shorthand throughout.
 | Language / runtime | Swift 6.0 tools (QuoinCore in Swift 6 language mode), SwiftUI + TextKit 2. Zero JavaScript at runtime; local-only. |
 | Rendering | Native attributed-string projection + drawn-ink decorations. No web view, no MathJax/KaTeX, no Mermaid.js. |
 | Dependencies | One third-party package (swift-markdown / cmark-gfm). Two first-party engine packages consumed from GitHub: MermaidKit (`from: 0.10.0`) and Vinculum (`from: 0.23.0`). |
-| Verification | 641 package tests, 0 failures; core suite runs on Linux (147 headless). |
+| Verification | A comprehensive package test suite (600+ tests) passes with zero failures; the platform-free core suite also runs headless on Linux. |
 | Origin | Built as a WYSIWYG markdown editor whose source of truth is the markdown string + AST, so that any tool writing markdown — including agents — writes Quoin documents. |
+
+---
+
+## Architecture at a glance
+
+The `.md` file is the single source of truth. The editor is a projection of it:
+the file is parsed to an AST, rendered to one attributed string, and drawn
+natively. Every edit — a keystroke, a formatting command, a review resolution —
+is computed as a byte-precise splice into the source and re-projected, so what
+is on screen and what is on disk never diverge.
+
+```mermaid
+flowchart LR
+    File["<b>.md file on disk</b><br/>source of truth"]
+    Parse["swift-markdown<br/>cmark-gfm parse"]
+    Doc["QuoinDocument<br/>AST + content-hash block IDs"]
+    Render["AttributedRenderer<br/>projection"]
+    View["TextKit 2 view<br/>+ drawn-ink decorations"]
+    Session["DocumentSession (actor)<br/>byte-precise source splice<br/>undo · autosave · refuse-on-drift"]
+
+    File -->|read| Parse --> Doc --> Render --> View
+    View -->|keystroke · format · accept/reject| Session
+    Session -->|mutate| File
+    Session -.->|incremental patch| Render
+
+    Vinculum["Vinculum<br/>LaTeX math"] --> Render
+    MermaidKit["MermaidKit<br/>Mermaid diagrams"] --> Render
+```
+
+Math (Vinculum) and diagrams (MermaidKit) are first-party engines that feed the
+same native projection — no web view, no JavaScript. `QuoinCore` (parse,
+session, review, front matter, export) carries no AppKit and builds on Linux, so
+the whole document engine is reusable without a UI.
 
 ---
 
@@ -65,7 +98,7 @@ support matrix in `README.md`.
 | :--- | :--- |
 | CommonMark core | Headings, emphasis, lists, links, images, code, quotes, breaks (via cmark-gfm). |
 | GFM | Tables (per-column alignment, numeric columns right-aligned), task lists (click-toggle, written back to source), strikethrough, autolinks. |
-| Callouts | 5 semantic types — note, tip, important, warning, caution (`> [!NOTE]`). |
+| Callouts | The five GFM alert types — note, tip, important, warning, caution (`> [!NOTE]`); `danger`/`error` are recognized as aliases of the caution severity. |
 | Extended inline | Highlights `==text==` with palette cycling; footnotes `[^id]` with click-to-jump, hover preview, and ↩ backlinks; `[TOC]` live table-of-contents. |
 | Code | Syntax highlighting for Swift, Python, JS/TS, Go, Rust, Ruby, C/C++/ObjC, Java/Kotlin, shell, SQL, YAML/TOML, JSON, HTML/XML/CSS. 12 selectable canvas themes; default follows the app appearance. |
 | Math (LaTeX) | ~400 classed symbols, fractions, roots, scripts, big operators with correct limits, matrices, alignment environments; inline `$…$` `\(…\)` and display `$$…$$` `\[…\]`. Powered by Vinculum (native TeX-style typesetting; no MathJax/KaTeX). |
@@ -104,7 +137,7 @@ resolutions are atomic, byte-safe source edits. See
 | Feature | Specific |
 | :--- | :--- |
 | Library | A user-picked folder (security-scoped bookmark) as the document tree; folders are directories, documents are plain files. Per-window folders: Open Folder in New Window; each window restores its folder on relaunch. |
-| Navigation | Outline inspector (manual collapse is authoritative), quick open, recents, daily note, library-wide search (⇧⌘F), in-document find (⌘F). Tabs with positional close focus; the tab bar compresses and never forces the window wider than the screen. |
+| Navigation | Outline inspector (manual collapse is authoritative), quick open, recents, daily note (⌘D), library-wide search (⇧⌘F), in-document find & replace (⌘F; ⌘G / ⇧⌘G cycle matches). Replace operates on the raw source as atomic edits (Replace All is one undo). Tabs (⌘1–9) with positional close focus; the tab bar compresses and never forces the window wider than the screen. |
 | Properties | A Properties inspector editing front matter as a key/value panel with type-appropriate editors — date picker, bool toggle, number field, CSV for lists, plain text otherwise — and an Edit-as-Text escape hatch. Byte-conservative: a value that does not parse cleanly as its type stays a string; typed writes preserve the original precision. |
 | Focus & flow | Focus mode (dim all but the current block/sentence), typewriter scrolling, word-count goals, jump history (⌘[ / ⌘]). |
 
@@ -151,11 +184,11 @@ ranges, so a document containing live marks re-anchors via a full parse (guard).
 
 | Feature | Specific |
 | :--- | :--- |
-| Test suite | 641 package tests, 0 failures; performance budgets (PerformanceTests) and pathological inputs (TortureTests). |
+| Test suite | A comprehensive package test suite (600+ tests, zero failures), including performance budgets (PerformanceTests) and pathological inputs (TortureTests). |
 | Invariant enforcement | Named invariants (`docs/reference/invariants.md`) with dedicated tests: viewport anchoring, reveal fidelity, projection equivalence, decoration geometry. |
 | No flaky tests | Intermittent failures are diagnosed to a definitive cause, never labeled environmental (ADR-0007); corpus tests assert minimum check counts so silent bailing cannot fake a pass. |
 | Decision records | `docs/reference/adr/` records non-obvious roads taken and rejected, each with cited evidence. |
-| Cross-platform | Core suite green on Linux (147 headless tests); word-count parity pinned across platforms. |
+| Cross-platform | The platform-free core suite runs green headless on Linux; word-count parity is pinned across platforms. |
 | Screenshot automation | Launch arguments preset app state; CI publishes PNGs to the `ci-screenshots` branch on every push. |
 
 ---
@@ -203,10 +236,10 @@ refresh automatically.
 | `docs/reference/invariants.md` | The named invariants and the tests that enforce them |
 | `docs/reference/adr/` | Architecture Decision Records (roads taken and rejected, with evidence) |
 | `docs/design/handoff.md` | The visual/interaction spec (colors, type ramp, spacing, states) |
-| `docs/design/suggestions.md` | The review loop design (RDFM/CriticMarkup, S1–S4) |
-| `docs/design/editor-modes.md`, `editor-modes-plan.md` | The projection/editing-mode architecture |
+| `docs/design/suggestions.md` | The review loop design (RDFM/CriticMarkup) |
+| `docs/design/editor-modes.md` | The projection/editing-mode architecture |
 | `docs/design/embed-editing-ux.md` | Embed reveal + side-panel preview UX |
-| `docs/design/platforms.md` | iPhone/iPad and Linux direction (five-squad debated) |
+| `docs/design/platforms.md` | iPhone/iPad and Linux direction |
 | `docs/reference/performance.md` | Editing-responsiveness benchmarks |
 | `docs/archive/TRD.html`, `docs/archive/PRD.html` | Architecture and original scoped PRD |
 | MermaidKit repo | Diagram engine capability matrix + docs |
