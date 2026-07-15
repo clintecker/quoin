@@ -55,7 +55,10 @@ public enum CriticScanner {
             || text.contains("{>>") || text.contains("{==")
     }
 
-    private static let openers: [(sigil: [UInt8], closer: [UInt8], make: (String) -> CriticMark.Payload?)] = [
+    // Immutable table of pure builder closures — safe to share across
+    // concurrency domains; the `@Sendable` closures + nonisolated(unsafe)
+    // say so to Swift 6 without wrapping a read-only constant in a lock.
+    private nonisolated(unsafe) static let openers: [(sigil: [UInt8], closer: [UInt8], make: @Sendable (String) -> CriticMark.Payload?)] = [
         (Array("{++".utf8), Array("++}".utf8), { .insertion($0) }),
         (Array("{--".utf8), Array("--}".utf8), { .deletion($0) }),
         (Array("{~~".utf8), Array("~~}".utf8), { content in

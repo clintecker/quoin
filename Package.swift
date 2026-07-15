@@ -1,4 +1,4 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -29,7 +29,8 @@ let package = Package(
                 .product(name: "MermaidLayout", package: "MermaidKit"),
                 .product(name: "VinculumLayout", package: "Vinculum"),
             ],
-            path: "Sources/QuoinCore"
+            path: "Sources/QuoinCore",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .target(
             name: "QuoinRender",
@@ -38,7 +39,14 @@ let package = Package(
                 .product(name: "MermaidRender", package: "MermaidKit"),
                 .product(name: "VinculumRender", package: "Vinculum"),
             ],
-            path: "Sources/QuoinRender"
+            path: "Sources/QuoinRender",
+            // Still Swift 5 language mode: the remaining Swift-6 errors are
+            // all `sending self` in the settle/pin DispatchQueue.main.async
+            // closures — the caret/viewport machinery. That migration is
+            // staged (road-to-1.0 Phase E2/E3) behind the ReaderModel
+            // characterization tests, not rushed. Builds on the 6.0
+            // toolchain today.
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "QuoinCoreTests",
@@ -55,7 +63,10 @@ let package = Package(
             dependencies: ["QuoinRender", "QuoinCore"],
             path: "Tests/QuoinRenderTests",
             // The golden digest is read via #filePath, not the test bundle.
-            exclude: ["Snapshots/render-digests.json"]
+            exclude: ["Snapshots/render-digests.json"],
+            // Matches QuoinRender's Swift 5 mode — it exercises the AppKit
+            // render types whose Sendability the E2/E3 migration completes.
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]
 )
