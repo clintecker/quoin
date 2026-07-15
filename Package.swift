@@ -17,7 +17,7 @@ let package = Package(
         // The Mermaid engine is Quoin's own published package — consumed from
         // GitHub exactly like any other host app would (first-party, so exempt
         // from the one-third-party-dependency policy).
-        .package(url: "https://github.com/clintecker/MermaidKit.git", from: "0.10.0"),
+        .package(url: "https://github.com/clintecker/MermaidKit.git", from: "0.12.0"),
         // The math engine — Quoin's own published package, same policy.
         .package(url: "https://github.com/clintecker/Vinculum.git", from: "0.23.0"),
     ],
