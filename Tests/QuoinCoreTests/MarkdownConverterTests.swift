@@ -350,4 +350,47 @@ final class MarkdownConverterTests: XCTestCase {
             return XCTFail("expected html block")
         }
     }
+
+    /// cmark reports a comment block's end one LINE short when `-->` sits
+    /// on its own line — the block's slice lost its closing marker, so the
+    /// reveal showed `<!--` but never `-->` (task #71). The converter
+    /// repairs the range against rawHTML; the slice must be the FULL
+    /// comment for every shape of the bug.
+    func testHTMLCommentBlockRangeIncludesClosingMarkerLine() throws {
+        let cases: [(source: String, expectedSlice: String)] = [
+            // The stress doc's header shape: multi-line body.
+            ("<!--\nsection_id: abc-123\nnote: stress header\n-->\n\ntail",
+             "<!--\nsection_id: abc-123\nnote: stress header\n-->"),
+            // Degenerate two-line comment.
+            ("<!--\n-->\n\ntail", "<!--\n-->"),
+            // Last block, file without a trailing newline.
+            ("tail\n\n<!--\nlast\n-->", "<!--\nlast\n-->"),
+        ]
+        for (source, expectedSlice) in cases {
+            let doc = MarkdownConverter.parse(source)
+            let block = try XCTUnwrap(doc.blocks.first {
+                if case .htmlBlock = $0.kind { return true }
+                return false
+            })
+            XCTAssertEqual(source.substring(in: block.range), expectedSlice,
+                           "comment slice lost its closing line in \(source.debugDescription)")
+        }
+    }
+
+    /// Ranges that were already correct must stay byte-identical: the
+    /// repair only fires when cmark's range verifiably dropped bytes.
+    func testHTMLBlockRangeRepairLeavesCorrectRangesAlone() throws {
+        let cases: [(source: String, expectedSlice: String)] = [
+            ("<!-- one line -->\n\ntail", "<!-- one line -->"),
+            ("<div>\nfoo\n</div>\n\ntail", "<div>\nfoo\n</div>"),
+        ]
+        for (source, expectedSlice) in cases {
+            let doc = MarkdownConverter.parse(source)
+            let block = try XCTUnwrap(doc.blocks.first {
+                if case .htmlBlock = $0.kind { return true }
+                return false
+            })
+            XCTAssertEqual(source.substring(in: block.range), expectedSlice)
+        }
+    }
 }

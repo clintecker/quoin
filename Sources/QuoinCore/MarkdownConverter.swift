@@ -614,7 +614,8 @@ public enum MarkdownConverter {
                 return [makeBlock(kind: .thematicBreak, range: range)]
 
             case let html as Markdown.HTMLBlock:
-                return [makeBlock(kind: .htmlBlock(html.rawHTML), range: range)]
+                return [makeBlock(kind: .htmlBlock(html.rawHTML),
+                                  range: repairedHTMLBlockRange(rawHTML: html.rawHTML, reported: range))]
 
             default:
                 // Unknown block-level construct: preserve it as literal source
@@ -624,6 +625,29 @@ public enum MarkdownConverter {
                 }
                 return []
             }
+        }
+
+        /// cmark reports an HTML block's source range one LINE short when
+        /// the block is closed by a terminator on its own line (a comment's
+        /// `-->`): `rawHTML` carries the full content but the range stops at
+        /// the previous line — so the block's "1:1" slice lost its closing
+        /// marker (the reveal showed `<!--` but never `-->`, and the missing
+        /// final line capped the revealed height). Anchor the range to
+        /// rawHTML instead: when the source bytes at the block's offset
+        /// literally spell the raw content, that length is the truth. Any
+        /// byte mismatch keeps the reported range — never worse than cmark's.
+        func repairedHTMLBlockRange(rawHTML: String, reported: ByteRange) -> ByteRange {
+            // Block ranges exclude the trailing line terminator by
+            // convention; cmark appends one to rawHTML even when the file
+            // lacks it.
+            var expected = rawHTML
+            if expected.hasSuffix("\n") { expected.removeLast() }
+            if expected.hasSuffix("\r") { expected.removeLast() }
+            let length = expected.utf8.count
+            guard length > reported.length,
+                  source.substring(in: ByteRange(offset: reported.offset, length: length)) == expected
+            else { return reported }
+            return ByteRange(offset: reported.offset, length: length)
         }
 
         /// The shared inline post-pass chain: math, then highlights, then

@@ -200,6 +200,52 @@ final class RevealFidelityTests: XCTestCase {
         XCTAssertLessThan(delta, 40, "entity-dense reveal reflowed by \(delta)pt")
     }
 
+    /// Task #71: revealing a pure HTML-comment block showed the opening
+    /// `<!--` but never the closing `-->` — cmark reported the block's
+    /// source range one line short, so the "1:1" slice (and with it the
+    /// editable area AND the view height) lost the final line. The revealed
+    /// string must equal the source slice, closing marker included, on both
+    /// projection paths (full render and activation-flip patch).
+    func testPureHTMLCommentRevealIsOneToOneIncludingClosingMarker() throws {
+        let commentSource = """
+        <!--
+        section_id: abc-123
+        note: stress header
+        -->
+
+        Body paragraph after the comment.
+        """
+        let document = MarkdownConverter.parse(commentSource)
+        let renderer = AttributedRenderer()
+        let comment = try XCTUnwrap(document.blocks.first {
+            if case .htmlBlock = $0.kind { return true }
+            return false
+        })
+        let slice = try XCTUnwrap(document.source.substring(in: comment.range))
+        XCTAssertTrue(slice.hasSuffix("-->"), "test premise: the slice carries the closing marker")
+
+        // Full render path: the editable area is the whole slice, 1:1.
+        var cache: [BlockID: NSAttributedString] = [:]
+        let active = renderer.render(document, activeBlockID: comment.id, activeCaret: 0, cache: &cache)
+        let editable = try XCTUnwrap(active.activeEditableRange)
+        XCTAssertEqual((active.attributed.string as NSString).substring(with: editable), slice,
+                       "revealed source must be character-for-character the block's slice")
+
+        // Flip-patch path must agree byte-for-byte with the full render.
+        cache.removeAll()
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+        let flip = try XCTUnwrap(renderer.activationFlipUpdate(
+            document: document, current: reading, from: nil, to: comment.id, caret: 0))
+        let storage = NSMutableAttributedString(attributedString: reading.attributed)
+        for patch in flip.storagePatches {
+            storage.replaceCharacters(in: patch.oldRange, with: patch.replacement)
+        }
+        XCTAssertEqual(storage.string, active.attributed.string,
+                       "activation flip patch drifted from the full render")
+        let flipEditable = try XCTUnwrap(flip.activeEditableRange)
+        XCTAssertEqual((storage.string as NSString).substring(with: flipEditable), slice)
+    }
+
     private func measureHeight(_ attributed: NSAttributedString, width: CGFloat = 600) -> CGFloat {
         let storage = NSTextStorage(attributedString: attributed)
         let contentStorage = NSTextContentStorage()

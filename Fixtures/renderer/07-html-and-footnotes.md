@@ -2,6 +2,11 @@
 
 > Inline/block HTML, details/summary, comments, sanitisation cases; footnotes and reference-style definitions.
 
+<!--
+fixture_id: html-and-footnotes
+note: multi-line pure comment — its reveal must include this closing marker line (task #71)
+-->
+
 ## 11. Raw HTML
 
 ### 11.1 Inline HTML
