@@ -1301,6 +1301,17 @@ extension MarkdownReaderView {
                 items.append(reviewItem("Highlight", "highlight"))
                 items.append(NSMenuItem.separator())
             }
+            // Comment on the BLOCK (#68) — the only way to annotate code,
+            // tables, diagrams, and math, and available everywhere.
+            if parent.onAddBlockComment != nil {
+                let item = NSMenuItem(
+                    title: "Comment on Block…",
+                    action: #selector(contextBlockComment(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = id
+                items.append(item)
+                items.append(NSMenuItem.separator())
+            }
             let isActive = id == parent.rendered.activeBlockID
             if isActive || isEmbedBlock(atCharIndex: index) {
                 let item = NSMenuItem(
@@ -1398,6 +1409,14 @@ extension MarkdownReaderView {
                 guard hasSelection else { NSSound.beep(); return }
                 onAdd(.highlight, target.blockID, target.relStart, target.relEnd, target.renderedText)
             case .comment:
+                // Inside an opaque block, a selection comment cannot exist
+                // (RDFM opacity) — fall through to a BLOCK comment (#68)
+                // instead of a refusal banner.
+                if isEmbedBlock(atCharIndex: textView.selectedRange().location),
+                   parent.onAddBlockComment != nil {
+                    beginBlockComment(target.blockID, in: textView)
+                    return
+                }
                 // No selection → document-level comment (endmatter-only).
                 presentComposer(
                     prompt: hasSelection ? "Comment on “\(target.renderedText.prefix(40))…”"
@@ -1446,6 +1465,21 @@ extension MarkdownReaderView {
             }
             annotationPopover = popover
             popover.show(relativeTo: anchor, of: textView, preferredEdge: .maxY)
+        }
+
+        func beginBlockComment(_ blockID: BlockID, in textView: NSTextView) {
+            guard let onAdd = parent.onAddBlockComment else { return }
+            presentComposer(
+                prompt: "Comment on this block", initialText: "",
+                commitTitle: "Comment", in: textView
+            ) { body in
+                onAdd(blockID, body)
+            }
+        }
+
+        @objc func contextBlockComment(_ sender: NSMenuItem) {
+            guard let textView, let id = sender.representedObject as? BlockID else { return }
+            beginBlockComment(id, in: textView)
         }
 
         @objc func contextAddAnnotation(_ sender: NSMenuItem) {

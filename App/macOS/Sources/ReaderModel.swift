@@ -653,6 +653,24 @@ final class ReaderModel {
         }
     }
 
+    /// Block-adjacent comment (#68): computed and validated in-actor like
+    /// every annotation; the block's bytes are the drift check.
+    func addBlockComment(blockID: BlockID, body: String) {
+        guard let block = document.blocks.first(where: { $0.id == blockID }),
+              let slice = document.source.substring(in: block.range) else {
+            reportFailure("Couldn't comment on that block — try again.")
+            return
+        }
+        applySessionResolution(
+            refusalMessage: "Couldn't comment on that block — try again.",
+            flashOffset: block.range.offset + block.range.length + 2
+        ) { [reviewer = Self.reviewerName, range = block.range] session in
+            try await session.applyAnnotation(
+                kind: .blockComment(body: body), range: range,
+                expectedSlice: slice, reviewer: reviewer, publishSnapshot: false)
+        }
+    }
+
     /// The name annotations are attributed to (`by:`). `AI` stays reserved
     /// for agents; the default is the macOS account name.
     static var reviewerName: String {

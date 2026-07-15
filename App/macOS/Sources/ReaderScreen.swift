@@ -162,6 +162,9 @@ struct ReaderScreen: View {
                         renderedStart: relStart, renderedEnd: relEnd,
                         renderedText: renderedText)
                 },
+                onAddBlockComment: { blockID, body in
+                    model.addBlockComment(blockID: blockID, body: body)
+                },
                 annotationCommand: annotationCommand,
                 annotationGeneration: annotationGeneration,
                 onSuggestionCaretLink: { range in linkedMark = range },

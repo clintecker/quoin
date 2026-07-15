@@ -36,6 +36,13 @@ public enum ReviewAuthoring {
         case highlight
         /// `{++text++}{#sN}` at a caret (range length 0).
         case insertion(text: String)
+        /// A standalone `{>>body<<}{#cN}` paragraph inserted AFTER the
+        /// block at `range` — how code blocks, tables, diagrams, and math
+        /// get commented (#68): marks cannot live INSIDE opaque content
+        /// (RDFM opacity is normative), so the comment sits beside it,
+        /// fully portable. `range` is the whole block; its bytes are the
+        /// drift check.
+        case blockComment(body: String)
     }
 
     /// The combined mark + endmatter-entry edit, or nil when the
@@ -72,6 +79,14 @@ public enum ReviewAuthoring {
                 asComment: true, reusing: nil, in: source)?.edit
         }
 
+        // Block comment: nothing is wrapped — a fresh paragraph lands
+        // after the block, plus the endmatter entry, as ONE spanning edit.
+        if case .blockComment(let body) = kind {
+            return blockCommentEdit(
+                body: body, afterBlock: range, in: source,
+                fields: entryFields(), bytes: bytes)
+        }
+
         // Inline marks require a real selection (insertion: a caret).
         switch kind {
         case .insertion: guard range.length == 0 else { return nil }
@@ -104,6 +119,8 @@ public enum ReviewAuthoring {
             let flattened = flattenedInline(text)
             guard !flattened.isEmpty else { return nil }
             markText = "{++\(flattened)++}{#\(id)}"
+        case .blockComment:
+            return nil // handled above
         }
 
         guard let (entryEdit, _) = ReviewEndmatter.appendedEntryEdit(
@@ -158,6 +175,64 @@ public enum ReviewAuthoring {
         guard structuralSignature(beforeDoc) == structuralSignature(afterDoc) else { return nil }
 
         return combined
+    }
+
+    /// The #68 edit: `\n\n{>>body<<}{#cN}` inserted at the block's end +
+    /// the endmatter entry, one atomic splice. Self-calibration: the
+    /// comment mark must come back carrying our id, every prior mark must
+    /// survive, and the document must gain exactly one paragraph.
+    private static func blockCommentEdit(
+        body: String, afterBlock range: ByteRange, in source: String,
+        fields: [String], bytes: [UInt8]
+    ) -> SourceEdit? {
+        let flattened = flattenedInline(body)
+        guard !flattened.isEmpty, range.length > 0 else { return nil }
+        let id = ReviewEndmatter.allocateID(asComment: true, in: source)
+        let markText = "{>>\(flattened)<<}{#\(id)}"
+        let insertion = "\n\n" + markText
+        let insertAt = range.offset + range.length
+
+        guard let (entryEdit, _) = ReviewEndmatter.appendedEntryEdit(
+            fieldLines: fields, asComment: true, reusing: id, in: source),
+            entryEdit.range.offset >= insertAt
+        else { return nil }
+        let middle = String(decoding: bytes[insertAt..<entryEdit.range.offset], as: UTF8.self)
+        let combined = SourceEdit(
+            range: ByteRange(
+                offset: insertAt,
+                length: (entryEdit.range.offset + entryEdit.range.length) - insertAt),
+            replacement: insertion + middle + entryEdit.replacement)
+
+        var candidateBytes = bytes
+        candidateBytes.replaceSubrange(
+            combined.range.offset..<(combined.range.offset + combined.range.length),
+            with: Array(combined.replacement.utf8))
+        let candidate = String(decoding: candidateBytes, as: UTF8.self)
+        let beforeDoc = MarkdownConverter.parse(source)
+        let afterDoc = MarkdownConverter.parse(candidate)
+        let beforeMarks = SuggestionResolver.marks(in: beforeDoc)
+        let afterMarks = SuggestionResolver.marks(in: afterDoc)
+        guard afterMarks.contains(where: { $0.id == id }),
+              afterMarks.count == beforeMarks.count + 1,
+              Set(beforeMarks.compactMap(\.id))
+                .subtracting(Set(afterMarks.compactMap(\.id))).isEmpty
+        else { return nil }
+        // Exactly one new paragraph, everything else structurally intact.
+        let expected = structuralSignature(beforeDoc)
+        let got = structuralSignature(afterDoc)
+        guard firstInsertedParagraph(expected: expected, got: got) != nil else { return nil }
+        return combined
+    }
+
+    /// Index of the single inserted "p" in `got`, or nil when the diff is
+    /// not exactly one inserted paragraph.
+    private static func firstInsertedParagraph(expected: [String], got: [String]) -> Int? {
+        guard got.count == expected.count + 1 else { return nil }
+        var i = 0
+        while i < expected.count, expected[i] == got[i] { i += 1 }
+        guard i < got.count, got[i] == "p" else { return nil }
+        guard Array(got[(i + 1)...]) == Array(expected[i...]) else { return nil }
+        return i
     }
 
     /// Block-level shape of a document — kinds and container arity, ignoring

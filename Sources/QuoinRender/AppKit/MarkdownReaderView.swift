@@ -74,6 +74,9 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// the block + the rendered text they saw); the model owns the
     /// rendered→source mapping and the session applies atomically.
     public var onAddAnnotation: ((ReviewAuthoring.Kind, BlockID, Int, Int, String) -> Void)? = nil
+    /// Block-adjacent comment (#68): the comment paragraph lands AFTER the
+    /// block — how opaque blocks (code/tables/diagrams/math) get commented.
+    public var onAddBlockComment: ((BlockID, String) -> Void)? = nil
     /// Menu-driven annotation gesture (⇧⌘M etc.), generation-fired like
     /// formatCommand. `.comment`/`.replacement` open the compose popover;
     /// `.deletion`/`.highlight` apply immediately.
@@ -224,6 +227,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         flashBlockID: BlockID? = nil,
         flashScroll: FlashScrollBehavior = .center,
         onAddAnnotation: ((ReviewAuthoring.Kind, BlockID, Int, Int, String) -> Void)? = nil,
+        onAddBlockComment: ((BlockID, String) -> Void)? = nil,
         annotationCommand: AnnotationGesture? = nil,
         annotationGeneration: Int = 0,
         onSuggestionCaretLink: ((ByteRange?) -> Void)? = nil,
@@ -265,6 +269,7 @@ public struct MarkdownReaderView: NSViewRepresentable {
         self.flashBlockID = flashBlockID
         self.flashScroll = flashScroll
         self.onAddAnnotation = onAddAnnotation
+        self.onAddBlockComment = onAddBlockComment
         self.annotationCommand = annotationCommand
         self.annotationGeneration = annotationGeneration
         self.onSuggestionCaretLink = onSuggestionCaretLink

@@ -304,4 +304,85 @@ final class ReviewAuthoringTests: XCTestCase {
             "**already**", "user-typed styling is not double-wrapped")
     }
 
+
+    // MARK: - Block-adjacent comments (#68)
+
+    func testBlockCommentLandsAfterACodeBlock() throws {
+        let source = "Intro.\n\n```swift\nlet a = 1\n```\n\nTail.\n"
+        let document = MarkdownConverter.parse(source)
+        let code = try XCTUnwrap(document.blocks.first {
+            if case .codeBlock = $0.kind { return true }
+            return false
+        })
+        let edit = try XCTUnwrap(ReviewAuthoring.annotationEdit(
+            kind: .blockComment(body: "This needs an index"), range: code.range,
+            in: source, reviewer: "clint", timestamp: stamp))
+        let after = applying(edit, to: source)
+        XCTAssertTrue(after.contains("```\n\n{>>This needs an index<<}{#c1}"),
+                      "comment paragraph directly after the fence: \(after)")
+
+        let afterDoc = MarkdownConverter.parse(after)
+        let items = SuggestionResolver.reviewItems(in: afterDoc)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertFalse(items[0].isSuggestion)
+        XCTAssertEqual(items[0].by, "clint")
+        // The code block itself is byte-identical.
+        XCTAssertTrue(after.contains("```swift\nlet a = 1\n```"))
+    }
+
+    func testBlockCommentAfterTheLastBlock() throws {
+        let source = "Only a table:\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+        let document = MarkdownConverter.parse(source)
+        let table = try XCTUnwrap(document.blocks.first {
+            if case .table = $0.kind { return true }
+            return false
+        })
+        let edit = try XCTUnwrap(ReviewAuthoring.annotationEdit(
+            kind: .blockComment(body: "Check row 2"), range: table.range,
+            in: source, reviewer: "AI", timestamp: stamp))
+        let after = applying(edit, to: source)
+        XCTAssertEqual(SuggestionResolver.reviewItems(in: MarkdownConverter.parse(after)).count, 1,
+                       "\(after)")
+    }
+
+    func testBlockCommentIsOneUndoThroughTheSession() async throws {
+        let source = "Intro.\n\n```swift\nlet a = 1\n```\n"
+        let document = MarkdownConverter.parse(source)
+        let code = try XCTUnwrap(document.blocks.first {
+            if case .codeBlock = $0.kind { return true }
+            return false
+        })
+        let slice = try XCTUnwrap(source.substring(in: code.range))
+        let session = DocumentSession(source: source, fileURL: nil)
+        let result = try await session.applyAnnotation(
+            kind: .blockComment(body: "note"), range: code.range,
+            expectedSlice: slice, reviewer: "clint")
+        XCTAssertNotNil(result)
+        let restored = try await session.undo()
+        XCTAssertEqual(restored?.source, source, "one undo removes comment AND entry")
+    }
+
+    func testBlockCommentDismissalLeavesTheBlockIntact() throws {
+        let source = "Intro.\n\n```swift\nlet a = 1\n```\n\nTail.\n"
+        let document = MarkdownConverter.parse(source)
+        let code = try XCTUnwrap(document.blocks.first {
+            if case .codeBlock = $0.kind { return true }
+            return false
+        })
+        let edit = try XCTUnwrap(ReviewAuthoring.annotationEdit(
+            kind: .blockComment(body: "note"), range: code.range,
+            in: source, reviewer: "clint", timestamp: stamp))
+        let after = applying(edit, to: source)
+        let mark = try XCTUnwrap(SuggestionResolver.marks(in: MarkdownConverter.parse(after)).first)
+        let dismiss = try XCTUnwrap(SuggestionResolver.combinedResolutionEdit(
+            resolving: mark.range, in: after, action: .accept))
+        let resolved = applying(dismiss, to: after)
+        XCTAssertTrue(resolved.contains("```swift\nlet a = 1\n```"), "block untouched")
+        XCTAssertEqual(
+            ReviewEndmatter.resolvedRecords(in: MarkdownConverter.parse(resolved)).count, 1)
+        let blocks = MarkdownConverter.parse(resolved).blocks.count
+        XCTAssertEqual(MarkdownConverter.parse(source).blocks.count + 1, blocks + 0,
+                       "endmatter block remains; comment paragraph reduced to blank")
+    }
+
 }
