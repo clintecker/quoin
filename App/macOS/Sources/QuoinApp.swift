@@ -16,7 +16,7 @@ struct QuoinApp: App {
         WindowGroup(id: "main", for: String.self) { $rootPath in
             MainWindow(requestedRootPath: rootPath)
         }
-        .defaultSize(width: 1180, height: 760) // handoff: default ~1180×760pt
+        .defaultSize(width: 1280, height: 800) // 16:10 — room for sidebar + editor + outline/inspector
         .commands {
             // File menu: honest items for what the keys actually do. The
             // system's "New Window"/"Close" pair lied about ⌘N/⌘W (launch

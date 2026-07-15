@@ -1661,6 +1661,9 @@ public struct AttributedRenderer {
             let output = NSMutableAttributedString()
             output.append(editChipLine(spacingBefore: theme.paragraphSpacing))
             let attachment = NSMutableAttributedString(attributedString: native)
+            // Scale an oversized diagram down to the content column so it sits
+            // inside its frame instead of poking out the right edge.
+            attachment.refitImageAttachmentsToContentWidth()
             labelAttachmentImages(in: attachment, description: "Mermaid diagram")
             let style = paragraphStyle()
             style.paragraphSpacingBefore = 0
@@ -1705,6 +1708,9 @@ public struct AttributedRenderer {
             let output = NSMutableAttributedString()
             output.append(editChipLine(spacingBefore: 16))
             let attachment = NSMutableAttributedString(attributedString: native)
+            // A wide equation (big matrix, long alignment) scales down to fit
+            // the column rather than overflowing.
+            attachment.refitImageAttachmentsToContentWidth()
             labelAttachmentImages(in: attachment, description: "Math equation")
             let style = paragraphStyle()
             style.alignment = .center
