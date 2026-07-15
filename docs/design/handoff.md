@@ -97,6 +97,10 @@ flowchart LR
     S --- E --- O
 ```
 
+Those three regions in the running app — the library sidebar at left, the
+centered editor with its front-matter chip and format pill, and the outline
+panel at right:
+
 ![Quoin's three-column layout in practice: the library sidebar, a centered editor with the format pill, and the outline panel](../images/hero.png)
 
 ### Library sidebar
@@ -422,6 +426,9 @@ flowchart LR
     L -.->|"surface.code stays #1E2430"| Code["Code canvas<br/>(never inverts)"]
     D -.->|"surface.code stays #1E2430"| Code
 ```
+
+That inversion applied to a real document — ink and background flip, while the
+code canvas and highlight pills hold their color for legibility:
 
 ![The same document in dark appearance: ink and canvas invert while the code canvas and highlight pills stay legible](../images/dark-document.png)
 

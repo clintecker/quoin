@@ -241,7 +241,11 @@ resolution can never quietly corrupt the document.
   | Quick Open… | ⇧⌘O |
   | Daily Note | ⌘D |
 
+  Find-in-document (⌘F) shows a live match count as you type:
+
   ![Find bar showing a search term and match count within the current document](../images/find-bar.png)
+
+  Search Library (⇧⌘F) runs full-text search across every document in the folder:
 
   ![Search Library panel showing full-text results across the library](../images/library-search.png)
 
