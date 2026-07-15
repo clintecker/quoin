@@ -258,10 +258,15 @@ instead of scrolling you away.
 ![A footnote reference marker with its hover-preview bubble](docs/images/footnotes.png)
 
 **Syntax themes.** Code blocks render in any of twelve selectable themes — six
-light, six dark — and by default follow the app's appearance (here, the Dracula
-dark theme):
+light, six dark — and by default follow the app's appearance. GitHub Light and
+Dracula, side by side:
 
-![A code block rendered in the Dracula syntax theme, with the language label and copy button](docs/images/code-theme.png)
+<table>
+<tr>
+<td width="50%"><img alt="A code block in the GitHub Light syntax theme" src="docs/images/code-theme-light.png"></td>
+<td width="50%"><img alt="A code block in the Dracula dark syntax theme" src="docs/images/code-theme.png"></td>
+</tr>
+</table>
 
 ## Math (LaTeX)
 
