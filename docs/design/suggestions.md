@@ -216,7 +216,7 @@ one of these is true:
 
 ```mermaid
 flowchart TD
-    A["document ends with<br/>...\n---\nYAML"] --> B{"tail parses as<br/>comments:/suggestions:?"}
+    A["document ends with<br/>...<br/>---<br/>YAML"] --> B{"tail parses as<br/>comments:/suggestions:?"}
     B -- no --> P["ordinary thematic break<br/>· rendered as prose"]
     B -- yes --> C{"referenced by body,<br/>or doc-level comment,<br/>or has resolved records?"}
     C -- no --> P
@@ -238,17 +238,17 @@ the moment it's written to the moment it settles into history:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Proposed: author writes a\n{++/--/~~/>>/==} mark
-    Proposed --> Rendered: file opens/reloads —\nCriticScanner recognizes it
-    Rendered --> Rendered: caret enters the span\n(reveals literal source)
+    [*] --> Proposed: author writes a<br/>{++/--/~~/>>/==} mark
+    Proposed --> Rendered: file opens/reloads —<br/>CriticScanner recognizes it
+    Rendered --> Rendered: caret enters the span<br/>(reveals literal source)
     Rendered --> Accepted: Accept
     Rendered --> Rejected: Reject
     Rendered --> Dismissed: Dismiss (comments only)
-    Accepted --> ResolvedRDFM: one atomic splice —\nprose + endmatter status:resolved
-    Rejected --> ResolvedRDFM: one atomic splice —\nprose + endmatter status:resolved
-    Dismissed --> ResolvedRDFM: one atomic splice —\nmark removed + status:resolved
-    ResolvedRDFM --> Rendered: undo (⌘Z) restores the mark —\nthe mark wins over stale metadata
-    ResolvedRDFM --> [*]: history entry persists\nin the endmatter (RDFM)
+    Accepted --> ResolvedRDFM: one atomic splice —<br/>prose + endmatter status:resolved
+    Rejected --> ResolvedRDFM: one atomic splice —<br/>prose + endmatter status:resolved
+    Dismissed --> ResolvedRDFM: one atomic splice —<br/>mark removed + status:resolved
+    ResolvedRDFM --> Rendered: undo (⌘Z) restores the mark —<br/>the mark wins over stale metadata
+    ResolvedRDFM --> [*]: history entry persists<br/>in the endmatter (RDFM)
 ```
 
 The last two transitions are the subtle part: undoing a resolution doesn't

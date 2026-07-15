@@ -101,16 +101,16 @@ stateDiagram-v2
   EditingPreview --> Rendered: Escape / Done / ⌘↩ / click away
 
   state Rendered {
-    [*] --> drawn : formatted text or artifact\ndelimiters hidden
+    [*] --> drawn : formatted text or artifact<br/>delimiters hidden
   }
   state EditingProse {
-    [*] --> reveal : literal source styled\ncaret-scoped delimiter reveal
+    [*] --> reveal : literal source styled<br/>caret-scoped delimiter reveal
   }
   state EditingVerbatim {
-    [*] --> raw : literal source\nno markdown styling
+    [*] --> raw : literal source<br/>no markdown styling
   }
   state EditingPreview {
-    [*] --> both : literal source +\nside-panel live artifact
+    [*] --> both : literal source +<br/>side-panel live artifact
   }
 ```
 

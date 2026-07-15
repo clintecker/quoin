@@ -163,13 +163,13 @@ always-correct full parse rather than corrupting the document.
 flowchart TD
     E[SourceEdit] --> K{Where does the edit land?}
     K -->|inside a plain paragraph| P[Plain-paragraph fast path]
-    K -->|inside a fenced embed\ncode / mermaid / math| F[Embed fast path]
-    K -->|new fence, list to paragraph,\na footnote, anything structural| Full[Full document parse]
-    P --> Cal{Self-calibrate:\nold slice re-parses to\nthe old block exactly?}
+    K -->|inside a fenced embed<br/>code / mermaid / math| F[Embed fast path]
+    K -->|new fence, list to paragraph,<br/>a footnote, anything structural| Full[Full document parse]
+    P --> Cal{Self-calibrate:<br/>old slice re-parses to<br/>the old block exactly?}
     F --> Cal
-    Cal -->|yes, and the new slice stays\none block of the same family| Grow[Re-parse only the\nedited block's slice]
+    Cal -->|yes, and the new slice stays<br/>one block of the same family| Grow[Re-parse only the<br/>edited block's slice]
     Cal -->|no| Full
-    Grow --> Ids[Re-derive BlockIDs for\ncontainers below the edit]
+    Grow --> Ids[Re-derive BlockIDs for<br/>containers below the edit]
     Ids --> Snap[New QuoinDocument snapshot]
     Full --> Snap
 ```
@@ -185,14 +185,14 @@ fragments, emit a bounded storage patch, or must fall back to a full render:
 flowchart TD
     Edit[SourceEdit applied] --> Snap[New QuoinDocument snapshot]
     Snap --> Q{What changed?}
-    Q -->|active block, one keystroke| Patch[Patch producer:\nactiveBlockEditUpdate /\nactivationFlipUpdate]
-    Q -->|some blocks changed| Cache[Fragment cache:\nreuse unchanged BlockIDs,\nre-render changed ones]
+    Q -->|active block, one keystroke| Patch[Patch producer:<br/>activeBlockEditUpdate /<br/>activationFlipUpdate]
+    Q -->|some blocks changed| Cache[Fragment cache:<br/>reuse unchanged BlockIDs,<br/>re-render changed ones]
     Q -->|most of document changed| Full[Full render]
-    Patch --> Valid{bounded patch\nvalidates?}
-    Valid -->|yes| Splice[RenderStoragePatch →\nsplice changed span]
+    Patch --> Valid{bounded patch<br/>validates?}
+    Valid -->|yes| Splice[RenderStoragePatch →<br/>splice changed span]
     Valid -->|no, returns nil| Full
     Cache --> Splice
-    Full --> Reset[setAttributedString +\nre-anchor scroll]
+    Full --> Reset[setAttributedString +<br/>re-anchor scroll]
     Splice --> View[QuoinTextView]
     Reset --> View
 ```
@@ -259,11 +259,11 @@ disagreeing with itself:
 
 ```mermaid
 flowchart TD
-    Tick[Draw tick] --> Settle["viewWillDraw:\nfinish viewport layout + settle\n(caret line holds its screen position)"]
-    Settle --> Measure["measureVisibleRuns\n(one pass, viewport-culled)"]
-    Measure --> Chrome[EditingChrome\none measured box]
-    Chrome --> BG["drawBackground(in:)\ncode canvases · callouts · quote rules\ndiagram frames · table rules · front-matter chip"]
-    Chrome --> Chip["draw(_:): accent frame +\n'done editing' chip, above the glyphs"]
+    Tick[Draw tick] --> Settle["viewWillDraw:<br/>finish viewport layout + settle<br/>(caret line holds its screen position)"]
+    Settle --> Measure["measureVisibleRuns<br/>(one pass, viewport-culled)"]
+    Measure --> Chrome[EditingChrome<br/>one measured box]
+    Chrome --> BG["drawBackground(in:)<br/>code canvases · callouts · quote rules<br/>diagram frames · table rules · front-matter chip"]
+    Chrome --> Chip["draw(_:): accent frame +<br/>'done editing' chip, above the glyphs"]
     Chrome --> Hit[Chip hit-test + tooltip]
     Chrome --> AX[VoiceOver element]
     BG --> Pixels[Pixels on screen]
@@ -386,18 +386,18 @@ unchanged. Design in [`suggestions.md`](../design/suggestions.md).
 ```mermaid
 flowchart LR
     subgraph File[document.md]
-      Marks["inline marks\n{++ins++} {--del--}\n{~~old~>new~~}\n{>>comment<<} {==hl==}"]
-      End["RDFM endmatter\ncomments: / suggestions:\n+ resolution records"]
+      Marks["inline marks<br/>{++ins++} {--del--}<br/>{~~old~>new~~}<br/>{>>comment<<} {==hl==}"]
+      End["RDFM endmatter<br/>comments: / suggestions:<br/>+ resolution records"]
     end
-    Marks --> Scan[CriticScanner\nraw-slice scan]
-    End --> EM[ReviewEndmatter\nsplit before cmark]
-    Scan --> Items[ReviewItem cards\nmarks + metadata + threads]
+    Marks --> Scan[CriticScanner<br/>raw-slice scan]
+    End --> EM[ReviewEndmatter<br/>split before cmark]
+    Scan --> Items[ReviewItem cards<br/>marks + metadata + threads]
     EM --> Items
     Items --> Panel[Review panel]
-    Panel -->|accept / reject| Res[SuggestionResolver\ncombinedResolutionEdit]
+    Panel -->|accept / reject| Res[SuggestionResolver<br/>combinedResolutionEdit]
     Res -->|one spanning splice| Apply[DocumentSession.applyResolution]
     Apply -->|byte-safe edit| File
-    Author[ReviewAuthoring\nselection gestures] -->|new mark| Apply2[applyAnnotation]
+    Author[ReviewAuthoring<br/>selection gestures] -->|new mark| Apply2[applyAnnotation]
     Apply2 --> File
 ```
 
@@ -510,12 +510,12 @@ At runtime, one source slice walks through that seam once per render:
 
 ```mermaid
 flowchart TD
-    Src["raw source slice\n$...$  or  fenced mermaid"]
+    Src["raw source slice<br/>$...$  or  fenced mermaid"]
     Src --> Scan[QuoinCore scans + validates]
-    Scan --> Theme["Theme.mathTheme /\nTheme.diagramTheme\n(design system → engine theme)"]
-    Theme --> Call["MathImageRenderer.attachmentString(...)\nMermaidRenderer.attachmentString(...)"]
-    Call -->|non-nil| Att[NSTextAttachment\nnative render]
-    Call -->|nil = unsupported| Card[styled source card\n+ caption of offending commands]
+    Scan --> Theme["Theme.mathTheme /<br/>Theme.diagramTheme<br/>(design system → engine theme)"]
+    Theme --> Call["MathImageRenderer.attachmentString(...)<br/>MermaidRenderer.attachmentString(...)"]
+    Call -->|non-nil| Att[NSTextAttachment<br/>native render]
+    Call -->|nil = unsupported| Card[styled source card<br/>+ caption of offending commands]
     Att --> Doc[projected document]
     Card --> Doc
 ```
@@ -596,18 +596,18 @@ is platform-specific.
 
 ```mermaid
 flowchart TD
-    SM[swift-markdown\nCommonMark/GFM]
+    SM[swift-markdown<br/>CommonMark/GFM]
     VL[VinculumLayout]
     ML[MermaidLayout]
     SM --> QC
     VL --> QC
     ML --> QC
-    QC["QuoinCore\nplatform-free engine\n(macOS · iOS · visionOS · Linux)"]
-    QC --> Shared["QuoinRender shared\nAttributedRenderer · MarkdownSourceStyler\nTheme · BlockDecoration · TableLayout"]
+    QC["QuoinCore<br/>platform-free engine<br/>(macOS · iOS · visionOS · Linux)"]
+    QC --> Shared["QuoinRender shared<br/>AttributedRenderer · MarkdownSourceStyler<br/>Theme · BlockDecoration · TableLayout"]
     VR[VinculumRender] --> Shared
     MR[MermaidRender] --> Shared
-    Shared --> AK["AppKit/\nQuoinTextView · ReaderCoordinator\nMarkdownReaderView (macOS)"]
-    Shared --> UK["UIKit/\nMarkdownReaderViewIOS\n(iOS · iPadOS · visionOS)"]
+    Shared --> AK["AppKit/<br/>QuoinTextView · ReaderCoordinator<br/>MarkdownReaderView (macOS)"]
+    Shared --> UK["UIKit/<br/>MarkdownReaderViewIOS<br/>(iOS · iPadOS · visionOS)"]
 ```
 
 - **`QuoinCore`** imports no UI framework at all (no AppKit/UIKit/SwiftUI) —

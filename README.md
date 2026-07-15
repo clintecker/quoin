@@ -128,9 +128,9 @@ than modal:
 ```mermaid
 stateDiagram-v2
     [*] --> Rendered
-    Rendered --> Revealed: click / double-click\n(caret enters the block)
-    Revealed --> Revealed: keystroke\n(source edit, same block)
-    Revealed --> Rendered: Escape / caret leaves\n(viewport-anchored re-render)
+    Rendered --> Revealed: click / double-click<br/>(caret enters the block)
+    Revealed --> Revealed: keystroke<br/>(source edit, same block)
+    Revealed --> Rendered: Escape / caret leaves<br/>(viewport-anchored re-render)
     Rendered --> [*]
     note right of Revealed
         literal source, 1:1 with the file;
@@ -315,12 +315,12 @@ full parse otherwise.
 
 ```mermaid
 flowchart TD
-    e["SourceEdit arrives"] --> q{"Edit confined to\none block's byte range?"}
-    q -->|no| full["Full re-parse\n(~345 ms / MB)"]
-    q -->|yes| s{"Any absolute-offset\nnodes in the document?\n(e.g. suggestion marks)"}
+    e["SourceEdit arrives"] --> q{"Edit confined to<br/>one block's byte range?"}
+    q -->|no| full["Full re-parse<br/>(~345 ms / MB)"]
+    q -->|yes| s{"Any absolute-offset<br/>nodes in the document?<br/>(e.g. suggestion marks)"}
     s -->|"yes (stats.suggestionCount > 0)"| full
-    s -->|no| fast["Incremental parse-after-edit\n(~9 ms): re-parse the touched\nblock, splice its range"]
-    fast --> eq["ProjectorEquivalenceTests:\nmust match a full re-parse"]
+    s -->|no| fast["Incremental parse-after-edit<br/>(~9 ms): re-parse the touched<br/>block, splice its range"]
+    fast --> eq["ProjectorEquivalenceTests:<br/>must match a full re-parse"]
 ```
 
 ## Architecture
