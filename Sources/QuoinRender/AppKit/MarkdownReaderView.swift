@@ -5,7 +5,7 @@ import QuoinCore
 
 /// Format commands the window can send to the editor's selection.
 public enum FormatCommand: Equatable, Sendable {
-    case bold, italic, highlight, link
+    case bold, italic, strikethrough, code, highlight, link
 }
 
 /// Block-granularity commands from the context menu (ideas #9/#10/#11);

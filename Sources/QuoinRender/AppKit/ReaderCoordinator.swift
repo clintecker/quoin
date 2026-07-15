@@ -836,6 +836,8 @@ extension MarkdownReaderView {
             switch command {
             case .bold: change = Formatting.toggleWrap(selection: selected, delimiter: "**")
             case .italic: change = Formatting.toggleWrap(selection: selected, delimiter: "*")
+            case .strikethrough: change = Formatting.toggleWrap(selection: selected, delimiter: "~~")
+            case .code: change = Formatting.toggleWrap(selection: selected, delimiter: "`")
             case .highlight: change = Formatting.cycleHighlight(selection: selected)
             case .link: change = Formatting.makeLink(selection: selected)
             }

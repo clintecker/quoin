@@ -272,6 +272,10 @@ private struct FormatCommands: Commands {
                     .keyboardShortcut("b", modifiers: .command)
                 Button("Italic") { postFormat(AppDelegate.formatNotification, format: "italic") }
                     .keyboardShortcut("i", modifiers: .command)
+                Button("Strikethrough") { postFormat(AppDelegate.formatNotification, format: "strikethrough") }
+                    .keyboardShortcut("x", modifiers: [.command, .shift])
+                Button("Inline Code") { postFormat(AppDelegate.formatNotification, format: "code") }
+                    .keyboardShortcut("e", modifiers: [.command, .control])
                 Button("Highlight") { postFormat(AppDelegate.formatNotification, format: "highlight") }
                     .keyboardShortcut("h", modifiers: [.command, .shift])
                 Button("Add Link") { postFormat(AppDelegate.formatNotification, format: "link") }

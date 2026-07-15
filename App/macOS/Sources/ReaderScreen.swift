@@ -562,6 +562,8 @@ struct ReaderScreen: View {
             switch note.userInfo?["format"] as? String {
             case "bold": fireFormat(.bold)
             case "italic": fireFormat(.italic)
+            case "strikethrough": fireFormat(.strikethrough)
+            case "code": fireFormat(.code)
             case "highlight": fireFormat(.highlight)
             case "link": fireFormat(.link)
             default: break
@@ -631,35 +633,41 @@ struct ReaderScreen: View {
 
     // MARK: - Format pill (B/I/U + link, floats over the editor)
 
-    /// The format pill acts on the block you're editing (bold/italic wrap the
-    /// selection, or the word under the caret). Until a block is active it has
-    /// nothing to act on, so it dims to read as contextual, not broken.
+    /// The format pill acts on the block you're editing (bold/italic/etc.
+    /// wrap the selection, or the word under the caret). It only exists
+    /// WHILE a block is active — appearing on click-in, gone otherwise —
+    /// so it never reads as a dead control (a persistent dimmed pill was
+    /// mistaken for broken).
     private var isEditingBlock: Bool { model.activeBlockID != nil }
 
+    @ViewBuilder
     private var formatPill: some View {
-        HStack(spacing: 2) {
-            formatPillButton("bold", command: .bold, help: "Bold (⌘B)")
-            formatPillButton("italic", command: .italic, help: "Italic (⌘I)")
-            formatPillButton("highlighter", command: .highlight, help: "Highlight (⇧⌘H)")
-            Divider()
-                .frame(height: 14)
-                .padding(.horizontal, 2)
-            formatPillButton("link", command: .link, help: "Link (⌘K)")
+        if isEditingBlock {
+            HStack(spacing: 2) {
+                formatPillButton("bold", command: .bold, help: "Bold (⌘B)")
+                formatPillButton("italic", command: .italic, help: "Italic (⌘I)")
+                formatPillButton("strikethrough", command: .strikethrough, help: "Strikethrough")
+                formatPillButton("chevron.left.forwardslash.chevron.right", command: .code, help: "Inline code")
+                formatPillButton("highlighter", command: .highlight, help: "Highlight (⇧⌘H)")
+                Divider()
+                    .frame(height: 14)
+                    .padding(.horizontal, 2)
+                formatPillButton("link", command: .link, help: "Link (⌘K)")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(nsColor: .textBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+            .animation(.easeInOut(duration: 0.15), value: isEditingBlock)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color(nsColor: .textBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-        .opacity(isEditingBlock ? 1 : 0.45)
-        .animation(.easeInOut(duration: 0.15), value: isEditingBlock)
-        .help(isEditingBlock ? "" : "Click into text to format it")
     }
 
     private func formatPillButton(_ symbol: String, command: FormatCommand, help: String) -> some View {
@@ -668,12 +676,11 @@ struct ReaderScreen: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary.opacity(0.75))
                 .frame(width: 22, height: 18)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!isEditingBlock)
         .help(help)
     }
 
