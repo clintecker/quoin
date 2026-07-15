@@ -22,19 +22,32 @@ final class SoftwareUpdater: ObservableObject {
     /// itself while a check is already in flight.
     @Published var canCheckForUpdates = false
 
+    /// True once a real EdDSA public key is present. Until then the updater is
+    /// left dormant: Sparkle validates `SUPublicEDKey` when it starts, and the
+    /// placeholder key makes it fail to start with a visible "updater failed to
+    /// start" alert on launch. We must not start it before signing is set up
+    /// (see docs/reference/distribution.md).
+    let isConfigured: Bool
+
     init() {
-        // startingUpdater: true schedules background checks per the Info.plist
-        // policy (SUEnableAutomaticChecks / SUScheduledCheckInterval).
+        let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? ""
+        isConfigured = !key.isEmpty && !key.hasPrefix("REPLACE_WITH")
+
+        // Only start (and thus schedule background checks) when a real key
+        // exists. Dormant otherwise — no launch alert, no network traffic.
         controller = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: isConfigured,
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
-        controller.updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
+        if isConfigured {
+            controller.updater.publisher(for: \.canCheckForUpdates)
+                .assign(to: &$canCheckForUpdates)
+        }
     }
 
     func checkForUpdates() {
+        guard isConfigured else { return }
         controller.updater.checkForUpdates()
     }
 }
