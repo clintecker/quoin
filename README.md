@@ -31,6 +31,20 @@ portable, git-diffable, and agent-readable — and that is the whole point: **an
 tool that writes markdown can propose durable edits, and a human accepts or
 rejects them in a real UI.**
 
+```mermaid
+sequenceDiagram
+    participant A as Agent / collaborator
+    participant F as document.md
+    participant Q as Quoin
+    participant H as You
+    A->>F: write a CriticMarkup mark<br/>{~~old~>new~~} + RDFM metadata
+    F->>Q: parse + project
+    Q-->>H: render the mark as a review card
+    H->>Q: Accept / Reject
+    Q->>F: one atomic, byte-safe source edit
+    Note over F: resolution recorded as RDFM<br/>endmatter — portable, never lost
+```
+
 - **Marks render as tracked changes.** The raw delimiters never appear in the
   read projection — you see accent underlays, strikeouts, suggestion tints, and
   review chips.
@@ -62,7 +76,26 @@ Design + rationale: [`docs/design/suggestions.md`](docs/design/suggestions.md).
 ### The source is the document
 
 The markdown string + AST are authoritative; the editor is a *projection*. Edits
-mutate the source through a session actor and the renderer re-projects.
+mutate the source through a session actor, and the renderer re-projects. This one
+decision is why round-trips are lossless, why an agent can safely rewrite a file
+Quoin has open, and why there is no hidden document model to drift out of sync
+with the bytes on disk.
+
+```mermaid
+flowchart LR
+    disk[("document.md<br/>on disk")]
+    parse["parse<br/>swift-markdown / cmark-gfm"]
+    truth["<b>Source of truth</b><br/>markdown string + AST"]
+    view["Rendered editor<br/>(AttributedRenderer + TextKit 2)"]
+    edit["SourceEdit"]
+
+    disk -->|open| parse --> truth
+    truth -->|project| view
+    view -->|keystroke / accept / toggle| edit
+    edit -->|DocumentSession actor| truth
+    truth -->|save, byte-lossless| disk
+```
+
 Round-trip (open → edit → save) is **byte-lossless for every untouched region**,
 by rule — enforced by conformance and round-trip tests. Click into a paragraph
 and it re-renders as its literal source, character-for-character 1:1 with the
@@ -79,7 +112,7 @@ Mermaid diagrams by [MermaidKit](https://github.com/clintecker/MermaidKit) —
 Quoin's own first-party engines, drawn with CoreText/CoreGraphics. No MathJax,
 no KaTeX, no Mermaid.js, no headless browser, no network. Unsupported LaTeX
 constructs and Mermaid types degrade to a tidy labelled source card whose
-caption *names the command* that isn't typeset yet — legible, not a shrug.
+caption *names the command* that isn't typeset — legible, not a shrug.
 Pathological input (10k-deep nesting, unclosed everything) parses to *something*
 without crashing; the torture suite keeps it that way.
 
@@ -176,8 +209,8 @@ stacked big-operator limits, radicals with indices, auto-sized fences, and grid
 environments (`matrix`/`pmatrix`/…, `cases`, `aligned`), then drawn with
 CoreText. Inline `$…$` `\(…\)` and display `$$…$$` `\[…\]` are both supported.
 
-Coverage is large (~400 commands). **Quoin does not restate the command table —
-it drifts when duplicated.** The always-current matrix is in Vinculum's own
+Coverage is large (~400 commands). Quoin does not restate the command table —
+a duplicated list drifts. The always-current matrix is in Vinculum's own
 docs: [COVERAGE.md](https://github.com/clintecker/Vinculum/blob/main/docs/COVERAGE.md)
 and [COMMANDS.md](https://github.com/clintecker/Vinculum/blob/main/docs/COMMANDS.md).
 Unsupported commands fall back to a named source card.
@@ -190,13 +223,13 @@ Diagrams are powered by **[MermaidKit](https://github.com/clintecker/MermaidKit)
 — Quoin's own native Mermaid engine (no Mermaid.js, no network). Sources are
 parsed and laid out with Sugiyama-style layering, orthogonal elbow routing,
 cycle-safe layering, UML relationship markers, and recursive composite states;
-front-matter `title` / `config` and `accTitle` / `accDescr` are honored.
+front-matter `title` / `config` and `accTitle` / `accDescr` are honored. Every
+Mermaid block in this README is exactly the kind of diagram Quoin renders
+inline.
 
-**Quoin does not restate the per-type diagram matrix** — the source of truth is
-MermaidKit's repository (its `Fixtures/diagrams/` corpus and CI gallery), so the
-list can't quietly drift. Unsupported diagram types fall back to a named source
-card. See [`docs/history/diagram-gallery.md`](docs/history/diagram-gallery.md)
-for Quoin-specific in-editor behaviour.
+MermaidKit's repository is the source of truth for the per-type support
+matrix — its `Fixtures/diagrams/` corpus and CI gallery — so the list can't
+quietly drift. Unsupported diagram types fall back to a named source card.
 
 ![Native diagrams](docs/images/gallery-diagrams.png)
 
@@ -207,16 +240,17 @@ for Quoin-specific in-editor behaviour.
 The images above (`hero.png` and the three galleries) are committed under
 [`docs/images/`](docs/images/). Live application screenshots — library,
 syntax-reveal, find, export, review, properties, and code-theme states — are
-**automated**, regenerated on every push and published to the `ci-screenshots`
+automated, regenerated on every push and published to the `ci-screenshots`
 branch. The full catalogue, launch arguments, and committed paths are in the
-[screenshot manifest](docs/guide/screenshots.md). Placeholders above mark shots
-whose curated copy isn't committed yet — a broken image link is worse than a
-missing one, so they're never linked before the pixels exist.
+[screenshot manifest](docs/guide/screenshots.md). The `<!-- SCREENSHOT: … -->`
+placeholders above mark shots whose curated copy is not committed — a broken
+image link is worse than a missing one, so nothing is linked before the pixels
+exist.
 
 ## Performance
 
-Budgets from the PRD, enforced in CI (`PerformanceTests`); representative
-benchmarks on a ~1.2 MB / 5,402-line / 2,701-block document
+Budgets from the product spec, enforced in CI (`PerformanceTests`);
+representative benchmarks on a ~1.2 MB / 5,402-line / 2,701-block document
 ([`docs/reference/performance.md`](docs/reference/performance.md)):
 
 - Parse 1 MB of markdown to interactive: **< 1 s** (initial full parse ~345 ms)
@@ -228,6 +262,32 @@ benchmarks on a ~1.2 MB / 5,402-line / 2,701-block document
   only the visible viewport
 
 ## Architecture
+
+Quoin is three layers: a platform-free document engine, a native rendering
+layer, and the two first-party math/diagram engines it consumes from GitHub.
+
+```mermaid
+flowchart TB
+    subgraph core["QuoinCore — platform-free, builds on Linux"]
+        parse["Parser<br/>swift-markdown / cmark-gfm"]
+        session["DocumentSession (actor)<br/>edits · undo · autosave · file watch"]
+        review["Review + front-matter machinery<br/>CriticMarkup / RDFM"]
+        export["Exporters · search · statistics"]
+    end
+    subgraph render["QuoinRender — TextKit 2, CoreText, CoreGraphics"]
+        proj["AttributedRenderer<br/>AST → attributed string"]
+        view["QuoinTextView<br/>drawn-ink decorations"]
+    end
+    subgraph engines["First-party engines (from GitHub)"]
+        vinc["Vinculum<br/>LaTeX math"]
+        merm["MermaidKit<br/>Mermaid diagrams"]
+    end
+
+    parse --> session --> review
+    session --> proj --> view
+    proj --> vinc
+    proj --> merm
+```
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-overview-dark.png">
@@ -257,7 +317,7 @@ Requires Xcode 16+ / Swift 6 tools on macOS 14+.
 
 ```sh
 swift build            # QuoinCore + QuoinRender
-swift test             # full suite: 641 tests — unit, torture, performance, conformance
+swift test             # full suite — unit, torture, performance, conformance
 ```
 
 App targets are generated with XcodeGen:
@@ -283,14 +343,16 @@ wrapper, pinned `from: 0.8.0`).
 [Vinculum](https://github.com/clintecker/Vinculum) (`from: 0.23.0`) are
 **first-party** — Quoin's own published engines, consumed from GitHub like any
 host app would, and exempt from the policy. Anything new requires written
-justification in the TRD; the default answer is no. See
+justification; the default answer is no. See
 [`docs/reference/dependencies.md`](docs/reference/dependencies.md).
 
 ## Privacy
 
 Local-only by design: no network calls, no telemetry, no indexing services.
 Documents are plain `.md` files on disk; folders are directories. Remote images
-are placeholders unless explicitly enabled per document.
+are placeholders unless explicitly enabled per document. Nothing you write leaves
+your machine, and no runtime engine phones home — the math and diagram renderers
+are native code, not bundled web assets.
 
 ## Documentation
 
@@ -308,8 +370,7 @@ The docs tree is organized by audience — full index in
   [`docs/reference/dependencies.md`](docs/reference/dependencies.md) ·
   [`docs/reference/adr/`](docs/reference/adr/README.md) (decision records).
 - **Design specs:** [`docs/design/`](docs/design/) — the visual/interaction
-  handoff, editor modes, the review-loop design, embed editing, and the road to
-  1.0.
-- **History & archive:** [`docs/history/`](docs/history/) (ledgers, roadmaps,
-  engine-extraction notes) · [`docs/archive/`](docs/archive/) (the legacy PRD /
-  TRD, superseded by the handoff).
+  handoff, editor modes, the review-loop design, and embed editing.
+- **Engines:** [MermaidKit](https://github.com/clintecker/MermaidKit) (diagram
+  capability matrix) · [Vinculum](https://github.com/clintecker/Vinculum) (math
+  coverage).
