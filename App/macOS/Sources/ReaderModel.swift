@@ -628,13 +628,12 @@ final class ReaderModel {
         // annotate the item's CONTENT, marker excluded.
         startUTF16 = ReviewAuthoring.clampPastLinePrefix(startUTF16, in: slice)
         // Snap outward over emphasis delimiter runs (`*_~=`) so a rendered
-        // whole-span selection wraps complete syntax. Backticks are
-        // deliberately excluded — swallowing one edge of a code span would
-        // unbalance it.
-        let sourceUTF16 = Array(slice.utf16)
-        let snapSet: Set<UInt16> = Set("*_~=".utf16)
-        while startUTF16 > 0, snapSet.contains(sourceUTF16[startUTF16 - 1]) { startUTF16 -= 1 }
-        while endUTF16 < sourceUTF16.count, snapSet.contains(sourceUTF16[endUTF16]) { endUTF16 += 1 }
+        // whole-span selection wraps complete syntax — but only when the
+        // capture is BALANCED. A selection at a span's edge must not pull
+        // in the opening `**` while the closer stays outside the mark
+        // (accepting would orphan it; the torn-bold live report).
+        (startUTF16, endUTF16) = ReviewAuthoring.balancedDelimiterSnap(
+            start: startUTF16, end: endUTF16, in: slice)
 
         guard startUTF16 < endUTF16 || renderedStart == renderedEnd,
               let relRange = EditMapping.utf8Range(inText: slice, utf16Range: startUTF16..<endUTF16)

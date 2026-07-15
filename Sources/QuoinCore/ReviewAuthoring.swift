@@ -311,6 +311,41 @@ public enum ReviewAuthoring {
         return max(position, min(i, chars.count))
     }
 
+    /// Outward snap over emphasis delimiter runs (`*_~=`) so a rendered
+    /// whole-span selection wraps complete syntax. Backticks are
+    /// deliberately excluded — swallowing one edge of a code span would
+    /// unbalance it. The snap only stands when it captures a BALANCED wrap
+    /// (leading delimiter run == trailing run, the same rule
+    /// `replacementPreservingDelimiters` transfers by): a selection at a
+    /// span's EDGE would otherwise pull in one `**` while the other stays
+    /// outside the mark — accepting then deletes half the pair and leaves
+    /// literal asterisks (live report, 2026-07-09). Lopsided captures
+    /// revert BOTH endpoints to the positions given. UTF-16 offsets (the
+    /// projection mapper's currency).
+    public static func balancedDelimiterSnap(
+        start: Int, end: Int, in slice: String
+    ) -> (start: Int, end: Int) {
+        let chars = Array(slice.utf16)
+        guard start >= 0, start <= end, end <= chars.count else { return (start, end) }
+        let snapSet: Set<UInt16> = Set("*_~=".utf16)
+        var snappedStart = start
+        var snappedEnd = end
+        while snappedStart > 0, snapSet.contains(chars[snappedStart - 1]) { snappedStart -= 1 }
+        while snappedEnd < chars.count, snapSet.contains(chars[snappedEnd]) { snappedEnd += 1 }
+        guard snappedStart < start || snappedEnd > end else { return (start, end) }
+
+        // Delimiter runs of the SNAPPED slice (what annotationEdit will
+        // see): equal runs with real content between = a complete wrap.
+        var contentStart = snappedStart
+        while contentStart < snappedEnd, snapSet.contains(chars[contentStart]) { contentStart += 1 }
+        var contentEnd = snappedEnd
+        while contentEnd > contentStart, snapSet.contains(chars[contentEnd - 1]) { contentEnd -= 1 }
+        guard contentStart < contentEnd,
+              Array(chars[snappedStart..<contentStart]) == Array(chars[contentEnd..<snappedEnd])
+        else { return (start, end) }
+        return (snappedStart, snappedEnd)
+    }
+
     /// When the OLD half is delimiter-wrapped (`**bold**`), the NEW half
     /// wraps in the same delimiters — accepting must keep the styling.
     /// Only symmetric wraps transfer (leading run == trailing run); a

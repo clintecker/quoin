@@ -305,6 +305,98 @@ final class ReviewAuthoringTests: XCTestCase {
     }
 
 
+    // MARK: - Balanced delimiter snap (live report: word at span START tore the bold)
+
+    /// UTF-16 offsets of `text` inside `slice` — the snap's currency.
+    private func utf16Range(of text: String, in slice: String) -> (Int, Int) {
+        let range = (slice as NSString).range(of: text)
+        XCTAssertNotEqual(range.location, NSNotFound, "\(text) not in slice")
+        return (range.location, range.location + range.length)
+    }
+
+    func testBalancedDelimiterSnapMatrix() {
+        let bold = "**Zigbee2MQTT → MQTT Service**"
+
+        // Whole-span content: both delimiter runs captured — snap stands.
+        var (start, end) = utf16Range(of: "Zigbee2MQTT → MQTT Service", in: bold)
+        XCTAssertEqual(
+            ReviewAuthoring.balancedDelimiterSnap(start: start, end: end, in: bold).start, 0)
+        XCTAssertEqual(
+            ReviewAuthoring.balancedDelimiterSnap(start: start, end: end, in: bold).end,
+            (bold as NSString).length)
+
+        // Span START (the screenshot case): only the opener would be
+        // captured; the closer lies beyond the selection — revert BOTH.
+        (start, end) = utf16Range(of: "Zigbee2MQTT", in: bold)
+        var snapped = ReviewAuthoring.balancedDelimiterSnap(start: start, end: end, in: bold)
+        XCTAssertEqual(snapped.start, start, "must NOT capture the opening **")
+        XCTAssertEqual(snapped.end, end)
+
+        // Span END: mirror image — only the closer would be captured.
+        (start, end) = utf16Range(of: "MQTT Service", in: bold)
+        snapped = ReviewAuthoring.balancedDelimiterSnap(start: start, end: end, in: bold)
+        XCTAssertEqual(snapped.start, start)
+        XCTAssertEqual(snapped.end, end, "must NOT capture the closing **")
+
+        // Span MIDDLE: no adjacent delimiters — untouched.
+        (start, end) = utf16Range(of: "→ MQTT", in: bold)
+        snapped = ReviewAuthoring.balancedDelimiterSnap(start: start, end: end, in: bold)
+        XCTAssertEqual(snapped.start, start)
+        XCTAssertEqual(snapped.end, end)
+
+        // Plain text: untouched.
+        (start, end) = utf16Range(of: "words", in: "plain words here")
+        snapped = ReviewAuthoring.balancedDelimiterSnap(
+            start: start, end: end, in: "plain words here")
+        XCTAssertEqual(snapped.start, start)
+        XCTAssertEqual(snapped.end, end)
+
+        // Other symmetric wraps snap; backticks stay excluded.
+        (start, end) = utf16Range(of: "struck", in: "~~struck~~")
+        snapped = ReviewAuthoring.balancedDelimiterSnap(start: start, end: end, in: "~~struck~~")
+        XCTAssertEqual(snapped.start, 0)
+        XCTAssertEqual(snapped.end, 10)
+        (start, end) = utf16Range(of: "code", in: "see `code` here")
+        snapped = ReviewAuthoring.balancedDelimiterSnap(
+            start: start, end: end, in: "see `code` here")
+        XCTAssertEqual(snapped.start, start, "backticks are never captured")
+        XCTAssertEqual(snapped.end, end)
+
+        // Mixed nesting is lopsided as STRINGS (`~~**` vs `**~~`) — revert,
+        // same conservative rule replacementPreservingDelimiters applies.
+        (start, end) = utf16Range(of: "both", in: "~~**both**~~")
+        snapped = ReviewAuthoring.balancedDelimiterSnap(start: start, end: end, in: "~~**both**~~")
+        XCTAssertEqual(snapped.start, start)
+        XCTAssertEqual(snapped.end, end)
+
+        // A caret at a span edge must stay a caret, never widen to
+        // delimiter-only bytes.
+        snapped = ReviewAuthoring.balancedDelimiterSnap(start: 8, end: 8, in: "**bold** tail")
+        XCTAssertEqual(snapped.start, 8)
+        XCTAssertEqual(snapped.end, 8)
+    }
+
+    func testReplacementAtBoldSpanStartKeepsTheEmphasisWhole() throws {
+        // The exact screenshot case end-to-end: "Zigbee2MQTT" selected at
+        // the start of a bold span, replacement suggested. The reverted
+        // snap wraps ONLY the word; accepting keeps **…** balanced.
+        let source = "Route **Zigbee2MQTT → MQTT Service** traffic.\n"
+        let edit = try XCTUnwrap(ReviewAuthoring.annotationEdit(
+            kind: .replacement(new: "Z2M"), range: range(of: "Zigbee2MQTT", in: source),
+            in: source, reviewer: "clint", timestamp: stamp))
+        let after = applying(edit, to: source)
+        XCTAssertTrue(after.contains("**{~~Zigbee2MQTT~>Z2M~~}{#s1} → MQTT Service**"),
+                      "the mark sits INSIDE the intact span: \(after)")
+
+        let mark = try XCTUnwrap(SuggestionResolver.marks(in: MarkdownConverter.parse(after)).first)
+        let accept = try XCTUnwrap(SuggestionResolver.edit(
+            resolving: mark.range, in: after, action: .accept))
+        XCTAssertTrue(applying(accept, to: after)
+            .contains("Route **Z2M → MQTT Service** traffic."),
+            "accepting keeps the bold balanced")
+    }
+
+
     // MARK: - Block-adjacent comments (#68)
 
     func testBlockCommentLandsAfterACodeBlock() throws {
