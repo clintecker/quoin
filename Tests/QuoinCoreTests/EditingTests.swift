@@ -629,6 +629,12 @@ final class SessionEditingTests: XCTestCase {
     }
 
     func testWatcherFollowsExternalMoveAndSavesToTheNewPath() async throws {
+        // The file watcher is DispatchSourceFileSystemObject (canImport(Darwin)
+        // in FileWatcher.swift); there is no live watcher off Darwin, so this
+        // move-following behavior only exists on Apple platforms.
+        #if !canImport(Darwin)
+        throw XCTSkip("FileWatcher is Darwin-only (DispatchSourceFileSystemObject); no external-move tracking on Linux.")
+        #endif
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let oldFile = dir.appendingPathComponent("before.md")

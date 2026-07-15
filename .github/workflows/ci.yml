@@ -9,6 +9,26 @@ permissions:
   contents: read
 
 jobs:
+  # QuoinCore is platform-free (parsing, sessions, search, review, exporters,
+  # re-exported math/diagram layout). This job proves it — and the whole
+  # package — builds and its tests pass on Linux, so the engine stays honest
+  # for non-Apple hosts. QuoinRender is fully canImport(AppKit)-guarded, so it
+  # compiles to a near-empty module here. Wall-clock latency budgets and the
+  # Darwin-only file watcher self-skip off Darwin (see EditingLatencyTests).
+  test-linux:
+    name: swift test (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+
   test:
     name: swift test (macOS)
     runs-on: macos-15

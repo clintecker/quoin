@@ -55,6 +55,19 @@ final class EditingLatencyTests: XCTestCase {
         SourceEdit(range: ByteRange(offset: offset, length: 0), replacement: text)
     }
 
+    /// The wall-clock ceilings are calibrated to Apple Silicon (the shipping
+    /// platform) with ~3× headroom for shared macOS CI. Off Darwin — notably
+    /// the Linux CI job, which runs emulated on contributor machines and 20–30%
+    /// slower even natively — a timing assertion measures the host, not the
+    /// code, so it would be a *bad* test. The deterministic strategy assertions
+    /// (fast-path selection) still run everywhere and are the real guarantee;
+    /// only the ceilings are Darwin-scoped. macOS CI keeps enforcing them.
+    private func skipWallClockBudgetsOffDarwin() throws {
+        #if !canImport(Darwin)
+        throw XCTSkip("Wall-clock latency budgets are Apple-Silicon-calibrated; enforced on macOS CI only.")
+        #endif
+    }
+
     // MARK: - 1. Strategy: typing must never trigger a full re-parse
 
     func testTypingInProseUsesBlockLocalFastPath() throws {
@@ -102,6 +115,7 @@ final class EditingLatencyTests: XCTestCase {
     /// that uniformity IS the "document length shouldn't matter, charts
     /// shouldn't matter" contract.
     func testKeystrokeCoreLatencyMeetsBudgetEverywhere() throws {
+        try skipWallClockBudgetsOffDarwin()
         var report: [String] = []
         for size in PerfFixtures.Size.allCases {
             for charts in [false, true] {
@@ -137,6 +151,7 @@ final class EditingLatencyTests: XCTestCase {
     /// Open (full parse) budgets per size — with and without charts held to
     /// the same ceiling: diagrams in the document must not tax opening it.
     func testOpenLatencyMeetsBudgetPerSize() throws {
+        try skipWallClockBudgetsOffDarwin()
         for size in PerfFixtures.Size.allCases {
             for charts in [false, true] {
                 let source = PerfFixtures.document(size: size, charts: charts)
