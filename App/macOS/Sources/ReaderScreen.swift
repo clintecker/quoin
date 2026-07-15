@@ -859,7 +859,8 @@ struct OutlinePanel: View {
 
     /// Collapsed heading subtrees (session-scoped). A heading hides when
     /// any ancestor — the nearest preceding heading of a shallower level —
-    /// is collapsed.
+    /// is collapsed. Manual collapse is authoritative: only the chevron
+    /// toggle mutates this set; reading-position follow never does.
     @State private var collapsed: Set<BlockID> = []
 
     /// Which headings own children (the next entry is deeper).
@@ -873,25 +874,18 @@ struct OutlinePanel: View {
         return result
     }
 
-    /// The outline with collapsed subtrees removed. The CURRENT section
-    /// always shows — jumping around the document must never leave the
-    /// "you are here" marker hidden inside a collapsed branch.
+    /// The outline with collapsed subtrees removed. When the current
+    /// section hides inside a collapsed branch the "you are here" marker
+    /// climbs to the deepest visible ancestor instead of forcing the row
+    /// open (user directive: manual collapse sticks).
     private var visible: [HeadingInfo] {
-        var result: [HeadingInfo] = []
-        var hiddenBelowLevel: Int?
-        for heading in outline {
-            if let level = hiddenBelowLevel {
-                if heading.level > level, heading.id != currentSectionID {
-                    continue
-                }
-                hiddenBelowLevel = heading.level > level ? level : nil
-            }
-            result.append(heading)
-            if collapsed.contains(heading.id) {
-                hiddenBelowLevel = min(hiddenBelowLevel ?? heading.level, heading.level)
-            }
-        }
-        return result
+        OutlineCollapse.visibleHeadings(outline: outline, collapsed: collapsed)
+    }
+
+    /// The row that carries the current-section highlight after collapse
+    /// resolution (the section itself, or its deepest visible ancestor).
+    private var highlightID: BlockID? {
+        OutlineCollapse.resolveHighlight(for: currentSectionID, outline: outline, collapsed: collapsed)
     }
 
     var body: some View {
@@ -908,7 +902,7 @@ struct OutlinePanel: View {
                 ForEach(visible) { heading in
                     OutlineRow(
                         heading: heading,
-                        isCurrent: heading.id == currentSectionID,
+                        isCurrent: heading.id == highlightID,
                         isParent: parents.contains(heading.id),
                         isCollapsed: collapsed.contains(heading.id),
                         onSelect: onSelect,
