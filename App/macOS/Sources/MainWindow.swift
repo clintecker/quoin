@@ -338,8 +338,13 @@ struct MainWindow: View {
     /// a footnote reference/definition pair).
     private func defaultShotFixture(for state: String?) -> String? {
         switch state {
-        case "review", "properties", "reviewmode": return "review-stress-test.md"
-        case "codethemes", "footnotes": return "showcase.md"
+        // The realistic demo docs read like real work — a spec under
+        // review, a note with rich properties — better screenshot subjects
+        // than the synthetic stress fixtures.
+        case "review", "reviewmode": return "demo-product-spec.md"
+        case "properties": return "demo-daily-note.md"
+        case "codethemes": return "demo-research-note.md"
+        case "footnotes": return "demo-research-note.md"
         default: return nil
         }
     }

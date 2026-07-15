@@ -52,11 +52,11 @@ synthetic keyboard events (flaky on headless runners):
 | `libsearch` | — | Library-search panel, query `engine`, results run |
 | `mermaidResilience` | (opened doc)* | Self-drives break/fix of a mermaid header (diagnostic) |
 | `codeEdit` | `showcase.md`* | Activates first code block + types (diagnostic) |
-| `review` | `review-stress-test.md` | Outline inspector → **Review** tab (suggestion + comment cards) |
-| `properties` | `review-stress-test.md` | Outline inspector → **Properties** tab (front-matter fields) |
-| `reviewmode` | `review-stress-test.md` | `SUGGESTING` status chip active + Review inspector |
-| `codethemes` | `showcase.md` | Scrolls first code block into view (pair with `-QuoinCodeTheme`) |
-| `footnotes` | `showcase.md` | Scrolls first footnote reference into view |
+| `review` | `demo-product-spec.md` | Review inspector on a real spec under review (suggestion + comment cards) |
+| `properties` | `demo-daily-note.md` | Properties inspector on a note with rich front matter (typed fields) |
+| `reviewmode` | `demo-product-spec.md` | `SUGGESTING` status chip active + Review inspector |
+| `codethemes` | `demo-research-note.md` | Scrolls first code block into view (pair with `-QuoinCodeTheme`) |
+| `footnotes` | `demo-research-note.md` | Scrolls first footnote reference into view |
 
 \* States marked with an asterisk are driven with an explicit
 `-QuoinShotOpen` in the UI test; the others fall back to
