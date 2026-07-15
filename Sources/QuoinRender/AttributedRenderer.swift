@@ -958,15 +958,31 @@ public struct AttributedRenderer {
     ) {
         let text = styled.string as NSString
         var location = 0
+        var previousNonBlankSpacing: CGFloat = 0
         while location < text.length {
             let line = text.lineRange(for: NSRange(location: location, length: 0))
             defer { location = NSMaxRange(line) }
             // Blank = just the terminator (or whitespace-only).
             let content = text.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard content.isEmpty, line.length > 0 else { continue }
+            guard content.isEmpty, line.length > 0 else {
+                if line.length > 0, styled.length > line.location {
+                    previousNonBlankSpacing = (styled.attribute(
+                        .paragraphStyle, at: line.location, effectiveRange: nil)
+                        as? NSParagraphStyle)?.paragraphSpacing ?? 0
+                }
+                continue
+            }
             if let caretOffset, caretOffset >= line.location, caretOffset <= NSMaxRange(line) { continue }
+            // The blank row's height: when the PREVIOUS line's transplanted
+            // style already carries the inter-item gap (loose lists), the
+            // blank source line is the SAME gap in source form — collapsing
+            // it to a sliver keeps the reveal's skeleton equal to reading
+            // mode (live report: edit mode spread list items ~2x). Only a
+            // gap-less predecessor keeps the full spacing-height row.
+            let rowHeight = previousNonBlankSpacing > 0 ? 2 : theme.paragraphSpacing
+            previousNonBlankSpacing = 0
             mutateParagraphStyles(in: styled, range: line) { style, _ in
-                style.maximumLineHeight = theme.paragraphSpacing
+                style.maximumLineHeight = rowHeight
                 style.minimumLineHeight = 0
                 style.lineHeightMultiple = 1
                 style.paragraphSpacing = 0

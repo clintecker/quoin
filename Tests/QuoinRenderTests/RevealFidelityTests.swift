@@ -153,6 +153,31 @@ final class RevealFidelityTests: XCTestCase {
         XCTAssertLessThan(delta, 6, "list reveal shifted content by \(delta)pt")
     }
 
+    /// LOOSE lists (blank lines between items) — the live report's shape:
+    /// the reveal showed the transplanted item gap AND a compressed blank
+    /// row for every source blank line, spreading items ~2x.
+    func testLooseNestedListRevealIsHeightNeutral() throws {
+        var listSource = "# Loose\n\n"
+        listSource += "1. Item one\n\n"
+        listSource += "   1. Nested item one\n\n"
+        listSource += "      Paragraph under nested item.\n\n"
+        listSource += "   2. Nested item two\n\n"
+        listSource += "2. Item two after nested list.\n\n"
+        listSource += "Tail paragraph.\n"
+        let document = MarkdownConverter.parse(listSource)
+        let renderer = AttributedRenderer()
+        var cache: [BlockID: NSAttributedString] = [:]
+        let list = try XCTUnwrap(document.blocks.first {
+            if case .list = $0.kind { return true }
+            return false
+        }?.id)
+
+        let reading = renderer.render(document, activeBlockID: nil, activeCaret: nil, cache: &cache)
+        let revealed = renderer.render(document, activeBlockID: list, activeCaret: 3, cache: &cache)
+        let delta = abs(measureHeight(reading.attributed) - measureHeight(revealed.attributed))
+        XCTAssertLessThan(delta, 14, "loose nested list reveal shifted content by \(delta)pt")
+    }
+
     /// The traced +100..364pt reveals: entity- and markup-dense paragraphs
     /// exploded on reveal because their source is several times longer than
     /// their rendered text. With caret-scoped collapse of entities (and
