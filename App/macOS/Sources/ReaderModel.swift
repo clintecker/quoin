@@ -687,6 +687,19 @@ final class ReaderModel {
         }
     }
 
+    /// Sets one front-matter field to a TYPED raw value (bool/number/date
+    /// scalar or flow list, #79) written verbatim — the panel's typed
+    /// editors. Same in-actor guarantees as `setFrontMatterField`.
+    func setTypedFrontMatterField(key: String, rawValue: String) {
+        applySessionResolution(
+            refusalMessage: "Couldn't set “\(key)” — the value lost its type. Try Edit as Text.",
+            flashOffset: nil
+        ) { session in
+            try await session.applyTypedFrontMatterEdit(
+                key: key, rawValue: rawValue, publishSnapshot: false)
+        }
+    }
+
     /// Removes one front-matter field (removing the last one removes the
     /// whole block). Same in-actor guarantees as `setFrontMatterField`.
     func removeFrontMatterField(key: String) {

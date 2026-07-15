@@ -426,6 +426,21 @@ public actor DocumentSession {
         return try applyEdit(edit, publishSnapshot: publishSnapshot)
     }
 
+    /// Sets one front-matter field to a TYPED raw value (bool/number/date
+    /// scalar or flow list, #79) written verbatim — the Properties panel's
+    /// typed editors. Same in-actor computation and one-undo guarantees as
+    /// `applyFrontMatterEdit`; nil means the writer refused (not a clean
+    /// typed form, block collection under that key, failed
+    /// self-calibration).
+    @discardableResult
+    public func applyTypedFrontMatterEdit(
+        key: String, rawValue: String, publishSnapshot: Bool = true
+    ) throws -> QuoinDocument? {
+        guard let edit = FrontMatterEditing.setTypedFieldEdit(
+            key: key, rawValue: rawValue, in: document.source) else { return nil }
+        return try applyEdit(edit, publishSnapshot: publishSnapshot)
+    }
+
     /// Removes one front-matter field (nested continuation lines ride
     /// along); removing the last field removes the whole block. Same
     /// in-actor computation and one-undo guarantees as

@@ -295,6 +295,9 @@ struct ReaderScreen: View {
                     PropertiesPanel(
                         fields: frontMatterFields,
                         onSet: { key, value in model.setFrontMatterField(key: key, value: value) },
+                        onSetTyped: { key, rawValue in
+                            model.setTypedFrontMatterField(key: key, rawValue: rawValue)
+                        },
                         onRemove: { key in model.removeFrontMatterField(key: key) }
                     )
                 } else if inspectorMode == .review, hasReviewData {

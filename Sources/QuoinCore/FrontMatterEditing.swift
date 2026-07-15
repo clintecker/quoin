@@ -102,38 +102,45 @@ public enum FrontMatterEditing {
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
         let line = "\(key): \(ReviewEndmatter.fieldValue(normalized))"
-
-        let edit: SourceEdit
-        let expectedOthers: [Field]
-        if let block = block(in: source) {
-            let existing = fields(in: source)
-            let matches = existing.filter { $0.key == key }
-            if let field = matches.first {
-                // Duplicated keys are ambiguous — one contiguous edit can't
-                // fix both lines, so refuse rather than leave a shadow.
-                guard matches.count == 1, !field.isComplex else { return nil }
-                edit = SourceEdit(range: field.byteRange, replacement: line + block.newline)
-            } else {
-                edit = SourceEdit(
-                    range: ByteRange(offset: block.closingLineStart, length: 0),
-                    replacement: line + block.newline)
-            }
-            expectedOthers = existing.filter { $0.key != key }
-        } else {
-            // No front matter: create the whole block at byte 0, in the
-            // document's own newline flavor.
-            let newline = source.contains("\r\n") ? "\r\n" : "\n"
-            edit = SourceEdit(
-                range: ByteRange(offset: 0, length: 0),
-                replacement: "---\(newline)\(line)\(newline)---\(newline)")
-            expectedOthers = []
-        }
-        return validated(edit, in: source) { candidate in
+        guard let placed = placement(
+            for: key, line: line, in: source, canReplace: { !$0.isComplex })
+        else { return nil }
+        return validated(placed.edit, in: source) { candidate in
             let after = fields(in: candidate)
             guard let written = after.first(where: { $0.key == key }),
                   written.value == normalized, !written.isComplex else { return false }
-            return signatures(of: after.filter { $0.key != key }) == signatures(of: expectedOthers)
+            return signatures(of: after.filter { $0.key != key }) == signatures(of: placed.others)
         }
+    }
+
+    /// Where a `key: value` line lands: replacing the key's existing
+    /// line(s), appending before the closing `---`, or creating the whole
+    /// block at byte 0. Nil refuses: a duplicated key is ambiguous (one
+    /// contiguous edit can't fix both lines — refuse, don't shadow), and
+    /// `canReplace` vetoes overwriting values the caller can't represent.
+    private static func placement(
+        for key: String, line: String, in source: String,
+        canReplace: (Field) -> Bool
+    ) -> (edit: SourceEdit, others: [Field])? {
+        if let block = block(in: source) {
+            let existing = fields(in: source)
+            let matches = existing.filter { $0.key == key }
+            let others = existing.filter { $0.key != key }
+            if let field = matches.first {
+                guard matches.count == 1, canReplace(field) else { return nil }
+                return (SourceEdit(range: field.byteRange, replacement: line + block.newline),
+                        others)
+            }
+            return (SourceEdit(
+                range: ByteRange(offset: block.closingLineStart, length: 0),
+                replacement: line + block.newline), others)
+        }
+        // No front matter: create the whole block at byte 0, in the
+        // document's own newline flavor.
+        let newline = source.contains("\r\n") ? "\r\n" : "\n"
+        return (SourceEdit(
+            range: ByteRange(offset: 0, length: 0),
+            replacement: "---\(newline)\(line)\(newline)---\(newline)"), [])
     }
 
     /// Removes the key's line(s) — nested continuation lines included.
@@ -350,5 +357,366 @@ public enum FrontMatterEditing {
             i += 1
         }
         return lines
+    }
+}
+
+// MARK: - Typed values (Properties inspector, #79)
+
+extension FrontMatterEditing {
+
+    /// The type a value EDITS as. Inference is byte-conservative: a value
+    /// that does not parse CLEANLY as a candidate type stays `.string`,
+    /// and a quoted scalar is a deliberate YAML string — it never infers
+    /// (a typed write-back would drop its quotes and change its type).
+    public enum FieldType: Hashable, Sendable {
+        case string
+        case bool
+        case number
+        case date(DatePrecision)
+        case list
+    }
+
+    /// The exact serialization shape of a date value — write-back must
+    /// reproduce it: a date-only value never gains a time component, and
+    /// a `Z`/offset suffix rides through verbatim.
+    public struct DatePrecision: Hashable, Sendable {
+        public let hasTime: Bool
+        public let hasSeconds: Bool
+        /// Trailing zone designator, verbatim: `""`, `"Z"`, `"+05:30"`.
+        public let zoneSuffix: String
+
+        public init(hasTime: Bool, hasSeconds: Bool, zoneSuffix: String) {
+            self.hasTime = hasTime
+            self.hasSeconds = hasSeconds
+            self.zoneSuffix = zoneSuffix
+        }
+    }
+
+    /// An ISO front-matter date, parsed to WALL-CLOCK components. The
+    /// digits are edited as-is and the zone suffix is pass-through (never
+    /// applied as an offset), so write-back touches only the digits the
+    /// picker changed.
+    public struct ParsedDate: Hashable, Sendable {
+        public var year, month, day, hour, minute, second: Int
+        public let precision: DatePrecision
+
+        /// UTC calendar: the identity mapping between wall-clock
+        /// components and `Date`, on every platform and locale.
+        static var utcCalendar: Calendar {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC")!
+            return calendar
+        }
+
+        /// The components as a `Date` for a UTC-pinned picker; nil only
+        /// for components no calendar day matches.
+        public var dateValue: Date? {
+            let components = DateComponents(
+                year: year, month: month, day: day,
+                hour: hour, minute: minute, second: second)
+            return Self.utcCalendar.date(from: components)
+        }
+
+        /// The same precision and suffix around `date`'s UTC wall clock —
+        /// how a picker change becomes a write-back value.
+        public func replacingWallClock(_ date: Date) -> ParsedDate {
+            let read = Self.utcCalendar.dateComponents(
+                [.year, .month, .day, .hour, .minute, .second], from: date)
+            var copy = self
+            copy.year = read.year ?? year
+            copy.month = read.month ?? month
+            copy.day = read.day ?? day
+            copy.hour = read.hour ?? hour
+            copy.minute = read.minute ?? minute
+            copy.second = read.second ?? second
+            return copy
+        }
+
+        /// The value in its ORIGINAL precision: date-only stays date-only,
+        /// seconds appear only if they were there, the suffix is verbatim.
+        public var serialized: String {
+            var out = String(format: "%04d-%02d-%02d", year, month, day)
+            if precision.hasTime {
+                out += String(format: "T%02d:%02d", hour, minute)
+                if precision.hasSeconds { out += String(format: ":%02d", second) }
+                out += precision.zoneSuffix
+            }
+            return out
+        }
+    }
+
+    /// Strict ISO reader: `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM[:SS][Z|±HH:MM]`,
+    /// calendar-validated (2026-02-30 refuses). Nil means not a date.
+    public static func parseDate(_ raw: String) -> ParsedDate? {
+        let chars = Array(raw)
+        func number(_ range: Range<Int>) -> Int? {
+            var value = 0
+            for i in range {
+                guard chars[i].isASCII, let digit = chars[i].wholeNumberValue else { return nil }
+                value = value * 10 + digit
+            }
+            return value
+        }
+        guard chars.count >= 10,
+              let year = number(0..<4), chars[4] == "-",
+              let month = number(5..<7), chars[7] == "-",
+              let day = number(8..<10) else { return nil }
+        var hour = 0, minute = 0, second = 0
+        var precision = DatePrecision(hasTime: false, hasSeconds: false, zoneSuffix: "")
+        if chars.count > 10 {
+            guard chars[10] == "T", chars.count >= 16,
+                  let h = number(11..<13), chars[13] == ":",
+                  let m = number(14..<16) else { return nil }
+            hour = h
+            minute = m
+            var suffixStart = 16
+            var hasSeconds = false
+            if chars.count >= 19, chars[16] == ":" {
+                guard let s = number(17..<19) else { return nil }
+                second = s
+                hasSeconds = true
+                suffixStart = 19
+            }
+            let suffix = String(chars[suffixStart...])
+            guard isZoneSuffix(suffix) else { return nil }
+            precision = DatePrecision(hasTime: true, hasSeconds: hasSeconds, zoneSuffix: suffix)
+        }
+        let candidate = ParsedDate(
+            year: year, month: month, day: day,
+            hour: hour, minute: minute, second: second, precision: precision)
+        // Clean parse = the calendar round-trips the components untouched
+        // (Feb 30 would normalize to Mar 2; hour 25 to the next day).
+        guard let date = candidate.dateValue,
+              candidate.replacingWallClock(date) == candidate else { return nil }
+        return candidate
+    }
+
+    private static func isZoneSuffix(_ suffix: String) -> Bool {
+        if suffix.isEmpty || suffix == "Z" { return true }
+        let chars = Array(suffix)
+        func isDigit(_ ch: Character) -> Bool { ch.isASCII && ch.isWholeNumber }
+        return chars.count == 6 && (chars[0] == "+" || chars[0] == "-") && chars[3] == ":"
+            && isDigit(chars[1]) && isDigit(chars[2]) && isDigit(chars[4]) && isDigit(chars[5])
+    }
+
+    /// Integer or decimal literal — the only shapes the number editor
+    /// writes back verbatim. No exponents, no `+`, no bare `.`.
+    private static func isNumberLiteral(_ raw: String) -> Bool {
+        var digits = Substring(raw)
+        if digits.first == "-" { digits = digits.dropFirst() }
+        guard !digits.isEmpty else { return false }
+        let parts = digits.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count <= 2, !parts.contains(where: \.isEmpty) else { return false }
+        return parts.allSatisfy { $0.allSatisfy { $0.isASCII && $0.isWholeNumber } }
+    }
+
+    /// The typed form `raw` parses CLEANLY as, or nil (= plain string).
+    /// Bool is lowercase `true`/`false` ONLY — `True`/`yes` are strings.
+    static func typedForm(of raw: String) -> FieldType? {
+        if raw == "true" || raw == "false" { return .bool }
+        if isNumberLiteral(raw) { return .number }
+        if let date = parseDate(raw) { return .date(date.precision) }
+        if raw.hasPrefix("["), flowListItems(raw) != nil { return .list }
+        return nil
+    }
+
+    /// True when `raw` is a machine-writable typed form — the only values
+    /// `setTypedFieldEdit` writes verbatim.
+    public static func isTypedRawValue(_ raw: String) -> Bool {
+        typedForm(of: raw) != nil
+    }
+
+    /// Keys whose NAME hints a type. A hint refines ambiguity only when
+    /// the value also parses cleanly for that type — it never coerces
+    /// (`draft: yes` and `date: tomorrow` stay plain strings). Clean
+    /// dates/bools/lists are already claimed by generic inference, so the
+    /// hints' residual effect is the EMPTY value under a list key: it
+    /// edits as an empty CSV list, where an empty date or bool editor
+    /// would have to fabricate a value the file doesn't contain.
+    private static let dateHintKeys: Set<String> = ["date", "created", "updated", "modified"]
+    private static let boolHintKeys: Set<String> = ["draft", "published", "archived"]
+    private static let listHintKeys: Set<String> = ["tags", "aliases", "categories"]
+
+    /// The editor a field gets. `rawValue` is the RAW source text after
+    /// `key:` (`Field.rawPreview`) — inference must see quoting and flow
+    /// punctuation, not the resolved scalar.
+    public static func inferredType(key: String, rawValue: String) -> FieldType {
+        let raw = rawValue.trimmingCharacters(in: .whitespaces)
+        if let typed = typedForm(of: raw) { return typed }
+        let lowered = key.lowercased()
+        if raw.isEmpty, listHintKeys.contains(lowered) { return .list }
+        if dateHintKeys.contains(lowered), let date = parseDate(raw) { return .date(date.precision) }
+        if boolHintKeys.contains(lowered), raw == "true" || raw == "false" { return .bool }
+        return .string
+    }
+
+    // MARK: Flow lists ⇄ CSV
+
+    /// Splits a one-line flow sequence into its items, quotes resolved.
+    /// Nil REFUSES the list editor: nested collections, unterminated or
+    /// partial quotes, empty items, YAML-meaningful bare punctuation, or
+    /// a quoted item containing a comma (CSV could never round-trip it)
+    /// all fall back to `.string`.
+    public static func flowListItems(_ raw: String) -> [String]? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.contains("\n"), trimmed.hasPrefix("["), trimmed.hasSuffix("]"),
+              trimmed.count >= 2 else { return nil }
+        let body = Array(trimmed.dropFirst().dropLast())
+        if body.allSatisfy({ $0 == " " }) { return [] }
+
+        var parts: [[Character]] = []
+        var current: [Character] = []
+        var quote: Character?
+        var index = 0
+        while index < body.count {
+            let ch = body[index]
+            if let q = quote {
+                current.append(ch)
+                if q == "\"", ch == "\\", index + 1 < body.count {
+                    current.append(body[index + 1])
+                    index += 2
+                    continue
+                }
+                if ch == q {
+                    if q == "'", index + 1 < body.count, body[index + 1] == "'" {
+                        current.append("'")
+                        index += 2
+                        continue
+                    }
+                    quote = nil
+                }
+                index += 1
+                continue
+            }
+            switch ch {
+            case "\"", "'":
+                quote = ch
+                current.append(ch)
+            case "[", "]", "{", "}":
+                return nil
+            case ",":
+                parts.append(current)
+                current = []
+            default:
+                current.append(ch)
+            }
+            index += 1
+        }
+        guard quote == nil else { return nil }
+        parts.append(current)
+
+        var items: [String] = []
+        for part in parts {
+            let item = String(part).trimmingCharacters(in: .whitespaces)
+            guard !item.isEmpty else { return nil }
+            if item.hasPrefix("\"") || item.hasPrefix("'") {
+                guard let content = quotedItemContent(item), !content.contains(",")
+                else { return nil }
+                items.append(content)
+            } else {
+                guard isBareFlowItem(item) else { return nil }
+                items.append(item)
+            }
+        }
+        return items
+    }
+
+    /// The CSV projection the panel's list editor shows.
+    public static func csv(fromItems items: [String]) -> String {
+        items.joined(separator: ", ")
+    }
+
+    /// The CSV draft back into items: split on commas, trim, drop empties
+    /// (a trailing comma is not an empty tag).
+    public static func csvItems(_ csv: String) -> [String] {
+        csv.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Flow-form write-back: bare-safe items stay bare, anything else is
+    /// double-quoted + escaped so the result still parses as a flow list.
+    public static func flowList(fromItems items: [String]) -> String {
+        let rendered = items.map { item in
+            isBareFlowItem(item) && item == item.trimmingCharacters(in: .whitespaces)
+                ? item
+                : "\"\(ReviewEndmatter.escapedScalar(item))\""
+        }
+        return "[" + rendered.joined(separator: ", ") + "]"
+    }
+
+    /// Bare (unquoted) flow items keep to inert scalar characters — a
+    /// colon, comma, comment sign, or flow/indicator punctuation would
+    /// change YAML meaning. The same predicate gates read acceptance and
+    /// write-back quoting, so the two stay symmetric.
+    private static func isBareFlowItem(_ item: String) -> Bool {
+        guard !item.isEmpty else { return false }
+        let forbidden: Set<Character> = [
+            ":", ",", "#", "&", "*", "!", "|", ">", "@", "`", "%", "?",
+            "\"", "'", "[", "]", "{", "}",
+        ]
+        return !item.contains { forbidden.contains($0) }
+    }
+
+    /// The unescaped content of a FULLY quoted item — the closing quote
+    /// must be the very last character (`"a"b` shapes refuse).
+    private static func quotedItemContent(_ item: String) -> String? {
+        let chars = Array(item)
+        guard chars.count >= 2, let q = chars.first, q == "\"" || q == "'",
+              chars.last == q else { return nil }
+        var content = ""
+        var index = 1
+        while index < chars.count - 1 {
+            let ch = chars[index]
+            if q == "\"", ch == "\\", index + 1 < chars.count - 1 {
+                content.append(chars[index + 1])
+                index += 2
+                continue
+            }
+            if ch == q {
+                if q == "'", index + 1 < chars.count - 1, chars[index + 1] == "'" {
+                    content.append("'")
+                    index += 2
+                    continue
+                }
+                return nil
+            }
+            content.append(ch)
+            index += 1
+        }
+        return content
+    }
+
+    // MARK: Typed writer
+
+    /// Sets one field to a TYPED raw value written VERBATIM — the typed
+    /// editors' writer. Only machine-writable forms pass (`true`/`false`,
+    /// number literals, strict ISO dates, clean flow lists): a datetime
+    /// keeps its bare `:`s where the scalar writer would quote them, and
+    /// a flow list stays a flow list where it would refuse. Replacing an
+    /// existing field requires a simple scalar or a clean one-line flow
+    /// list — block collections stay read-only. Same self-calibration as
+    /// `setFieldEdit`; nil refuses.
+    public static func setTypedFieldEdit(
+        key: String, rawValue: String, in source: String
+    ) -> SourceEdit? {
+        guard isEditableKey(key) else { return nil }
+        let raw = rawValue.trimmingCharacters(in: .whitespaces)
+        guard isTypedRawValue(raw) else { return nil }
+        let line = "\(key): \(raw)"
+        guard let placed = placement(for: key, line: line, in: source, canReplace: {
+            !$0.isComplex || flowListItems($0.rawPreview) != nil
+        }) else { return nil }
+        return validated(placed.edit, in: source) { candidate in
+            let after = fields(in: candidate)
+            guard let written = after.first(where: { $0.key == key }) else { return false }
+            // Flow lists read back complex (rawPreview carries the source);
+            // typed scalars are quote-free, so value == raw is identity.
+            let readsBack = written.isComplex
+                ? written.rawPreview == raw && flowListItems(raw) != nil
+                : written.value == raw
+            return readsBack
+                && signatures(of: after.filter { $0.key != key }) == signatures(of: placed.others)
+        }
     }
 }
