@@ -1,82 +1,147 @@
 # Dependencies
 
-Quoin's policy (CLAUDE.md / TRD): **one third-party code dependency**
-(swift-markdown). First-party engine packages (MermaidKit, Vinculum) are
-exempt. Anything else requires written justification here BEFORE it lands,
-plus an allowlist entry in `scripts/check-dependency-policy.sh` (which
-enforces this against both `Package.swift` and `Package.resolved`).
+Quoin runs on **one third-party code dependency**: swift-markdown. Everything
+else in the build graph is either a transitive dependency of that one package,
+or a Quoin-owned first-party engine.
 
-The resolved graph today:
+## Why so few
+
+Every dependency is a standing liability — supply-chain risk, binary bloat, a
+compatibility surface you don't control, and lock-in to someone else's release
+cadence and design choices. A native, local-only, zero-JavaScript editor whose
+whole promise is that your files stay yours cannot afford to smuggle in an
+unaudited transitive graph. So the policy is deliberately strict: **the default
+answer to a new dependency is no.** Adding one requires written justification in
+this file *before* it lands, plus an allowlist entry in
+`scripts/check-dependency-policy.sh`, which fails CI if `Package.swift` or
+`Package.resolved` names anything unapproved.
+
+First-party engine packages (MermaidKit, Vinculum) are exempt — they are
+Quoin's own code, just versioned in their own repos (see
+[why they're separate](#first-party-engines-mermaidkit--vinculum)).
+
+## The graph
+
+```mermaid
+flowchart TD
+    subgraph quoin["Quoin (this repo)"]
+        Core["QuoinCore<br/>(platform-free engine)"]
+        Render["QuoinRender<br/>(TextKit 2 + drawing)"]
+    end
+
+    subgraph thirdparty["Third-party (approved)"]
+        Markdown["swift-markdown"]
+        Cmark["swift-cmark<br/>(cmark-gfm)"]
+    end
+
+    subgraph firstparty["First-party engines (own repos)"]
+        MLayout["MermaidLayout"]
+        MRender["MermaidRender"]
+        VLayout["VinculumLayout"]
+        VRender["VinculumRender"]
+    end
+
+    Render --> Core
+    Core --> Markdown
+    Markdown --> Cmark
+    Core --> MLayout
+    Core --> VLayout
+    Render --> MRender
+    Render --> VRender
+
+    classDef third fill:#ffe8cc,stroke:#d9822b,color:#333
+    classDef first fill:#d6ebff,stroke:#3b82c4,color:#333
+    class Markdown,Cmark third
+    class MLayout,MRender,VLayout,VRender first
+```
 
 | Package | Kind | Pin | Role |
 | :--- | :--- | :--- | :--- |
 | [swift-markdown](https://github.com/swiftlang/swift-markdown) | third-party (approved) | `from: 0.8.0` | The cmark-gfm parser; the entire AST |
-| swift-cmark | transitive (under swift-markdown) | — | cmark-gfm itself |
+| swift-cmark | transitive (via swift-markdown) | — | cmark-gfm itself |
 | [MermaidKit](https://github.com/clintecker/MermaidKit) | first-party | `from: 0.10.0` | Native Mermaid diagram engine |
 | [Vinculum](https://github.com/clintecker/Vinculum) | first-party | `from: 0.23.0` | Native LaTeX math engine |
 
-## swift-markdown (third-party — approved, shipping)
+`QuoinCore` depends only on the platform-free layout halves (Markdown,
+MermaidLayout, VinculumLayout) so it builds and tests on Linux. `QuoinRender`
+adds the drawing halves (MermaidRender, VinculumRender), which need
+CoreText/CoreGraphics.
 
-The cmark-gfm wrapper. The entire product is built on its AST; writing a
-CommonMark+GFM parser is a multi-year project with an enormous
-compatibility surface. Apache 2.0, Apple-maintained. Pulls swift-cmark
-transitively (the same lineage). Attribution ships in
-About ▸ Acknowledgements.
+## swift-markdown
 
-## MermaidKit (first-party — shipping)
+The one approved third-party dependency, and the foundation of the whole
+product. Quoin's source of truth is the markdown string and the AST parsed from
+it — never an attributed string — and that AST is swift-markdown's.
 
-Quoin's own published package (github.com/clintecker/MermaidKit) — exempt
-from the third-party policy; allowlisted in the policy script. Consumed
-from GitHub exactly as any host app would, so the engine is developed and
-tested (its own CI) independently of Quoin. Layout/render split behind a
-`DiagramTheme` seam; `QuoinCore` re-exports `MermaidLayout` (parse +
-layout, platform-free) and `QuoinRender` uses `MermaidRender`.
+It is the right dependency to keep: writing a CommonMark+GFM parser from scratch
+is a multi-year effort with an enormous compatibility surface, swift-markdown is
+Apple-maintained and Apache 2.0, and it pulls only swift-cmark (cmark-gfm, the
+same lineage) transitively. Attribution ships in About ▸ Acknowledgements.
 
-**Linux backend note (v0.11.0+):** MermaidKit's Linux rasterization uses
-PureSwift/Silica (Cairo/FreeType). Because a version-pinned package may not
-transitively depend on an unstable ref, and because Quoin's macOS build
-should not drag in Cairo, this backend must be OPT-IN (a package trait) so
-the default MermaidKit graph Quoin consumes stays Silica-free on Apple
-platforms. Quoin is pinned to `0.10.0` until MermaidKit ships that
-gating; the bump follows. (Silica evaluation: `road-to-1.0.md` #84.)
+## First-party engines: MermaidKit & Vinculum
 
-## Vinculum (first-party — shipping)
+Mermaid diagrams and LaTeX math are rendered by two Quoin-owned packages —
+[MermaidKit](https://github.com/clintecker/MermaidKit) and
+[Vinculum](https://github.com/clintecker/Vinculum) — consumed from GitHub with
+`from:` pins exactly as any host app would consume them. They are first-party
+code, so they are exempt from the one-third-party rule and allowlisted in the
+policy script.
 
-Quoin's own published package (github.com/clintecker/Vinculum) — the LaTeX
-math engine, extracted from the in-repo typesetter (see
-[../history/math-extraction.md](../history/math-extraction.md) and
-[adr/0003](adr/0003-first-party-engines.md)). Same policy exemption and
-allowlist entry as MermaidKit. Layout/render split behind a `MathTheme`
-seam; `QuoinCore` re-exports `VinculumLayout` (parse + typesetting
-geometry → device-independent `MathScene`, platform-free) and
-`QuoinRender` uses `VinculumRender` (CoreText/CoreGraphics). ~400 commands;
-the exhaustive matrix lives in Vinculum's own `docs/COVERAGE.md` /
-`docs/COMMANDS.md`, not here (duplicated matrices drift — the 23-vs-30
-lesson in [adr/0003](adr/0003-first-party-engines.md)).
+**Why separate packages rather than in-repo folders** (see
+[ADR 0003](adr/0003-first-party-engines.md)): each engine grew large enough to
+be a product in itself. Splitting them out means their test suites run in their
+own CI instead of dragging Quoin's, they can serve other hosts, and their
+capability matrices live in one authoritative place — their own repos — instead
+of being duplicated (and silently drifting) in Quoin's docs.
 
-## Sparkle 2.x (JUSTIFIED 2026-07-10, not yet wired — road-to-1.0 #87)
+Both follow the same shape:
 
-**Decision context:** direct distribution (no App Store). A direct-distro
-app without an updater strands every shipped bug forever — users will not
-re-download DMGs. Update delivery is a launch requirement.
+- A **platform-free layout half** — `MermaidLayout`, `VinculumLayout` — parses
+  and computes device-independent geometry (`MermaidScene`, `MathScene`).
+  `QuoinCore` `@_exported import`s these, so `import QuoinCore` still exposes
+  `MermaidParser`, `MathParser`, and friends.
+- A **drawing half** — `MermaidRender`, `VinculumRender` — draws that geometry
+  via CoreGraphics/CoreText behind a theme seam (`DiagramTheme`, `MathTheme`),
+  which Quoin adapts through `Theme.diagramTheme` / `Theme.mathTheme`.
+  `QuoinRender` consumes these.
 
-**Why not build it:** a safe self-updater is security-critical
-infrastructure (EdDSA-signed appcasts, delta application, atomic app
-replacement, rollback, sandbox-safe XPC install). Sparkle 2.x is the Mac
-standard, actively maintained, MIT, with a documented threat model. A
-hand-rolled updater would be *less* safe — the policy's intent (minimize
-risk) argues FOR Sparkle here.
+To co-develop an engine: clone it beside `quoin` and temporarily point
+`Package.swift` at `.package(path: "../MermaidKit")` (never commit that), or
+`swift package edit`; then publish to the engine repo, tag, and bump the pin
+here. Engine changes are validated by the engine's own CI, not Quoin's.
 
-**Privacy interaction:** the update check is Quoin's ONLY network traffic.
-Privacy copy must say exactly that, and the check must be user-disableable
-(default on with a first-run disclosure).
+Vinculum's coverage is large (~400 commands); the exhaustive matrix lives in
+Vinculum's `docs/COVERAGE.md` / `docs/COMMANDS.md`.
 
-**Scope:** App target ONLY (App/macOS project) — QuoinCore/QuoinRender stay
-dependency-clean and Linux-buildable. The policy script gains `sparkle` in
-`approved_identities` in the same commit that adds the package.
+### MermaidKit Linux rasterization
 
-**Prerequisites (see road-to-1.0 Phase D):** an Apple Developer ID +
-notarization (the app is ad-hoc signed today), an appcast host, an EdDSA
-key pair (private key in the keychain, NEVER the repo), and a notarize
-script feeding the appcast. Design doc: `docs/design/distribution.md`
-(to be written before wiring).
+MermaidKit can rasterize on Linux via PureSwift/Silica (Cairo/FreeType). That
+backend is opt-in behind a package trait, by design: Quoin's macOS build must
+never drag in Cairo, so the default MermaidKit graph Quoin consumes stays
+Silica-free on Apple platforms. Quoin draws diagrams natively via
+`MermaidRender` regardless — the Linux backend matters only to non-Apple hosts.
+
+## Sparkle (justified, not yet wired)
+
+Quoin ships by direct distribution, not the App Store. A direct-distribution app
+with no updater strands every shipped bug forever — users won't re-download
+DMGs — so update delivery is a launch requirement, and
+[Sparkle 2.x](https://sparkle-project.org) is the approved answer.
+
+**Why not hand-roll it:** a safe self-updater is security-critical
+infrastructure — EdDSA-signed appcasts, delta application, atomic app
+replacement, rollback, sandbox-safe XPC install. Sparkle is the Mac standard:
+actively maintained, MIT, with a documented threat model. A hand-rolled updater
+would be *less* safe, so the policy's own intent — minimize risk — argues *for*
+adopting Sparkle here rather than against it.
+
+Constraints when it lands:
+
+- **App target only.** Sparkle is added to the `App/macOS` project alone;
+  `QuoinCore`/`QuoinRender` stay dependency-clean and Linux-buildable. The
+  policy script gains `sparkle` in `approved_identities` in the same commit.
+- **Privacy.** The update check is Quoin's *only* network traffic. Privacy copy
+  must say exactly that, and the check must be user-disableable (default on,
+  with a first-run disclosure).
+- **Prerequisites.** An Apple Developer ID plus notarization, an appcast host,
+  and an EdDSA key pair (private key in the keychain, never the repo).
