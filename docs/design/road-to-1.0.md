@@ -26,7 +26,7 @@ The gate is mostly one decision.
   plus a support-matrix-vs-reality diff so nothing claims what it can't do.
 - **A4. CONTRIBUTING + issue templates** — only if A1 is "open."
 
-## Phase B — Documentation overhaul (in flight; launched 2026-07-15)
+## Phase B — Documentation overhaul (DONE 2026-07-15)
 
 The docs must be ALL about Quoin, feature-current, screenshot-current, and
 must defer engine depth to the engine repos.
@@ -78,9 +78,10 @@ Swift 6.0. A measured build surfaced ~48 hard errors in the packages,
 concentrated, plus an app-target surface dominated by `ReaderCoordinator`.
 Staged to protect the hard-won caret/viewport stability:
 
-- **E1. QuoinCore** — two non-Sendable globals (`CriticScanner.openers`,
-  `RenderedDocument.empty`) + a couple Sendable conformances. Nearly free,
-  fully test-covered. *Do first; risk-free.*
+- **E1. QuoinCore — DONE (6f69822).** Tools bumped to 6.0; QuoinCore in
+  Swift 6 language mode (only `CriticScanner.openers` needed @Sendable +
+  nonisolated(unsafe)). QuoinRender + its tests stay Swift 5 mode under the
+  6.0 toolchain until E2/E3.
 - **E2. QuoinRender** — `@MainActor`-annotate the three AppKit files
   (ReaderCoordinator, FlipTransitionController, AttributedRenderer);
   the invariant suites are the regression net.
@@ -125,8 +126,10 @@ The one bar that can't be rushed:
 
 ## Critical path to PUBLIC
 
-A1 (license decision) → A2 (secrets) → B (docs) → flip visibility.
-Everything else can follow in the open.
+~~B (docs) — DONE.~~ A1 (license decision) → A2 (secrets) → flip
+visibility. The docs are current, the tree is reorganized, and the
+support matrix is audited; only the license decision + a secrets scrub
+remain, both small.
 
 ## Critical path to 1.0
 

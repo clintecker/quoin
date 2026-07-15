@@ -53,7 +53,7 @@ jobs:
       # library and captures window PNGs, uploaded as artifacts. Entitlements
       # are dropped so the unsandboxed app can read the fixtures dir. Every
       # shot (name, launch args, purpose, committed path) is catalogued in
-      # docs/screenshots.md — the durable record so shots regenerate on push.
+      # docs/guide/screenshots.md — the durable record so shots regenerate on push.
       - name: Capture screenshots
         working-directory: App/macOS
         continue-on-error: true
