@@ -74,11 +74,21 @@ final class ScreenshotTests: XCTestCase {
     func testCaptureChromeStates() throws {
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
-        let states: [(state: String, open: String?, shot: String)] = [
-            ("find", "engines.md", "08-find-bar"),
-            ("export", "engines.md", "09-export-sheet"),
-            ("quickopen", nil, "10-quick-open"),
-            ("libsearch", nil, "11-library-search"),
+        // `open == nil` relies on the state's default fixture
+        // (MainWindow.defaultShotFixture); `extra` carries any additional
+        // launch args (e.g. the code-theme id). The review-family states
+        // open the 21-suggestion review-stress-test fixture.
+        let states: [(state: String, open: String?, extra: [String], shot: String)] = [
+            ("find", "engines.md", [], "08-find-bar"),
+            ("export", "engines.md", [], "09-export-sheet"),
+            ("quickopen", nil, [], "10-quick-open"),
+            ("libsearch", nil, [], "11-library-search"),
+            // New feature surfaces (review loop, properties, code themes, footnotes).
+            ("review", nil, [], "15-review-panel"),
+            ("properties", nil, [], "16-properties-panel"),
+            ("reviewmode", nil, [], "17-review-mode"),
+            ("codethemes", nil, ["-QuoinCodeTheme", "dracula"], "18-code-theme"),
+            ("footnotes", nil, [], "19-footnotes"),
         ]
 
         for entry in states {
@@ -87,6 +97,7 @@ final class ScreenshotTests: XCTestCase {
             if let open = entry.open {
                 arguments += ["-QuoinShotOpen", open]
             }
+            arguments += entry.extra
             app.launchArguments = arguments
             app.launch()
             let window = app.windows.firstMatch
@@ -95,6 +106,25 @@ final class ScreenshotTests: XCTestCase {
             capture(name: entry.shot, window: window)
             app.terminate()
         }
+    }
+
+    /// Dark-appearance pass for the review loop — Quoin's differentiator, so
+    /// it earns a dark shot like the document/engines gallery.
+    func testCaptureReviewDark() throws {
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-QuoinLibraryPath", fixturesPath,
+            "-QuoinShotState", "review",
+            "-QuoinForceDarkMode", "YES",
+        ]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 3.5)
+        capture(name: "15-review-panel-dark", window: window)
+        app.terminate()
     }
 
     /// Dark-appearance pass: verifies the handoff rules (inverted ink/canvas,

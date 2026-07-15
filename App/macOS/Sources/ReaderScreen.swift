@@ -426,6 +426,60 @@ struct ReaderScreen: View {
             // stop here, or a tab switch would fight the store over the session.
             // Screenshot automation presets (see MainWindow.applyShotState).
             switch UserDefaults.standard.string(forKey: "QuoinShotState") {
+            case "review":
+                // Review inspector showing the suggestion/comment cards.
+                // A Task lets the panelChrome auto-select settle first, then
+                // this pins the chosen mode (userPicked wins over auto).
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.2))
+                    isOutlineVisible = true
+                    inspectorMode = .review
+                    userPickedInspectorMode = true
+                }
+            case "properties":
+                // Properties inspector (front-matter field editor, #70).
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.2))
+                    isOutlineVisible = true
+                    inspectorMode = .properties
+                    userPickedInspectorMode = true
+                }
+            case "reviewmode":
+                // Review Mode active: the accent SUGGESTING status chip
+                // (design §3.6) plus the review inspector for context.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.2))
+                    isOutlineVisible = true
+                    inspectorMode = .review
+                    userPickedInspectorMode = true
+                    model.isSuggestMode = true
+                }
+            case "codethemes":
+                // Scroll the first fenced code block into view so the shot
+                // captures the selected code theme (pass -QuoinCodeTheme <id>
+                // as a launch arg; the argument domain wins without polluting
+                // the persisted preference).
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard let block = model.document.blocks.first(where: {
+                        if case .codeBlock = $0.kind { return true }
+                        return false
+                    }) else { return }
+                    scrollTarget = block.id
+                    scrollGeneration += 1
+                }
+            case "footnotes":
+                // Scroll the first footnote reference into view (click-to-jump
+                // + hover preview, #80). The reference renders as a raised
+                // marker; the definitions gather at the document end.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard let block = model.document.blocks.first(where: {
+                        model.document.source.substring(in: $0.range)?.contains("[^") ?? false
+                    }) else { return }
+                    scrollTarget = block.id
+                    scrollGeneration += 1
+                }
             case "find":
                 isFindVisible = true
                 searchQuery = "math"

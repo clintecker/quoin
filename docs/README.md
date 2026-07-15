@@ -53,6 +53,9 @@ invariant cites its test, an ADR cites its commit, a claim cites file:line.)
 - [rendering-roadmap.md](rendering-roadmap.md) — COMPLETE; historical.
 - [rendering-ledger.md](rendering-ledger.md), [performance-baselines.md](performance-baselines.md),
   [dependency-justifications.md](dependency-justifications.md) — supporting records.
+- [screenshots.md](screenshots.md) — the screenshot manifest: every CI shot,
+  its launch args, and the `docs/images/` path README/PRODUCT reference.
+  Shots regenerate on every push (automated, never hand-captured).
 - [math-extraction.md](math-extraction.md), [diagram-engine-handoff.md](diagram-engine-handoff.md)
   — how Vinculum and MermaidKit were extracted (historical stubs; the engine
   repos are the source of truth for capability).

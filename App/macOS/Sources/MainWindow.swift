@@ -288,9 +288,16 @@ struct MainWindow: View {
     }
 
     /// Screenshot automation: `-QuoinShotOpen name.md` opens a library file
-    /// at launch; `-QuoinShotState quickopen|libsearch` presets window
-    /// chrome. Deterministic state beats synthetic keyboard events on
-    /// headless runners.
+    /// at launch; `-QuoinShotState …` presets window chrome. Deterministic
+    /// state beats synthetic keyboard events on headless runners. States
+    /// handled HERE are window-level (quick open / library search); states
+    /// that preset the editor's inspector or review mode are handled in
+    /// `ReaderScreen` (which owns that @State). The full state list +
+    /// launch args are catalogued in docs/screenshots.md.
+    ///
+    /// So the orchestrator can drive a single `-QuoinShotState review` with
+    /// no `-QuoinShotOpen`, review/properties/reviewmode default to the
+    /// review-stress-test fixture and codethemes/footnotes to showcase.
     private func applyShotState() {
         let defaults = UserDefaults.standard
         guard defaults.string(forKey: "QuoinShotOpen") != nil
@@ -298,10 +305,14 @@ struct MainWindow: View {
 
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1)) // let the library scan land
+            let state = defaults.string(forKey: "QuoinShotState")
             if let name = defaults.string(forKey: "QuoinShotOpen"), let root = library.rootURL {
                 open(root.appendingPathComponent(name))
+            } else if let root = library.rootURL, let fixture = defaultShotFixture(for: state) {
+                // No explicit -QuoinShotOpen: open the fixture the state needs.
+                open(root.appendingPathComponent(fixture))
             }
-            switch defaults.string(forKey: "QuoinShotState") {
+            switch state {
             case "quickopen":
                 isQuickOpenVisible = true
                 library.quickOpenQuery = "show"
@@ -313,8 +324,23 @@ struct MainWindow: View {
                 try? await Task.sleep(for: .milliseconds(500))
                 library.runLibrarySearch()
             default:
+                // review / properties / reviewmode / codethemes / footnotes
+                // preset the EDITOR chrome, handled in ReaderScreen once the
+                // fixture's ReaderScreen appears.
                 break
             }
+        }
+    }
+
+    /// The fixture a `-QuoinShotState` opens when no `-QuoinShotOpen` is
+    /// given. Review states want the 21-suggestion stress fixture; code +
+    /// footnote states want the showcase (it carries a fenced code block and
+    /// a footnote reference/definition pair).
+    private func defaultShotFixture(for state: String?) -> String? {
+        switch state {
+        case "review", "properties", "reviewmode": return "review-stress-test.md"
+        case "codethemes", "footnotes": return "showcase.md"
+        default: return nil
         }
     }
 
