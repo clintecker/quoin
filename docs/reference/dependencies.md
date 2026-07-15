@@ -124,12 +124,14 @@ CoreGraphics substitute. The forward path is a PureSwift/Silica
 macOS build never pulls Cairo. Quoin's macOS product does not depend on it;
 it matters only to non-Apple hosts.
 
-## Sparkle (justified, not yet wired)
+## Sparkle (auto-update)
 
 Quoin ships by direct distribution, not the App Store. A direct-distribution app
 with no updater strands every shipped bug forever — users won't re-download
 DMGs — so update delivery is a launch requirement, and
-[Sparkle 2.x](https://sparkle-project.org) is the approved answer.
+[Sparkle 2.x](https://sparkle-project.org) is the approved answer. It is wired
+into the app; the full release/notarization/appcast runbook lives in
+[distribution.md](distribution.md).
 
 **Why not hand-roll it:** a safe self-updater is security-critical
 infrastructure — EdDSA-signed appcasts, delta application, atomic app
@@ -138,13 +140,14 @@ actively maintained, MIT, with a documented threat model. A hand-rolled updater
 would be *less* safe, so the policy's own intent — minimize risk — argues *for*
 adopting Sparkle here rather than against it.
 
-Constraints when it lands:
+How it's scoped:
 
-- **App target only.** Sparkle is added to the `App/macOS` project alone;
-  `QuoinCore`/`QuoinRender` stay dependency-clean and Linux-buildable. The
-  policy script gains `sparkle` in `approved_identities` in the same commit.
-- **Privacy.** The update check is Quoin's *only* network traffic. Privacy copy
-  must say exactly that, and the check must be user-disableable (default on,
-  with a first-run disclosure).
-- **Prerequisites.** An Apple Developer ID plus notarization, an appcast host,
-  and an EdDSA key pair (private key in the keychain, never the repo).
+- **App target only.** Sparkle is a dependency of the `App/macOS` Xcode project
+  alone — never the SwiftPM graph — so `QuoinCore`/`QuoinRender` stay
+  dependency-clean and Linux-buildable. The policy script allowlists `sparkle`.
+- **Privacy.** The update check is Quoin's *only* network traffic. It is
+  user-disableable (Settings → Advanced), default on, with a first-run
+  disclosure.
+- **Prerequisites** (human-only, one-time): an Apple Developer ID plus
+  notarization, an appcast host, and an EdDSA key pair (private key in the
+  keychain, never the repo). Full steps in [distribution.md](distribution.md).

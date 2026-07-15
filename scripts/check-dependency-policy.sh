@@ -4,8 +4,13 @@ set -euo pipefail
 # Approved remote packages: swift-markdown is the one permitted THIRD-PARTY
 # code dependency; MermaidKit is FIRST-PARTY (Quoin's own published package,
 # extracted from this repo). Anything else requires written TRD justification.
-approved_urls="https://github.com/swiftlang/swift-markdown.git https://github.com/clintecker/MermaidKit.git https://github.com/clintecker/Vinculum.git"
-approved_identities="swift-markdown swift-cmark mermaidkit vinculum"
+# Sparkle (auto-update) is justified in docs/reference/dependencies.md and lives
+# in the App/macOS Xcode project ONLY — never in the SwiftPM graph this guard
+# inspects, so QuoinCore/QuoinRender stay dependency-clean and Linux-buildable.
+# It is allowlisted here so the guard stays correct if the app's resolution is
+# ever folded in.
+approved_urls="https://github.com/swiftlang/swift-markdown.git https://github.com/clintecker/MermaidKit.git https://github.com/clintecker/Vinculum.git https://github.com/sparkle-project/Sparkle"
+approved_identities="swift-markdown swift-cmark mermaidkit vinculum sparkle"
 
 if ! command -v swift >/dev/null 2>&1; then
   echo "error: swift is required to check Quoin's dependency policy." >&2

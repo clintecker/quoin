@@ -7,6 +7,9 @@ options:
 packages:
   QuoinPackages:
     path: ../..
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
 
 schemes:
   Quoin:
@@ -44,12 +47,16 @@ targets:
         product: QuoinCore
       - package: QuoinPackages
         product: QuoinRender
+      - package: Sparkle
+        product: Sparkle
     entitlements:
       path: Quoin.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.bookmarks.app-scope: true
+        # Sparkle's update check is the app's only network traffic.
+        com.apple.security.network.client: true
     info:
       path: Info.plist
       properties:
@@ -59,6 +66,17 @@ targets:
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: "© 2026 Clint Ecker"
+        # Sparkle auto-update. SUFeedURL and SUPublicEDKey are PLACEHOLDERS —
+        # replace before the first public release (see docs/reference/distribution.md):
+        #   • SUFeedURL   → where you host appcast.xml (e.g. GitHub Releases).
+        #   • SUPublicEDKey → the EdDSA public key printed by Sparkle's
+        #     `generate_keys`; the private half stays in your keychain.
+        SUFeedURL: "https://github.com/clintecker/quoin/releases/latest/download/appcast.xml"
+        SUPublicEDKey: "REPLACE_WITH_YOUR_SPARKLE_EDDSA_PUBLIC_KEY"
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        # Sandboxed apps must let Sparkle launch its installer via XPC.
+        SUEnableInstallerLauncherService: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Markdown Document
             CFBundleTypeRole: Editor

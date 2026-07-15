@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 @main
 struct QuoinApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #if canImport(Sparkle)
+    @StateObject private var updater = SoftwareUpdater()
+    #endif
 
     var body: some Scene {
         // The window VALUE is a library-folder path: plain New Window opens
@@ -23,6 +26,12 @@ struct QuoinApp: App {
             CommandGroup(replacing: .saveItem) {}
             EditCommands()
             AboutCommands()
+            #if canImport(Sparkle)
+            // Quoin ▸ Check for Updates… (Sparkle), directly under About.
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesCommand(updater: updater)
+            }
+            #endif
             // Format menu: the whole formatting grammar lives in the menu
             // bar (discoverable), not only behind invisible shortcuts.
             FormatCommands()
