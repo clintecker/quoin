@@ -12,9 +12,13 @@ agent or a person can write. Zero JavaScript, zero web views, local-only.**
 Quoin edits real `.md` files with a rendered feel. The markdown string and its
 AST are the single source of truth — never an attributed string — so opening a
 file, editing one paragraph, and saving leaves every untouched byte identical.
-Math, diagrams, tables, callouts, footnotes, and a full review / suggestions
-loop all render natively with TextKit 2, CoreText, and CoreGraphics. There is no
-embedded browser, no JS bridge, and no network at runtime.
+Tables, callouts, footnotes, and a full review / suggestions loop all render
+natively with TextKit 2 — and math and diagrams get best-in-class native
+rendering from two first-party partner projects,
+**[Vinculum](https://github.com/clintecker/Vinculum)** (TeX-quality LaTeX) and
+**[MermaidKit](https://github.com/clintecker/MermaidKit)** (native Mermaid),
+drawn with CoreText and CoreGraphics. There is no embedded browser, no JS
+bridge, and no network at runtime.
 
 A *quoin* is the wedge a letterpress printer uses to lock type into the
 chase — the small, precise tool that makes the whole page hold.
@@ -110,16 +114,28 @@ so caret math never lies. Only the span under the caret reveals its `**` / `*` /
 flips back to rendered — and on any projection change the line the caret is on
 does not move on screen.
 
-### Native math and diagrams — no JavaScript
+### Best-in-class native math and diagrams — no JavaScript
 
-LaTeX math is typeset by [Vinculum](https://github.com/clintecker/Vinculum) and
-Mermaid diagrams by [MermaidKit](https://github.com/clintecker/MermaidKit) —
-Quoin's own first-party engines, drawn with CoreText/CoreGraphics. No MathJax,
-no KaTeX, no Mermaid.js, no headless browser, no network. Unsupported LaTeX
-constructs and Mermaid types degrade to a tidy labelled source card whose
-caption *names the command* that isn't typeset — legible, not a shrug.
-Pathological input (10k-deep nesting, unclosed everything) parses to *something*
-without crashing; the torture suite keeps it that way.
+Quoin's math and diagram rendering is best-in-class *and* fully native, powered
+by two first-party partner projects it develops and ships as standalone Swift
+packages:
+
+- **[Vinculum](https://github.com/clintecker/Vinculum)** — a TeX-quality math
+  typesetter (~400 LaTeX commands: inter-atom spacing classes, stacked
+  big-operator limits, radicals with indices, auto-sized fences, `matrix` /
+  `cases` / `aligned` grids), drawn with CoreText. No MathJax, no KaTeX.
+- **[MermaidKit](https://github.com/clintecker/MermaidKit)** — a native Mermaid
+  engine (Sugiyama-style layering, orthogonal elbow routing, cycle-safe layout,
+  UML markers, composite states, front-matter `title`/`config`), drawn with
+  CoreGraphics. No Mermaid.js, no headless browser.
+
+Both are Quoin-owned, independently versioned, CI-tested, and reusable by any
+Swift host — so the quality is a shared, provable asset, not a black box buried
+in the app. No headless browser, no network. Unsupported LaTeX constructs and
+Mermaid types degrade to a tidy labelled source card whose caption *names the
+command* that isn't typeset — legible, not a shrug. Pathological input
+(10k-deep nesting, unclosed everything) parses to *something* without crashing;
+the torture suite keeps it that way.
 
 ---
 
