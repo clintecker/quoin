@@ -89,6 +89,7 @@ only, not committed).
 | `16-properties-panel` | `-QuoinShotState properties` | Properties inspector (front-matter fields) | `docs/images/properties-panel.png` — README, PRODUCT |
 | `17-review-mode` | `-QuoinShotState reviewmode` | `SUGGESTING` status chip active | `docs/images/review-mode.png` — README, PRODUCT |
 | `18-code-theme` | `-QuoinShotState codethemes -QuoinCodeTheme dracula` | Code block in a selectable syntax theme | `docs/images/code-theme.png` — README |
+| `18b-code-theme-light` | `-QuoinShotState codethemes -QuoinCodeTheme github-light` | Code block in a light syntax theme | `docs/images/code-theme-light.png` — README |
 | `19-footnotes` | `-QuoinShotState footnotes` | Footnote reference marker | `docs/images/footnotes.png` — README |
 | `20-code-editing` | `-QuoinShotOpen showcase.md -QuoinShotState codeEdit` | Active code-block editing (diagnostic) | — |
 | `21-code-editing-settled` | same, +1.5s | Settled code-block editing (diagnostic) | — |

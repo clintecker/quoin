@@ -485,9 +485,13 @@ final class DiagramGalleryTests: XCTestCase {
         guard let root = ProcessInfo.processInfo.environment["QUOIN_DOC_DIAGRAMS"] else {
             throw XCTSkip("set QUOIN_DOC_DIAGRAMS=<repo root> to regenerate doc diagram images")
         }
+        // Only diagrams whose PNG is actually embedded in a doc. README's
+        // architecture flowchart renders inline (GitHub honors <br/> line
+        // breaks); it isn't pre-rendered to a PNG because MermaidKit doesn't
+        // yet break on <br/>. data-flow uses single-line labels, so it renders
+        // cleanly and doubles as a fixture.
         let jobs: [(file: String, blockIndex: Int, baseName: String)] = [
-            ("README.md", 0, "architecture-overview"),
-            ("docs/architecture.md", 0, "data-flow"),
+            ("docs/reference/architecture.md", 0, "data-flow"),
         ]
         for job in jobs {
             let text = try String(contentsOfFile: "\(root)/\(job.file)", encoding: .utf8)

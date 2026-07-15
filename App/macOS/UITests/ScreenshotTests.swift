@@ -88,6 +88,7 @@ final class ScreenshotTests: XCTestCase {
             ("properties", nil, [], "16-properties-panel"),
             ("reviewmode", nil, [], "17-review-mode"),
             ("codethemes", nil, ["-QuoinCodeTheme", "dracula"], "18-code-theme"),
+            ("codethemes", nil, ["-QuoinCodeTheme", "github-light"], "18b-code-theme-light"),
             ("footnotes", nil, [], "19-footnotes"),
         ]
 
