@@ -45,6 +45,20 @@ struct EditingChrome: Equatable {
 
 final class QuoinTextView: NSTextView {
 
+    /// While a block is being edited, ⌘A selects ITS editable range, not
+    /// the whole document. This must be an override — ⌘A is a MENU key
+    /// equivalent that sends `selectAll:` straight to the view, never
+    /// through the delegate's doCommandBy hook (live report, twice).
+    var selectAllScope: (() -> NSRange?)?
+
+    override func selectAll(_ sender: Any?) {
+        if let scope = selectAllScope?() {
+            setSelectedRange(scope)
+            return
+        }
+        super.selectAll(sender)
+    }
+
     /// Internal for tests (the incremental-maintenance equivalence check).
     var decorationRuns: [(range: NSRange, decoration: BlockDecoration)] = []
     private var runsAreStale = true

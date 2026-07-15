@@ -303,6 +303,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                                   height: CGFloat.greatestFiniteMagnitude)
         textView.delegate = context.coordinator
+        // ⌘A scope: the active block's editable range while editing.
+        textView.selectAllScope = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.rendered.activeEditableRange
+        }
         textView.drawsBackground = true
         textView.backgroundColor = theme.canvas
         textView.linkTextAttributes = [
