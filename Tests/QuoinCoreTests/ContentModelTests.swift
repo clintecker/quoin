@@ -196,6 +196,28 @@ final class FootnoteTests: XCTestCase {
         XCTAssertEqual(doc.footnotes.count, 1)
         XCTAssertEqual(doc.footnotes[0].id, "ghost")
     }
+
+    /// Adjacent `[^id]:` lines share ONE cmark paragraph; each must still
+    /// yield its own definition (the second used to be swallowed into the
+    /// first's content and re-spliced as a bogus reference).
+    func testAdjacentDefinitionLinesEachKeepTheirContent() {
+        let doc = MarkdownConverter.parse("""
+        One[^a] and two[^b].
+
+        [^a]: Definition A
+        continued on a second line.
+        [^b]: Definition B.
+        """)
+        func body(_ footnote: Footnote) -> String {
+            footnote.blocks.compactMap { block -> String? in
+                if case .paragraph(let inlines) = block.kind { return inlines.plainText }
+                return nil
+            }.joined(separator: "\n")
+        }
+        XCTAssertEqual(doc.footnotes.map(\.id), ["a", "b"])
+        XCTAssertEqual(doc.footnotes.first.map(body), "Definition A continued on a second line.")
+        XCTAssertEqual(doc.footnotes.last.map(body), "Definition B.")
+    }
 }
 
 final class TOCBlockTests: XCTestCase {

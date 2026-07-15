@@ -756,6 +756,23 @@ public struct AttributedRenderer {
                 body.addAttribute(.foregroundColor, value: theme.secondaryTextColor, range: full)
                 output.append(body)
             }
+            // ↩ returns to the footnote's FIRST reference (the coordinator
+            // finds it by its `footnoteID` tag — same string, range lookup).
+            if let backURL = QuoinLink.footnoteBackURL(id: footnote.id) {
+                var back = bodyAttributes()
+                back[.font] = PlatformFont.systemFont(ofSize: 12)
+                back[.foregroundColor] = theme.accent
+                back[.link] = backURL
+                #if canImport(AppKit)
+                back[.toolTip] = "Back to reference"
+                #endif
+                output.append(NSAttributedString(string: " ↩", attributes: back))
+            }
+            // The whole definition (marker, body, backlink) wears the id so
+            // reference clicks and hover peeks resolve its exact range.
+            output.addAttribute(
+                QuoinAttribute.footnoteDefinitionID, value: footnote.id,
+                range: NSRange(location: start, length: output.length - start))
             if let firstBlock = footnote.blocks.first {
                 ranges[firstBlock.id] = NSRange(location: start, length: output.length - start)
             }
@@ -2089,12 +2106,18 @@ public struct AttributedRenderer {
             attrs[.foregroundColor] = theme.textColor
             return renderInlines(children, base: attrs)
 
-        case .footnoteReference(_, let index):
-            // Superscript accent marker; bidirectional jump lands in Phase C.
+        case .footnoteReference(let id, let index):
+            // Superscript accent marker, linked to its definition at the
+            // document tail (click jumps, hover peeks). The id tag is the
+            // ↩ backlink's landing target — the coordinator scans for it.
             var attrs = attributes
             attrs[.font] = PlatformFont.systemFont(ofSize: theme.bodySize * 0.75)
             attrs[.foregroundColor] = theme.accent
             attrs[.baselineOffset] = theme.bodySize * 0.33
+            attrs[QuoinAttribute.footnoteID] = id
+            if let url = QuoinLink.footnoteURL(id: id) {
+                attrs[.link] = url
+            }
             return NSAttributedString(string: "\(index)", attributes: attrs)
 
         case .suggestion(let kind, let markRange, _):

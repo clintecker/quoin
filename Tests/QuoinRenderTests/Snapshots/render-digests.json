@@ -10825,9 +10825,10 @@
       {
         "f" : "10.50/0.00",
         "fg" : "accent",
+        "link" : "quoin-footnote://basic-footnote",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fnref=basic-footnote"
         ],
         "t" : "1"
       },
@@ -10852,9 +10853,10 @@
       {
         "f" : "10.50/0.00",
         "fg" : "accent",
+        "link" : "quoin-footnote://long-footnote",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fnref=long-footnote"
         ],
         "t" : "2"
       },
@@ -11188,7 +11190,7 @@
         "fg" : "accent",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=basic-footnote"
         ],
         "t" : "1. "
       },
@@ -11197,9 +11199,19 @@
         "fg" : "#1D1D1F8C",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=basic-footnote"
         ],
         "t" : "This is a basic footnote. GitHub supports footnotes, but CommonMark core does not define them."
+      },
+      {
+        "f" : "12.00/0.00",
+        "fg" : "accent",
+        "link" : "quoin-footnote-back://basic-footnote",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+          "fndef=basic-footnote"
+        ],
+        "t" : " ↩"
       },
       {
         "f" : "14.00/0.00",
@@ -11215,7 +11227,7 @@
         "fg" : "accent",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=long-footnote"
         ],
         "t" : "2. "
       },
@@ -11224,9 +11236,19 @@
         "fg" : "#1D1D1F8C",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=long-footnote"
         ],
         "t" : "This is the first paragraph of a longer footnote."
+      },
+      {
+        "f" : "12.00/0.00",
+        "fg" : "accent",
+        "link" : "quoin-footnote-back://long-footnote",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+          "fndef=long-footnote"
+        ],
+        "t" : " ↩"
       }
     ]
   },
@@ -24358,9 +24380,10 @@
       {
         "f" : "10.50/0.00",
         "fg" : "accent",
+        "link" : "quoin-footnote://closing-footnote",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fnref=closing-footnote"
         ],
         "t" : "1"
       },
@@ -24515,9 +24538,10 @@
       {
         "f" : "10.50/0.00",
         "fg" : "accent",
+        "link" : "quoin-footnote://combined-extension-note",
         "p" : "lh1.70 ps4.20 psb0.00 fh0.00 hi22.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fnref=combined-extension-note"
         ],
         "t" : "2"
       },
@@ -25343,7 +25367,7 @@
         "fg" : "accent",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=closing-footnote"
         ],
         "t" : "1. "
       },
@@ -25352,9 +25376,19 @@
         "fg" : "#1D1D1F8C",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=closing-footnote"
         ],
         "t" : "Closing footnote near the end of the large content section."
+      },
+      {
+        "f" : "12.00/0.00",
+        "fg" : "accent",
+        "link" : "quoin-footnote-back://closing-footnote",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+          "fndef=closing-footnote"
+        ],
+        "t" : " ↩"
       },
       {
         "f" : "14.00/0.00",
@@ -25370,7 +25404,7 @@
         "fg" : "accent",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=combined-extension-note"
         ],
         "t" : "2. "
       },
@@ -25379,9 +25413,19 @@
         "fg" : "#1D1D1F8C",
         "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
         "q" : [
-
+          "fndef=combined-extension-note"
         ],
         "t" : "Footnote inside the combined extension torture section."
+      },
+      {
+        "f" : "12.00/0.00",
+        "fg" : "accent",
+        "link" : "quoin-footnote-back://combined-extension-note",
+        "p" : "lh1.70 ps12.00 psb0.00 fh0.00 hi0.00 ti0.00 al4 tabs12",
+        "q" : [
+          "fndef=combined-extension-note"
+        ],
+        "t" : " ↩"
       }
     ]
   }

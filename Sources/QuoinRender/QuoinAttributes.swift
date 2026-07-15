@@ -44,6 +44,14 @@ public enum QuoinAttribute {
     /// re-verifies against the CURRENT source before splicing (suggestions
     /// design, S2).
     public static let suggestionRange = NSAttributedString.Key("quoin.suggestionRange")
+    /// Value: `String` — the footnote id on a `[^id]` reference superscript.
+    /// References and definitions live in the SAME attributed string
+    /// (definitions are appended at the document tail), so both directions
+    /// of the jump resolve by scanning for these tags — no separate index.
+    public static let footnoteID = NSAttributedString.Key("quoin.footnoteID")
+    /// Value: `String` — the footnote id spanning a rendered definition
+    /// (marker, body, and ↩ backlink) in the appended footnote section.
+    public static let footnoteDefinitionID = NSAttributedString.Key("quoin.footnoteDefinitionID")
 }
 
 /// Custom URL schemes used for in-document interaction via the text view's
@@ -96,6 +104,41 @@ public enum QuoinLink {
     public static func anchorSlug(from url: URL) -> String? {
         guard url.scheme == anchorScheme else { return nil }
         return url.host
+    }
+
+    /// quoin-footnote://id — a `[^id]` reference; clicking jumps to the
+    /// definition at the document tail (hover peeks it).
+    public static let footnoteScheme = "quoin-footnote"
+    /// quoin-footnote-back://id — the ↩ on a definition; clicking returns
+    /// to the footnote's FIRST reference.
+    public static let footnoteBackScheme = "quoin-footnote-back"
+
+    public static func footnoteURL(id: String) -> URL? {
+        footnoteIDURL(scheme: footnoteScheme, id: id)
+    }
+
+    public static func footnoteBackURL(id: String) -> URL? {
+        footnoteIDURL(scheme: footnoteBackScheme, id: id)
+    }
+
+    public static func footnoteID(from url: URL) -> String? {
+        guard url.scheme == footnoteScheme else { return nil }
+        return url.host
+    }
+
+    public static func footnoteBackID(from url: URL) -> String? {
+        guard url.scheme == footnoteBackScheme else { return nil }
+        return url.host
+    }
+
+    private static func footnoteIDURL(scheme: String, id: String) -> URL? {
+        // URLComponents rejects host-invalid characters (an id can hold
+        // almost anything but whitespace/`]`); an unlinkable id degrades
+        // to a plain superscript rather than a malformed URL.
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = id
+        return components.url
     }
 }
 #endif

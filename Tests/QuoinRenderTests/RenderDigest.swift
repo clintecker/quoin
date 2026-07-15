@@ -192,6 +192,8 @@ enum RenderDigester {
         if attrs[QuoinAttribute.embedBlock] != nil { q.append("embed") }
         if let s = attrs[QuoinAttribute.embedSourceStart] as? NSNumber { q.append("embedStart=\(s.intValue)") }
         if attrs[QuoinAttribute.pendingContent] != nil { q.append("pending") }
+        if let id = attrs[QuoinAttribute.footnoteID] as? String { q.append("fnref=\(id)") }
+        if let id = attrs[QuoinAttribute.footnoteDefinitionID] as? String { q.append("fndef=\(id)") }
         if attrs[.attachment] is NSTextAttachment { q.append("attachment") }
         run.q = q.sorted()
 

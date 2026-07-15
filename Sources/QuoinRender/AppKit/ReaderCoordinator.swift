@@ -412,6 +412,31 @@ extension MarkdownReaderView {
                 }
                 return true
             }
+            if let id = QuoinLink.footnoteID(from: url) {
+                // A [^id] reference: jump to its definition at the document
+                // tail. Definitions live in the SAME attributed string, so
+                // the target is a tagged-range lookup, not a resolver call.
+                if let range = footnoteRun(id: id, tag: QuoinAttribute.footnoteDefinitionID, in: textView) {
+                    parent.onAnchorJump?(topVisibleBlockID(in: textView))
+                    scrollBlockToTop(range, in: textView)
+                }
+                return true
+            }
+            if let id = QuoinLink.footnoteBackID(from: url) {
+                // A definition's ↩: return to the FIRST reference. Scroll
+                // its enclosing block (a superscript's own rect is a sliver);
+                // the tagged run is the fallback if the block map is stale.
+                if let reference = footnoteRun(id: id, tag: QuoinAttribute.footnoteID, in: textView) {
+                    parent.onAnchorJump?(topVisibleBlockID(in: textView))
+                    if let blockID = blockID(atCharIndex: reference.location),
+                       let blockRange = blockRanges[blockID] {
+                        scrollBlockToTop(blockRange, in: textView)
+                    } else {
+                        scrollBlockToTop(reference, in: textView)
+                    }
+                }
+                return true
+            }
             return false // system handles web links
         }
 
@@ -419,6 +444,26 @@ extension MarkdownReaderView {
             if let url = link as? URL { return url }
             if let string = link as? String { return URL(string: string) }
             return nil
+        }
+
+        /// The FIRST run tagged `tag == id` in document order — for
+        /// `footnoteID` that is the footnote's first reference (the ↩
+        /// backlink's contract), for `footnoteDefinitionID` the definition
+        /// (each id has exactly one).
+        private func footnoteRun(
+            id: String, tag: NSAttributedString.Key, in textView: NSTextView
+        ) -> NSRange? {
+            guard let storage = textView.textContentStorage?.textStorage else { return nil }
+            var found: NSRange?
+            storage.enumerateAttribute(
+                tag, in: NSRange(location: 0, length: storage.length)
+            ) { value, range, stop in
+                if value as? String == id {
+                    found = range
+                    stop.pointee = true
+                }
+            }
+            return found
         }
 
         // MARK: Editing
@@ -1571,13 +1616,16 @@ extension MarkdownReaderView {
         private var linkHoverDwell: DispatchWorkItem?
         private var linkPreviewURL: URL?
 
-        /// Hovering an INTERNAL anchor link peeks its target section in a
-        /// small card after a short dwell (Wikipedia-style); external
-        /// links stay quiet. Semitransient — moves away, it goes away.
+        /// Hovering an INTERNAL anchor link peeks its target section — and a
+        /// footnote reference its definition — in a small card after a short
+        /// dwell (Wikipedia-style); external links stay quiet.
+        /// Semitransient — moves away, it goes away.
         func handleLinkHover(url: URL?, at rect: NSRect) {
             linkHoverDwell?.cancel()
             linkHoverDwell = nil
-            guard let url, QuoinLink.anchorSlug(from: url) != nil else {
+            guard let url,
+                  QuoinLink.anchorSlug(from: url) != nil
+                    || QuoinLink.footnoteID(from: url) != nil else {
                 if linkPreviewPopover?.isShown == true { linkPreviewPopover?.close() }
                 linkPreviewURL = nil
                 return
@@ -1600,15 +1648,10 @@ extension MarkdownReaderView {
             // The dwell timer can outlive the view's window (tab switch
             // mid-hover); `NSPopover.show` raises on a windowless view.
             guard let textView, textView.window != nil,
-                  let slug = QuoinLink.anchorSlug(from: url),
-                  let blockID = parent.anchorResolver(slug),
                   let storage = textView.textContentStorage?.textStorage,
-                  let range = blockRanges[blockID],
-                  range.location < storage.length
+                  let snippetRange = previewSnippetRange(for: url, in: textView, storage: storage)
             else { return }
-            let length = min(storage.length - range.location, max(range.length, 600))
-            let snippet = storage.attributedSubstring(
-                from: NSRange(location: range.location, length: length))
+            let snippet = storage.attributedSubstring(from: snippetRange)
 
             let label = NSTextField(wrappingLabelWithString: "")
             label.attributedStringValue = snippet
@@ -1630,6 +1673,32 @@ extension MarkdownReaderView {
             popover.show(relativeTo: rect, of: textView, preferredEdge: .maxY)
             linkPreviewPopover = popover
             linkPreviewURL = url
+        }
+
+        /// What the hover card shows: an anchor link peeks the target
+        /// section's opening (its block range, padded to a readable
+        /// minimum); a footnote reference peeks the definition's EXACT
+        /// tagged range — nothing before, nothing after.
+        private func previewSnippetRange(
+            for url: URL, in textView: NSTextView, storage: NSTextStorage
+        ) -> NSRange? {
+            if let slug = QuoinLink.anchorSlug(from: url) {
+                guard let blockID = parent.anchorResolver(slug),
+                      let range = blockRanges[blockID],
+                      range.location < storage.length
+                else { return nil }
+                let length = min(storage.length - range.location, max(range.length, 600))
+                return NSRange(location: range.location, length: length)
+            }
+            if let id = QuoinLink.footnoteID(from: url) {
+                guard let range = footnoteRun(id: id, tag: QuoinAttribute.footnoteDefinitionID, in: textView),
+                      range.location < storage.length
+                else { return nil }
+                return NSRange(
+                    location: range.location,
+                    length: min(range.length, storage.length - range.location))
+            }
+            return nil
         }
 
         /// Smart paste (idea #4), scoped to active-block editing: a URL

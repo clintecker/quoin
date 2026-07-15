@@ -723,19 +723,25 @@ public enum MarkdownConverter {
                 return [makeBlock(kind: .tableOfContents, range: range)]
             }
 
-            // Footnote definition: `[^id]: content` — removed from the block
-            // flow and gathered at document end.
-            if let slice, let definition = parseFootnoteDefinition(slice) {
-                let fragment = Markdown.Document(parsing: definition.content)
-                var blocks: [Block] = []
-                for child in fragment.children {
-                    if let para = child as? Markdown.Paragraph {
-                        let inlines = postProcess(convertInlines(para.children))
-                        blocks.append(makeBlock(kind: .paragraph(inlines: inlines), range: range))
+            // Footnote definitions: `[^id]: content` — removed from the block
+            // flow and gathered at document end. Consecutive definition lines
+            // share ONE cmark paragraph, so the slice can hold several.
+            if let slice {
+                let definitions = parseFootnoteDefinitions(slice)
+                if !definitions.isEmpty {
+                    for definition in definitions {
+                        let fragment = Markdown.Document(parsing: definition.content)
+                        var blocks: [Block] = []
+                        for child in fragment.children {
+                            if let para = child as? Markdown.Paragraph {
+                                let inlines = postProcess(convertInlines(para.children))
+                                blocks.append(makeBlock(kind: .paragraph(inlines: inlines), range: range))
+                            }
+                        }
+                        footnoteDefinitions[definition.id] = blocks
                     }
+                    return []
                 }
-                footnoteDefinitions[definition.id] = blocks
-                return []
             }
 
             let inlines: [Inline]
@@ -781,6 +787,33 @@ public enum MarkdownConverter {
             let content = String(slice[slice.index(close, offsetBy: 2)...])
                 .trimmingCharacters(in: .whitespaces)
             return (id: id, content: content)
+        }
+
+        /// Every definition in a paragraph slice that OPENS with one:
+        /// adjacent `[^id]:` lines share a single cmark paragraph, so each
+        /// definition line starts a new entry and other lines continue the
+        /// current one. Empty when the slice isn't a definition paragraph.
+        func parseFootnoteDefinitions(_ slice: String) -> [(id: String, content: String)] {
+            guard parseFootnoteDefinition(slice) != nil else { return [] }
+            var definitions: [(id: String, content: String)] = []
+            var current: (id: String, lines: [String])?
+            // `\r\n` is one grapheme: split(separator: "\n") would keep CRLF
+            // lines glued (line-walker rule).
+            for line in slice.replacingOccurrences(of: "\r\n", with: "\n")
+                .split(separator: "\n", omittingEmptySubsequences: false) {
+                if let next = parseFootnoteDefinition(String(line)) {
+                    if let current {
+                        definitions.append((current.id, current.lines.joined(separator: "\n")))
+                    }
+                    current = (next.id, [next.content])
+                } else {
+                    current?.lines.append(String(line))
+                }
+            }
+            if let current {
+                definitions.append((current.id, current.lines.joined(separator: "\n")))
+            }
+            return definitions
         }
 
         /// Detects a design-spec callout: block quote whose first paragraph
