@@ -1,3 +1,6 @@
+// Guarded like its siblings: AttributedRenderer exists only on Apple
+// platforms (QuoinRender's engine files are AppKit/UIKit-gated).
+#if canImport(AppKit) || canImport(UIKit)
 import XCTest
 import QuoinCore
 @testable import QuoinRender
@@ -106,3 +109,5 @@ final class BlockPresentationTests: XCTestCase {
         XCTAssertFalse(reading.revealVerbatimCode)
     }
 }
+
+#endif

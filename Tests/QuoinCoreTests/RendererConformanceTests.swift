@@ -1,5 +1,7 @@
 import XCTest
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 @testable import QuoinCore
 
 /// Renders every fixture module in `Fixtures/renderer/` through the core

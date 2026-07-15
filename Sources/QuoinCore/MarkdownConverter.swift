@@ -416,14 +416,7 @@ public enum MarkdownConverter {
     }
 
     private static func wordCount(in text: String) -> Int {
-        var words = 0
-        text.enumerateSubstrings(
-            in: text.startIndex..<text.endIndex,
-            options: [.byWords, .substringNotRequired]
-        ) { _, _, _, _ in
-            words += 1
-        }
-        return words
+        WordCounting.count(in: text)
     }
 
     /// Shifts every block at `from+1`… by `delta` bytes AND re-derives block
@@ -1140,14 +1133,7 @@ public enum MarkdownConverter {
 
         mutating func finalizeStats() {
             stats.characterCount = source.count
-            var words = 0
-            proseBuffer.enumerateSubstrings(
-                in: proseBuffer.startIndex..<proseBuffer.endIndex,
-                options: [.byWords, .substringNotRequired]
-            ) { _, _, _, _ in
-                words += 1
-            }
-            stats.wordCount = words
+            stats.wordCount = WordCounting.count(in: proseBuffer)
         }
     }
 }
