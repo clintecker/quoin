@@ -728,6 +728,10 @@ public struct MarkdownReaderView: NSViewRepresentable {
     /// final scroll + selection so the persistent model can hand it back when
     /// this tab is shown again (#22).
     public static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        // Popovers, the hover dwell, and a mid-fade flash ring are all
+        // anchored to the dying text view — close them here or a shown
+        // popover floats on as an orphaned panel (#72).
+        coordinator.teardownTransientChrome()
         guard let textView = coordinator.textView else { return }
         coordinator.parent.onCaptureViewport?(
             ViewportSnapshot(

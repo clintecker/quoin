@@ -43,6 +43,12 @@ extension MarkdownReaderView {
         var appliedAnnotationGeneration = 0
         /// The live compose popover (comment/replacement body input).
         var annotationPopover: NSPopover?
+        /// The in-flight card→mark flash ring. Its frame is frozen at
+        /// flash time and its removal rides a 1.8s animation completion,
+        /// so a second flash must replace it (stacked rings) and editor
+        /// teardown must remove it explicitly (a mid-fade ring outlives
+        /// relayout as a stray outline — #72).
+        weak var activeFlashRing: FlashRingView?
         var appliedQuery: String?
         var appliedOrdinal: Int = -1
         var appliedCaretGeneration: Int = -1
@@ -1207,9 +1213,14 @@ extension MarkdownReaderView {
                 }
             }
 
+            // One live ring at a time: the predecessor's frame is stale
+            // against any reflow that happened since ITS flash, so a
+            // repeat flash replaces it instead of stacking.
+            activeFlashRing?.removeFromSuperview()
             let ring = FlashRingView(frame: rect)
             ring.strokeColor = parent.theme.accent
             textView.addSubview(ring)
+            activeFlashRing = ring
             // The flash is invisible to VoiceOver — announce the jump so
             // the card→document affordance exists non-visually too
             // (panel review).
@@ -1438,10 +1449,30 @@ extension MarkdownReaderView {
             }
         }
 
+        /// Editor teardown (tab switch): transient chrome anchored to the
+        /// dying text view must not outlive it. A shown NSPopover survives
+        /// its positioning view's removal as an orphaned floating panel,
+        /// and a mid-fade flash ring would wait on its animation
+        /// completion; the hover dwell would later call `show` against a
+        /// windowless view, which raises.
+        func teardownTransientChrome() {
+            linkHoverDwell?.cancel()
+            linkHoverDwell = nil
+            if annotationPopover?.isShown == true { annotationPopover?.close() }
+            annotationPopover = nil
+            closeLinkPreview()
+            activeFlashRing?.removeFromSuperview()
+            activeFlashRing = nil
+        }
+
         private func presentComposer(
             prompt: String, initialText: String, commitTitle: String,
             in textView: NSTextView, onCommit: @escaping (String) -> Void
         ) {
+            // `NSPopover.show` raises on a view with no window, and
+            // annotation commands arrive through updateNSView, which can
+            // run before the window exists (see the first-focus claim).
+            guard textView.window != nil else { return }
             annotationPopover?.performClose(nil)
             let controller = AnnotationComposerController(
                 prompt: prompt, initialText: initialText, commitTitle: commitTitle,
@@ -1559,8 +1590,16 @@ extension MarkdownReaderView {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
         }
 
+        private func closeLinkPreview() {
+            if linkPreviewPopover?.isShown == true { linkPreviewPopover?.close() }
+            linkPreviewPopover = nil
+            linkPreviewURL = nil
+        }
+
         private func presentLinkPreview(for url: URL, at rect: NSRect) {
-            guard let textView,
+            // The dwell timer can outlive the view's window (tab switch
+            // mid-hover); `NSPopover.show` raises on a windowless view.
+            guard let textView, textView.window != nil,
                   let slug = QuoinLink.anchorSlug(from: url),
                   let blockID = parent.anchorResolver(slug),
                   let storage = textView.textContentStorage?.textStorage,
