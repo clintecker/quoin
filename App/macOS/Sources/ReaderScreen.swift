@@ -21,6 +21,9 @@ struct ReaderScreen: View {
     private var theme: Theme { Theme() }
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("QuoinShowStatusBar") private var showStatusBar = true
+    /// Code-canvas theme (#63): colors are BAKED into the projection, so a
+    /// change must re-render, same as an appearance flip.
+    @AppStorage("QuoinCodeTheme") private var codeTheme = "match"
 
     @State private var formatCommand: FormatCommand?
     @State private var formatGeneration = 0
@@ -229,6 +232,9 @@ struct ReaderScreen: View {
             // rendered projection has the old palette baked into its
             // attributed string, so the model must re-render with a fresh
             // Theme.
+            model.refreshTheme()
+        }
+        .onChange(of: codeTheme) {
             model.refreshTheme()
         }
         .inspector(isPresented: $isOutlineVisible) {

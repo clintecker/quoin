@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import QuoinRender
 
 /// The appearance preference: follow the system, or pin light/dark.
 /// Persisted in UserDefaults ("QuoinAppearance") and applied to
@@ -50,6 +51,7 @@ struct SettingsView: View {
     @AppStorage("QuoinShowStatusBar") private var showStatusBar = true
     @AppStorage("QuoinReviewerName") private var reviewerName = ""
     @AppStorage("QuoinLaunchBehavior") private var launchBehavior = "restore"
+    @AppStorage("QuoinCodeTheme") private var codeTheme = "match"
 
     var body: some View {
         Form {
@@ -69,6 +71,26 @@ struct SettingsView: View {
             .padding(.bottom, 6)
 
             Toggle("Show status bar", isOn: $showStatusBar)
+
+            Picker("Code blocks:", selection: $codeTheme) {
+                Text("Match Appearance").tag("match")
+                Divider()
+                ForEach(CodePalette.registry.filter(\.isDark)) { palette in
+                    Text(palette.name).tag(palette.id)
+                }
+                Divider()
+                ForEach(CodePalette.registry.filter { !$0.isDark }) { palette in
+                    Text(palette.name).tag(palette.id)
+                }
+            }
+            .frame(maxWidth: 320)
+
+            LabeledContent("") {
+                Text("Syntax theme for code blocks. Match Appearance pairs GitHub Light with Graphite.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.bottom, 6)
 
             Picker("When Quoin opens:", selection: $launchBehavior) {
                 Text("Open the folders from last time").tag("restore")

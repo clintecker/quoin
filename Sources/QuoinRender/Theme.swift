@@ -156,10 +156,60 @@ public struct Theme: Sendable {
     public var inlineCodeFill: PlatformColor { Palette.inlineCodeFill }
 
     /// `surface.code` #1E2430 — the SAME in both appearances (handoff rule).
-    public var codeSurface: PlatformColor { Palette.codeSurface }
+    public var codeSurface: PlatformColor { Theme.codeColor(\.surface) }
 
-    /// Code block body text #D6DCE6.
-    public var codeText: PlatformColor { Palette.codeText }
+    /// Code block body text.
+    public var codeText: PlatformColor { Theme.codeColor(\.text) }
+
+    /// Resolves one palette role through the Settings choice: a pinned
+    /// palette is static; "match" composes the light/dark pair
+    /// appearance-dynamically. Every color is created ONCE (static
+    /// storage): a fresh dynamic-provider NSColor per access would break
+    /// attribute equality between the patch paths and the full render —
+    /// ProjectorEquivalenceTests caught exactly that.
+    static func codeColor(_ role: KeyPath<ResolvedCodeColors, PlatformColor>) -> PlatformColor {
+        let choice = UserDefaults.standard.string(forKey: "QuoinCodeTheme") ?? "match"
+        return (ResolvedCodeColors.byID[choice] ?? ResolvedCodeColors.match)[keyPath: role]
+    }
+
+    struct ResolvedCodeColors {
+        let surface: PlatformColor
+        let text: PlatformColor
+        let keyword: PlatformColor
+        let function: PlatformColor
+        let type: PlatformColor
+        let comment: PlatformColor
+        let string: PlatformColor
+        let number: PlatformColor
+
+        init(_ palette: CodePalette) {
+            surface = rgbStatic(palette.surface)
+            text = rgbStatic(palette.text)
+            keyword = rgbStatic(palette.keyword)
+            function = rgbStatic(palette.function)
+            type = rgbStatic(palette.type)
+            comment = rgbStatic(palette.comment)
+            string = rgbStatic(palette.string)
+            number = rgbStatic(palette.number)
+        }
+
+        init(light: CodePalette, dark: CodePalette) {
+            surface = themeDynamic(light: rgbStatic(light.surface), dark: rgbStatic(dark.surface))
+            text = themeDynamic(light: rgbStatic(light.text), dark: rgbStatic(dark.text))
+            keyword = themeDynamic(light: rgbStatic(light.keyword), dark: rgbStatic(dark.keyword))
+            function = themeDynamic(light: rgbStatic(light.function), dark: rgbStatic(dark.function))
+            type = themeDynamic(light: rgbStatic(light.type), dark: rgbStatic(dark.type))
+            comment = themeDynamic(light: rgbStatic(light.comment), dark: rgbStatic(dark.comment))
+            string = themeDynamic(light: rgbStatic(light.string), dark: rgbStatic(dark.string))
+            number = themeDynamic(light: rgbStatic(light.number), dark: rgbStatic(dark.number))
+        }
+
+        static let byID: [String: ResolvedCodeColors] = Dictionary(
+            uniqueKeysWithValues: CodePalette.registry.map { ($0.id, ResolvedCodeColors($0)) })
+        static let match = ResolvedCodeColors(
+            light: CodePalette.registry.first { $0.id == CodePalette.matchLightID }!,
+            dark: CodePalette.registry.first { $0.id == CodePalette.matchDarkID }!)
+    }
 
     private enum Palette {
         static let ink = themeDynamic(light: rgbStatic(0x1D1D1F), dark: rgbStatic(0xF2F2F4))
@@ -171,8 +221,7 @@ public struct Theme: Sendable {
         static let canvas = themeDynamic(light: rgbStatic(0xFFFFFF), dark: rgbStatic(0x1B1B1D))
         static let sidebarSurface = themeDynamic(light: rgbStatic(0xF5F5F7), dark: rgbStatic(0x232326))
         static let inlineCodeFill = themeDynamic(light: rgbStatic(0xF2F2F4), dark: rgbStatic(0x2E2E32))
-        static let codeSurface = rgbStatic(0x1E2430)
-        static let codeText = rgbStatic(0xD6DCE6)
+
         static let hairline = themeDynamic(
             light: rgbStatic(0x000000, alpha: 0.12), dark: rgbStatic(0xFFFFFF, alpha: 0.12))
         static let quoteRule = themeDynamic(
@@ -189,12 +238,12 @@ public struct Theme: Sendable {
 
     /// Syntax token colors (one theme, both appearances).
     public enum CodeToken {
-        public static let keyword = rgbStatic(0xC792EA)
-        public static let function = rgbStatic(0x82AAFF)
-        public static let type = rgbStatic(0xFFCB6B)
-        public static let comment = rgbStatic(0x697794)
-        public static let string = rgbStatic(0xC3E88D)
-        public static let number = rgbStatic(0xF78C6C)
+        public static var keyword: PlatformColor { Theme.codeColor(\.keyword) }
+        public static var function: PlatformColor { Theme.codeColor(\.function) }
+        public static var type: PlatformColor { Theme.codeColor(\.type) }
+        public static var comment: PlatformColor { Theme.codeColor(\.comment) }
+        public static var string: PlatformColor { Theme.codeColor(\.string) }
+        public static var number: PlatformColor { Theme.codeColor(\.number) }
     }
 
     /// System accent (`controlAccentColor`); #2A6FDB is the marketing value.
@@ -319,3 +368,79 @@ extension Theme {
     }
 }
 #endif
+
+
+// MARK: - Code palettes (#63)
+
+/// One curated syntax palette: six token roles + canvas. Values are the
+/// canonical hues from each MIT-licensed theme (One Dark/Light — Atom;
+/// Dracula; GitHub — Primer; Solarized — Ethan Schoonover; Nord; Tokyo
+/// Night; Catppuccin), plus Quoin's house Graphite.
+public struct CodePalette: Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let isDark: Bool
+    public let surface: UInt32
+    public let text: UInt32
+    public let keyword: UInt32
+    public let function: UInt32
+    public let type: UInt32
+    public let comment: UInt32
+    public let string: UInt32
+    public let number: UInt32
+
+    /// The pair "Match appearance" composes.
+    public static let matchLightID = "github-light"
+    public static let matchDarkID = "graphite"
+
+    public static let registry: [CodePalette] = [
+        CodePalette(id: "graphite", name: "Graphite", isDark: true,
+                    surface: 0x1E2430, text: 0xD6DCE6, keyword: 0xC792EA,
+                    function: 0x82AAFF, type: 0xFFCB6B, comment: 0x697794,
+                    string: 0xC3E88D, number: 0xF78C6C),
+        CodePalette(id: "one-dark", name: "One Dark", isDark: true,
+                    surface: 0x282C34, text: 0xABB2BF, keyword: 0xC678DD,
+                    function: 0x61AFEF, type: 0xE5C07B, comment: 0x5C6370,
+                    string: 0x98C379, number: 0xD19A66),
+        CodePalette(id: "dracula", name: "Dracula", isDark: true,
+                    surface: 0x282A36, text: 0xF8F8F2, keyword: 0xFF79C6,
+                    function: 0x50FA7B, type: 0x8BE9FD, comment: 0x6272A4,
+                    string: 0xF1FA8C, number: 0xBD93F9),
+        CodePalette(id: "github-dark", name: "GitHub Dark", isDark: true,
+                    surface: 0x0D1117, text: 0xE6EDF3, keyword: 0xFF7B72,
+                    function: 0xD2A8FF, type: 0xFFA657, comment: 0x8B949E,
+                    string: 0xA5D6FF, number: 0x79C0FF),
+        CodePalette(id: "solarized-dark", name: "Solarized Dark", isDark: true,
+                    surface: 0x002B36, text: 0x839496, keyword: 0x859900,
+                    function: 0x268BD2, type: 0xB58900, comment: 0x586E75,
+                    string: 0x2AA198, number: 0xD33682),
+        CodePalette(id: "nord", name: "Nord", isDark: true,
+                    surface: 0x2E3440, text: 0xD8DEE9, keyword: 0x81A1C1,
+                    function: 0x88C0D0, type: 0x8FBCBB, comment: 0x616E88,
+                    string: 0xA3BE8C, number: 0xB48EAD),
+        CodePalette(id: "tokyo-night", name: "Tokyo Night", isDark: true,
+                    surface: 0x1A1B26, text: 0xA9B1D6, keyword: 0xBB9AF7,
+                    function: 0x7AA2F7, type: 0x2AC3DE, comment: 0x565F89,
+                    string: 0x9ECE6A, number: 0xFF9E64),
+        CodePalette(id: "catppuccin-mocha", name: "Catppuccin Mocha", isDark: true,
+                    surface: 0x1E1E2E, text: 0xCDD6F4, keyword: 0xCBA6F7,
+                    function: 0x89B4FA, type: 0xF9E2AF, comment: 0x6C7086,
+                    string: 0xA6E3A1, number: 0xFAB387),
+        CodePalette(id: "one-light", name: "One Light", isDark: false,
+                    surface: 0xFAFAFA, text: 0x383A42, keyword: 0xA626A4,
+                    function: 0x4078F2, type: 0xC18401, comment: 0xA0A1A7,
+                    string: 0x50A14F, number: 0x986801),
+        CodePalette(id: "github-light", name: "GitHub Light", isDark: false,
+                    surface: 0xF6F8FA, text: 0x24292F, keyword: 0xCF222E,
+                    function: 0x8250DF, type: 0x953800, comment: 0x6E7781,
+                    string: 0x0A3069, number: 0x0550AE),
+        CodePalette(id: "solarized-light", name: "Solarized Light", isDark: false,
+                    surface: 0xFDF6E3, text: 0x657B83, keyword: 0x859900,
+                    function: 0x268BD2, type: 0xB58900, comment: 0x93A1A1,
+                    string: 0x2AA198, number: 0xD33682),
+        CodePalette(id: "catppuccin-latte", name: "Catppuccin Latte", isDark: false,
+                    surface: 0xEFF1F5, text: 0x4C4F69, keyword: 0x8839EF,
+                    function: 0x1E66F5, type: 0xDF8E1D, comment: 0x9CA0B0,
+                    string: 0x40A02B, number: 0xFE640B),
+    ]
+}
