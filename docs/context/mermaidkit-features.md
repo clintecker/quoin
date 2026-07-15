@@ -163,10 +163,11 @@ gaps/margins). Input guards: 50k chars / 500 edges max.
 
 ## Assets & examples
 
-Rendered examples of every type: Quoin repo `docs/images/diagrams/` and
-`docs/images/gallery-diagrams.png`; `docs/diagram-gallery.md` documents
-the gallery. The 30 canonical fixture sources live in the MermaidKit repo
-under `Fixtures/diagrams/`.
+Rendered examples of every type live in the MermaidKit repo's CI gallery (the
+per-type renders are owned there, not vendored into Quoin). Quoin keeps only
+`docs/images/gallery-diagrams.png` (a mixed sampler) and
+`docs/history/diagram-gallery.md`, which documents Quoin-side behaviour. The 30
+canonical fixture sources live in the MermaidKit repo under `Fixtures/diagrams/`.
 
 ## Version & license
 

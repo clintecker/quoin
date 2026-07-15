@@ -43,7 +43,7 @@ must defer engine depth to the engine repos.
   screenshot job to capture the NEW surfaces (review panel, comment
   creation, Review Mode, Properties, footnotes, code themes) so images stay
   current *on every push*, not hand-captured once. A screenshot manifest
-  (`docs/screenshots.md`) records every shot + its launch args.
+  (`docs/guide/screenshots.md`) records every shot + its launch args.
 - **B4. Feature/capability doc + claim audit** — a features doc covering
   review/commenting/properties/footnotes/themes; audit PRODUCT.md and
   architecture.md claims against the code, report any drift.

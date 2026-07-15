@@ -280,4 +280,4 @@ per-stage verdicts, which the plan incorporates:
 New editing *capabilities* (multi-block selection, block drag beyond today,
 whole-document raw-source view) are out of scope — this is about making the
 existing mode set correct and clean. Diagram/math *coverage* is tracked
-separately (`docs/rendering-roadmap.md`).
+separately (`docs/history/rendering-roadmap.md`).

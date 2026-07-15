@@ -9,11 +9,11 @@ Swift/SwiftUI + TextKit 2, zero JavaScript at runtime, local-only.
    — the visual/interaction spec. High fidelity: colors, type ramp, spacing,
    and states are final. Canonical option choices: 1a Graphite, 1e classic
    tree sidebar, 1h ruled outline, 1k rounded text styling.
-2. `docs/TRD.html` — architecture (native engines, session model). Where it
+2. `docs/archive/TRD.html` — architecture (native engines, session model). Where it
    conflicts with the handoff, the handoff wins; note the conflict.
-3. `docs/PRD.html` — original viewer-scoped PRD, superseded by the handoff
+3. `docs/archive/PRD.html` — original viewer-scoped PRD, superseded by the handoff
    for scope but still valid for performance budgets and privacy stance.
-4. `docs/architecture.md` — contributor-level machinery map (data flow,
+4. `docs/reference/architecture.md` — contributor-level machinery map (data flow,
    editing model, math/diagram engines, invariants). `README.md` carries
    the public support matrix; keep both in sync with real capabilities.
 

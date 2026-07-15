@@ -8,9 +8,9 @@ network dependency for editing local notes.
 Before changing behavior, read these project sources in order:
 
 1. `docs/design/handoff.md` and `docs/design/Markdown Editor Design Doc.dc.html`
-2. `docs/TRD.html`
-3. `docs/PRD.html`
-4. `docs/architecture.md`
+2. `docs/archive/TRD.html`
+3. `docs/archive/PRD.html`
+4. `docs/reference/architecture.md`
 
 The handoff wins on visual and interaction details. If it conflicts with the
 TRD, keep the handoff behavior and note the conflict in the implementation or

@@ -45,7 +45,7 @@ Feature groups are labeled **G1–G9** and referenced by shorthand throughout.
 ### G1 — WYSIWYG editing on a plain-text source
 
 The editor is a projection; edits mutate the markdown string and the renderer
-re-projects. See `docs/INVARIANTS.md`, `docs/design/editor-modes.md`.
+re-projects. See `docs/reference/invariants.md`, `docs/design/editor-modes.md`.
 
 | Feature | Specific |
 | :--- | :--- |
@@ -121,7 +121,7 @@ resolutions are atomic, byte-safe source edits. See
 ### G7 — Editing responsiveness
 
 Incremental parse + patch rendering keep the edit loop cheap on large
-documents. Baselines in `docs/performance-baselines.md`.
+documents. Baselines in `docs/reference/performance.md`.
 
 | Metric (release, ~1.2 MB / 5,402-line document, 2,701 blocks) | Value |
 | :--- | ---: |
@@ -152,9 +152,9 @@ ranges, so a document containing live marks re-anchors via a full parse (guard).
 | Feature | Specific |
 | :--- | :--- |
 | Test suite | 634 package tests, 0 failures; performance budgets (PerformanceTests) and pathological inputs (TortureTests). |
-| Invariant enforcement | Named invariants (`docs/INVARIANTS.md`) with dedicated tests: viewport anchoring, reveal fidelity, projection equivalence, decoration geometry. |
+| Invariant enforcement | Named invariants (`docs/reference/invariants.md`) with dedicated tests: viewport anchoring, reveal fidelity, projection equivalence, decoration geometry. |
 | No flaky tests | Intermittent failures are diagnosed to a definitive cause, never labeled environmental (ADR-0007); corpus tests assert minimum check counts so silent bailing cannot fake a pass. |
-| Decision records | `docs/adr/` records non-obvious roads taken and rejected, each with cited evidence. |
+| Decision records | `docs/reference/adr/` records non-obvious roads taken and rejected, each with cited evidence. |
 | Cross-platform | Core suite green on Linux (147 headless tests); word-count parity pinned across platforms. |
 | Screenshot automation | Launch arguments preset app state; CI publishes PNGs to the `ci-screenshots` branch on every push. |
 
@@ -199,16 +199,16 @@ refresh automatically.
 | Module | Content |
 | :--- | :--- |
 | `README.md` | Public overview + support matrix (the capability source of truth) |
-| `docs/architecture.md` | Contributor-level machinery map (data flow, editing model, engines, invariants) |
-| `docs/INVARIANTS.md` | The named invariants and the tests that enforce them |
-| `docs/adr/` | Architecture Decision Records (roads taken and rejected, with evidence) |
+| `docs/reference/architecture.md` | Contributor-level machinery map (data flow, editing model, engines, invariants) |
+| `docs/reference/invariants.md` | The named invariants and the tests that enforce them |
+| `docs/reference/adr/` | Architecture Decision Records (roads taken and rejected, with evidence) |
 | `docs/design/handoff.md` | The visual/interaction spec (colors, type ramp, spacing, states) |
 | `docs/design/suggestions.md` | The review loop design (RDFM/CriticMarkup, S1–S4) |
 | `docs/design/editor-modes.md`, `editor-modes-plan.md` | The projection/editing-mode architecture |
 | `docs/design/embed-editing-ux.md` | Embed reveal + side-panel preview UX |
 | `docs/design/platforms.md` | iPhone/iPad and Linux direction (five-squad debated) |
-| `docs/performance-baselines.md` | Editing-responsiveness benchmarks |
-| `docs/TRD.html`, `docs/PRD.html` | Architecture and original scoped PRD |
+| `docs/reference/performance.md` | Editing-responsiveness benchmarks |
+| `docs/archive/TRD.html`, `docs/archive/PRD.html` | Architecture and original scoped PRD |
 | MermaidKit repo | Diagram engine capability matrix + docs |
 | Vinculum repo | Math engine coverage (`COVERAGE.md`, `COMMANDS.md`) + docs |
 
