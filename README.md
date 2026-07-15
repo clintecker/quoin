@@ -1,5 +1,10 @@
 # Quoin
 
+[![CI](https://github.com/clintecker/quoin/actions/workflows/ci.yml/badge.svg)](https://github.com/clintecker/quoin/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-6.2-orange)](https://swift.org)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **A native WYSIWYG markdown editor for macOS with a review loop that lives
 inside the file — suggestions, comments, and tracked changes as plain bytes an
 agent or a person can write. Zero JavaScript, zero web views, local-only.**

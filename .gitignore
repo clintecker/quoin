@@ -66,3 +66,6 @@ App/macOS/Quoin.xcodeproj/
 
 App/iOS/QuoinIOS.xcodeproj/
 .claude/
+
+# macOS
+.DS_Store

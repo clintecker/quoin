@@ -40,5 +40,9 @@ Security review should pay particular attention to:
 
 The runtime privacy stance is strict: no telemetry, no indexing service owned
 by Quoin, no JavaScript runtime, no embedded web view, and no network access
-for normal local editing. Any change that weakens that stance needs explicit
-design and TRD review before implementation.
+for normal local editing. The single exception is the Sparkle software-update
+check (a signed appcast fetch), which is the app's only network traffic, is
+user-disableable in Settings, and never transmits document content — see
+[docs/reference/distribution.md](docs/reference/distribution.md). Any change
+that weakens this stance needs explicit design and TRD review before
+implementation.
