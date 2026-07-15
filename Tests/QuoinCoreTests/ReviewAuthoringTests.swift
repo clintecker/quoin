@@ -243,4 +243,30 @@ final class ReviewAuthoringTests: XCTestCase {
         XCTAssertEqual(ReviewAuthoring.clampPastLinePrefix(6, in: slice), 8)
     }
 
+
+    // MARK: - Opaque regions (user question: code / tables / diagrams / math)
+
+    func testAnnotatingInsideOpaqueBlocksRefuses() {
+        // CriticMarkup is a PROSE format: RDFM's opacity rule means a mark
+        // inside code, a table cell, a diagram, or math is literal bytes,
+        // not a mark — so creation must refuse, never inject junk into
+        // runnable/renderable content.
+        let cases: [(String, String)] = [
+            ("```swift\nlet total = a + b\n```\n", "total"),
+            ("| Name | Value |\n|------|-------|\n| alpha | 1 |\n", "alpha"),
+            ("```mermaid\ngraph TD\n  Start --> End\n```\n", "Start"),
+            ("$$\nE = mc^2\n$$\n", "mc"),
+            ("# A heading with words\n\nBody.\n", "heading"),
+        ]
+        for (source, target) in cases {
+            for kind in [ReviewAuthoring.Kind.deletion,
+                         .comment(body: "note"), .highlight] {
+                XCTAssertNil(ReviewAuthoring.annotationEdit(
+                    kind: kind, range: range(of: target, in: source),
+                    in: source, reviewer: "clint", timestamp: stamp),
+                    "must refuse \(kind) inside: \(source.prefix(20))")
+            }
+        }
+    }
+
 }
