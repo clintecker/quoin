@@ -149,11 +149,25 @@ struct MainWindow: View {
         // not key-gated) — a live session would autosave into the Trash.
         .onReceive(NotificationCenter.default.publisher(for: LibraryModel.documentTrashedNotification)) { note in
             if let url = note.userInfo?["url"] as? URL {
-                let dropped = openTabs.filter { $0.url == url || $0.url.path.hasPrefix(url.path + "/") }
-                openTabs.removeAll { $0.url == url || $0.url.path.hasPrefix(url.path + "/") }
+                let doomed: (DocumentTab) -> Bool = { $0.url == url || $0.url.path.hasPrefix(url.path + "/") }
+                let dropped = openTabs.filter(doomed)
+                guard !dropped.isEmpty else { return }
+                // Positional stability holds here too (#77): if the active tab
+                // is trashed out from under the user, focus lands on the tab
+                // now occupying its slot, not on the rightmost tab.
+                let activeIndex = openTabs.firstIndex { $0.id == activeTabID }
+                let removedIndices = Set(openTabs.indices.filter { doomed(openTabs[$0]) })
+                openTabs.removeAll(where: doomed)
                 dropped.forEach { store.release($0.url) }
-                if activeTab == nil {
-                    activeTabID = openTabs.last?.id
+                if activeTabID != nil, activeTab == nil {
+                    activeTabID = activeIndex
+                        .flatMap { index in
+                            TabSuccession.successorIndex(
+                                activeIndex: index,
+                                originalCount: openTabs.count + dropped.count
+                            ) { removedIndices.contains($0) }
+                        }
+                        .map { openTabs[$0].id }
                 }
             }
         }
@@ -328,12 +342,17 @@ struct MainWindow: View {
     }
 
     private func close(_ tab: DocumentTab) {
+        let closedIndex = openTabs.firstIndex { $0.id == tab.id }
         openTabs.removeAll { $0.id == tab.id }
         // Let go of this window's hold on the file; the store stops the session
         // only when the LAST tab (across all windows) releases it.
         store.release(tab.url)
+        // Browser-standard positional stability (#77): focus the tab now in
+        // the closed tab's slot, not the rightmost tab.
         if activeTabID == tab.id {
-            activeTabID = openTabs.last?.id
+            activeTabID = closedIndex
+                .flatMap { TabSuccession.successorIndex(closedIndex: $0, remainingCount: openTabs.count) }
+                .map { openTabs[$0].id }
         }
     }
 

@@ -430,20 +430,44 @@ struct DocumentTabBar: View {
 
     @State private var hoveredTab: DocumentTab.ID?
 
+    /// Safari-style width band (#75): tabs share the bar equally, clamped so
+    /// a crowd compresses (titles truncate) and a pair doesn't sprawl. Below
+    /// the floor the strip scrolls sideways instead of widening the window.
+    private static let minTabWidth: CGFloat = 72
+    private static let maxTabWidth: CGFloat = 240
+    private static let tabSpacing: CGFloat = 1
+    private static let barHeight: CGFloat = 27
+
     var body: some View {
         if tabs.count > 1 {
-            // A plain HStack, NOT a horizontal ScrollView: on macOS Tahoe the
-            // toolbar's scroll-edge effect gives any scroll view abutting the
-            // toolbar a glass "pocket" overlay. The sidebar's List insets its
-            // rows below that pocket, but this strip's ScrollView did not — so
-            // the pocket sat ON TOP of the tabs and swallowed every click and
-            // hover (tabs became unselectable by mouse; ⌘1–9 still worked).
-            // A handful of tabs don't need scrolling; overflow clips.
-            HStack(spacing: 1) {
-                ForEach(tabs) { tab in
-                    tabView(tab)
+            // GeometryReader accepts ANY proposed width, so the strip never
+            // contributes to the window's minimum width no matter how many
+            // tabs are open (#75) — tabs divide whatever the window grants.
+            GeometryReader { proxy in
+                let available = proxy.size.width - Self.tabSpacing * CGFloat(tabs.count - 1)
+                let tabWidth = min(max(available / CGFloat(tabs.count), Self.minTabWidth),
+                                   Self.maxTabWidth)
+                if tabWidth * CGFloat(tabs.count) <= available + 0.5 {
+                    // The fitting case stays a plain HStack, NOT a horizontal
+                    // ScrollView: on macOS Tahoe the toolbar's scroll-edge
+                    // effect gives any scroll view abutting the toolbar a
+                    // glass "pocket" overlay that sat ON TOP of the tabs and
+                    // swallowed every click and hover (tabs became
+                    // unselectable by mouse; ⌘1–9 still worked).
+                    strip(tabWidth: tabWidth)
+                } else {
+                    // More tabs than the floor allows: the strip scrolls.
+                    // The pocket overlay above is suppressed explicitly —
+                    // scrollEdgeEffectHidden exists exactly for this (26+;
+                    // the effect itself doesn't exist before Tahoe).
+                    scrollEdgeSafe(
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            strip(tabWidth: Self.minTabWidth)
+                        }
+                    )
                 }
             }
+            .frame(height: Self.barHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.04))
             .overlay(alignment: .bottom) { Divider() }
@@ -451,7 +475,25 @@ struct DocumentTabBar: View {
         }
     }
 
-    private func tabView(_ tab: DocumentTab) -> some View {
+    @ViewBuilder
+    private func scrollEdgeSafe(_ scroll: some View) -> some View {
+        if #available(macOS 26.0, *) {
+            scroll.scrollEdgeEffectHidden(true, for: .all)
+        } else {
+            scroll
+        }
+    }
+
+    private func strip(tabWidth: CGFloat) -> some View {
+        HStack(spacing: Self.tabSpacing) {
+            ForEach(tabs) { tab in
+                tabView(tab, width: tabWidth)
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private func tabView(_ tab: DocumentTab, width: CGFloat) -> some View {
         let isActive = tab.id == activeTabID
         let isHovered = tab.id == hoveredTab
         let name = tab.url.deletingPathExtension().lastPathComponent
@@ -488,8 +530,9 @@ struct DocumentTabBar: View {
             .accessibilityLabel("Close tab")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(minWidth: 120)
+        // The tab's width is ASSIGNED, never demanded — the title truncates
+        // into whatever share of the bar it gets (#75).
+        .frame(width: width, height: Self.barHeight)
         .background(isActive ? Color(nsColor: .textBackgroundColor) : Color.clear)
         .onHover { inside in
             hoveredTab = inside ? tab.id : (hoveredTab == tab.id ? nil : hoveredTab)
