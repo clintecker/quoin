@@ -1,7 +1,235 @@
-# Editing Responsiveness Baselines
+# Performance characteristics
 
-Quoin's CI performance tests are smoke tests with broad timing headroom for
-shared macOS runners. Use the local release benchmark for edit-loop work:
+Quoin treats the markdown **file** as the source of truth and the editor as a
+live projection of it. Every keystroke mutates the source string, and the
+editor re-derives what you see from that string. That design is what makes
+round-trips byte-lossless and keeps the format open — but it also means the
+per-keystroke cost is, in the naive case, "re-parse the whole document and
+rebuild the whole attributed string." On a book-sized file that is hundreds of
+milliseconds, far past a single frame.
+
+Quoin stays responsive by never doing the naive thing when it can avoid it.
+Three mechanisms cooperate so that a keystroke in a large document costs
+roughly what a keystroke in a small one does:
+
+| Mechanism | Turns this… | …into this |
+| --- | --- | --- |
+| **Incremental parsing** (fast paths) | re-parse the whole document | re-parse one block's slice |
+| **Patch rendering** | rebuild the whole attributed string | splice one fragment into storage |
+| **Viewport-lazy layout** | lay out every line | lay out only what's on screen |
+
+```mermaid
+flowchart LR
+  K[Keystroke] --> S[Byte-precise<br/>source edit]
+  S --> P{Incremental<br/>parse}
+  P -->|fast path| FB[Re-parse<br/>one block slice]
+  P -->|no fast path| FD[Re-parse<br/>whole document]
+  FB --> R{Render}
+  FD --> R
+  R -->|single-block edit| FP[Patch one<br/>fragment]
+  R -->|structural change| FR[Rebuild<br/>attributed string]
+  FP --> L[TextKit 2<br/>viewport layout]
+  FR --> L
+  L --> V[Only visible<br/>lines typeset]
+```
+
+Each stage has a fast path for the common case (typing inside one block) and a
+correct-but-slower fallback for everything else (edits that change document
+structure). The fast paths are always *optional* — anything a fast path cannot
+prove safe falls through to the full path, so correctness never depends on the
+optimization firing.
+
+---
+
+## Why re-projection cost is the whole game
+
+Because attributed strings are never the source of truth, there is no in-place
+mutation of styled text to reason about. An edit is a byte splice into the
+markdown string; the document and its projection are rebuilt *from* the new
+string. This is what guarantees the invariants Quoin cares about — untouched
+regions of the file survive a round-trip byte-for-byte, and the on-disk format
+stays plain CommonMark+GFM — but it puts parse-and-project squarely on the
+keystroke path.
+
+So the optimization problem is: given that we re-derive from source, how do we
+re-derive *as little as possible* while producing exactly what a full
+re-derivation would have produced? The answer is that both the parser and the
+renderer are structured so a single-block edit can be proven local, and only
+that block is redone.
+
+---
+
+## Incremental parsing (fast paths)
+
+`MarkdownConverter.parseAfterEdit(previous:edit:)` is the parser's keystroke
+entry point. It applies the byte edit, then tries two fast paths before it will
+fall back to a full parse:
+
+```mermaid
+flowchart TD
+  E[Edit applied to source] --> A{Plain-paragraph<br/>fast path?}
+  A -->|yes| AP[.plainParagraphFastPath<br/>re-parse block slice]
+  A -->|no| B{Fenced-block<br/>fast path?}
+  B -->|yes| BP[.fencedBlockFastPath<br/>re-parse block slice]
+  B -->|no| F[.full<br/>re-parse whole document]
+  AP --> OUT[New QuoinDocument]
+  BP --> OUT
+  F --> OUT
+```
+
+The result carries the `ParseStrategy` it used (`.plainParagraphFastPath`,
+`.fencedBlockFastPath`, or `.full`) — the benchmark harness reads this back to
+confirm which path an edit actually took.
+
+### The self-calibrating slice re-parse
+
+Both fast paths share one trick that keeps them honest. They do **not** contain
+a hand-rolled imitation of what cmark would do. Instead they re-parse the
+affected block's **source slice** with the real parser, twice, and demand that
+the result match what a full parse must have produced:
+
+1. Parse the **old** slice — it must reproduce the old block exactly (same
+   kind). This is the self-calibration: if slicing this block and parsing it in
+   isolation doesn't reproduce the block, the block wasn't slice-local and the
+   fast path bails.
+2. Parse the **new** slice — it must yield exactly **one** block of the same
+   family whose length grew by exactly the edit's byte delta. Any early fence
+   close, category flip, block split, or structural surprise fails this check.
+3. Reproduce the block's identity — content-hash-based `BlockID`s and their
+   occurrence indices are recomputed so downstream cache lookups behave
+   identically to a full parse.
+
+If every check passes, the parser splices the one rebuilt block into the
+previous block list, shifts the byte ranges of every following block by the
+delta, shifts the outline, and diffs (rather than recounts) the statistics.
+Everything else in the document is reused untouched. Any failed check returns
+`nil` and `parseAfterEdit` falls through — **conservative rejection is always
+safe**, because the fallback is a correct full parse.
+
+Why re-parse the slice instead of synthesizing the change directly? Because
+cmark applies smart punctuation — straight quotes come out curly, for one — so
+a hand-built inline list would diverge from a full parse wherever a paragraph
+contained an apostrophe. Running the real pipeline on the slice is the only way
+to be byte-identical to the full-parse result.
+
+### Plain-paragraph fast path
+
+The common case: typing inside an ordinary prose paragraph. It fires only when
+
+- the edit inserts no newline (a newline can split or merge blocks),
+- the target block is a paragraph whose inlines are only text and soft breaks
+  (no links, emphasis, or other spans whose boundaries an edit could shift),
+- the document has no live suggestions and no footnotes (see below), and
+- the slice re-parse round-trips as described above.
+
+### Fenced-block fast path
+
+The other thing a caret does all day: typing inside a fenced embed — a code
+block, a Mermaid diagram, or a math block. Editing a chart's revealed source
+would otherwise re-parse the entire document on every keystroke, which is why a
+diagram in a long file could feel sluggish while prose stayed snappy. This path
+re-parses only the fenced block's slice, with two extra guards specific to
+fences:
+
+- the edit must stay **strictly inside the content region** — past the opening
+  fence line (so the info string can't change) and before the closing fence
+  line (so an edit can't delete the terminator and let the fence swallow
+  following blocks, which a slice-local parse cannot see), and
+- the new slice must stay in the **same embed family** (a Mermaid block can't
+  silently become plain code without the full parse seeing it).
+
+### When the fast paths deliberately stand down
+
+Both fast paths require zero live suggestions and no footnotes. Review marks
+(the CriticMarkup/RDFM suggestions and comments that power the review loop) and
+footnotes carry **absolute** byte ranges inside their inline content — ranges
+that block-range shifting can't reach. A fast-path edit *before* such a mark
+would leave the mark's stored range and content hash stale, and a later
+accept/reject would compute against drifted offsets. So the presence of any
+live mark forces a full parse, which re-anchors every mark from scratch. This
+is a correctness requirement, not a missed optimization: the review loop's
+atomic, byte-safe accept/reject depends on marks never pointing at stale
+offsets. Any new offset-carrying inline node needs the same audit against
+`parseAfterEdit`.
+
+---
+
+## Patch rendering
+
+`AttributedRenderer` projects a `QuoinDocument` into one attributed string. A
+block's rendered fragment is a **pure function of that block**, so the renderer
+keys a fragment cache on the content-hashed `BlockID`: an unchanged block reuses
+its cached fragment instead of being rebuilt. That alone turns a re-render from
+O(document) into O(changed blocks) — the whole-document rebuild was the dominant
+per-keystroke cost.
+
+But there is a still-cheaper path for the most common edit of all. When you type
+inside the one active (revealed) block, its fragment is the only thing that
+changed, and the renderer can compute a **storage patch** — a single splice of
+that one fragment into the live text storage — instead of assembling a fresh
+whole-document attributed string:
+
+```mermaid
+sequenceDiagram
+  participant U as Keystroke
+  participant M as ReaderModel
+  participant R as AttributedRenderer
+  participant S as NSTextStorage
+  U->>M: byte edit in active block
+  M->>R: render(activeBlockID, caret)
+  R->>R: rebuild ONE fragment
+  R-->>M: RenderedDocument<br/>+ storagePatches + patchBaseLength
+  M->>S: apply patch IF storage.length == patchBaseLength
+  Note over M,S: mismatch → one O(scan) splice resync
+```
+
+The published projection carries its `storagePatches` and a `patchBaseLength` —
+the storage length the patches expect *before* they're applied. The view trusts
+the patches **only** when the live storage is exactly the state they were
+computed against. SwiftUI coalesces rapid publishes, so a view can skip an
+intermediate revision; applying the next patch batch to that stale storage would
+silently corrupt the projection (the caret mapping drifts and keystrokes near
+the block end fall outside the editable range and get swallowed). On any
+mismatch the view discards the patches and does one full splice against the
+authoritative attributed string — a single O(scan) resync instead of compounding
+corruption.
+
+Patch-versus-full-render equivalence is not left to trust: `ProjectorEquivalenceTests`
+proves the patch path produces byte-identical output to a full render across an
+interaction corpus, and it is extended whenever a projection path changes.
+
+A few fragments are deliberately **not** cached:
+
+| Block kind | Why not cached |
+| --- | --- |
+| Table of contents | Reflects the document-wide outline, not just its own content |
+| The active (revealed) block | Its fragment changes as the caret moves |
+| A fragment awaiting async content | A content-hash-stable placeholder would be returned forever; it re-renders when the image decodes |
+
+---
+
+## Viewport-lazy layout
+
+The final stage is typesetting, and here Quoin leans on TextKit 2. The reading
+surface is a TextKit 2 `NSTextView`, and TextKit 2 does **viewport-based
+layout** — it lays out only the content that is actually on screen. A
+thousand-page document does not pay to lay out a thousand pages to show you one;
+scrolling lays out the newly exposed region as it comes into view. This is what
+keeps very large documents scrolling at full frame rate regardless of length.
+
+This is also why block decorations (code canvases, callout boxes, quote rules,
+diagram frames, table rules, the front-matter chip) are drawn in
+`drawBackground(in:)` using TextKit 2 fragment frames rather than per-glyph
+`.backgroundColor` attributes: the shapes track reflow, and only visible
+fragments are ever measured or drawn.
+
+---
+
+## Benchmarks
+
+CI performance tests are smoke tests with broad timing headroom for shared
+macOS runners — they catch gross regressions, not frame-level ones. For
+edit-loop work, use the local release benchmark:
 
 ```sh
 scripts/benchmark-editing-responsiveness.sh
@@ -9,22 +237,16 @@ scripts/benchmark-editing-responsiveness.sh /path/to/large.md
 QUOIN_BENCH_ENFORCE=1 scripts/benchmark-editing-responsiveness.sh /path/to/large.md
 ```
 
-The script builds a temporary release-mode harness against this checkout, then
-measures:
+The script builds a temporary release-mode harness against the checkout, then
+measures a representative middle-of-document insert end to end: the initial full
+parse, cold render, block activation, the byte-precise edit, the incremental
+parse (reporting which strategy fired), the active-block patch fragment, and —
+for comparison — the full parse, warm-cache full render, and full-string diff
+scan the same edit *would* have cost without the fast paths.
 
-- initial full parse
-- cold render
-- byte-precise middle insert
-- parser strategy for that middle insert
-- incremental parse-after-edit when the edit qualifies for a safe fast path
-- active-block patch fragment render for the same edit
-- full parse after that insert
-- fallback warm-cache full render after that insert
-- fallback old/new rendered string diff scan
+Baseline on a ~1.2 MB public-domain book fixture (`moby_dick.md`):
 
-Current local baseline on `/Users/clint/Downloads/moby_dick.md`:
-
-| Metric | Time |
+| Metric | Value |
 | --- | ---: |
 | Bytes | 1,204,081 |
 | Lines | 5,402 |
@@ -39,25 +261,36 @@ Current local baseline on `/Users/clint/Downloads/moby_dick.md`:
 | `parseAfterEdit.middleInsert` | 8.86 ms |
 | `parseAfterEdit.strategy` | `plainParagraphFastPath` |
 | `render.activeBlockPatch.fragment` | 0.19 ms |
-| `parse.middleInsert` | 328.92 ms |
-| `render.middleInsert.warmCache` | 44.60 ms |
-| `render.fullStringDiffScan` | 11.57 ms |
+| `parse.middleInsert` (fallback) | 328.92 ms |
+| `render.middleInsert.warmCache` (fallback) | 44.60 ms |
+| `render.fullStringDiffScan` (fallback) | 11.57 ms |
 
-Interpretation:
+The story the numbers tell:
 
-- Full-document parse is the dominant per-edit cost on book-sized prose when
-  the edit is not eligible for the incremental fast path.
-- Plain active-paragraph edits can avoid that full parse and stay near a
-  single-frame budget on this fixture.
-- Direct active-block render patches avoid fallback full attributed-document
-  assembly for guarded single-block edits; the replacement fragment is
-  sub-millisecond on this fixture.
-- Fallback warm render is improved by fragment caching, but still above a frame
-  budget for paths that cannot use a direct block patch.
-- The fallback full-string diff scan is smaller than parse/render but still
-  visible.
+- **A full re-parse dominates.** On book-sized prose, `parse.middleInsert` (a
+  full parse) is ~329 ms — the single largest per-edit cost, and the thing the
+  fast paths exist to avoid.
+- **The fast path lands near a frame.** For a plain paragraph edit,
+  `parseAfterEdit.middleInsert` is ~9 ms — roughly a 37× reduction over the full
+  parse — because only the edited paragraph's slice is re-parsed.
+- **The patch render is sub-millisecond.** `render.activeBlockPatch.fragment`
+  (~0.19 ms) replaces the one changed fragment, versus ~45 ms to rebuild the
+  whole attributed string with a warm cache.
+- **The fallbacks are still bounded.** When an edit *can't* take a fast path,
+  fragment caching keeps the warm full render (~45 ms) and diff scan (~12 ms)
+  far below the cold numbers, so even structural edits stay usable.
+
+Exact milliseconds depend on the hardware and the fixture; re-run the script
+locally rather than trusting these to the decimal. What holds across machines is
+the *shape*: the fast paths cut roughly two orders of magnitude off the parse and
+render that a single-block edit would otherwise cost.
+
+### Regression guard
 
 `QUOIN_BENCH_ENFORCE=1` applies local release thresholds with enough headroom to
-catch major regressions without pretending to be a CI-stable benchmark. Keep the
-thresholds looser than the intended interaction budget; they are regression
-guards, not the final target.
+catch major regressions without pretending to be a CI-stable benchmark. The
+thresholds are deliberately looser than the intended interaction budget — they
+are regression guards, not the target. If an enforced run fails, either a fast
+path stopped firing or a stage regressed; check the reported
+`parseAfterEdit.strategy` first, since a fast path silently falling back to
+`.full` is the usual culprit.
