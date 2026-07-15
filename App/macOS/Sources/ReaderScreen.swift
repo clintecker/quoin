@@ -68,6 +68,9 @@ struct ReaderScreen: View {
     /// Reading progress, 0…1 (hairline under the toolbar).
     @State private var scrollProgress: Double = 0
     @State private var isFindVisible = false
+    @State private var isReplaceVisible = false
+    @State private var replaceText = ""
+    @FocusState private var replaceFieldFocused: Bool
     @State private var searchQuery = ""
     @State private var activeMatch = 0
     @State private var matchCount = 0
@@ -588,6 +591,12 @@ struct ReaderScreen: View {
         // Edit ▸ Find family (⌘F/⌘G/⇧⌘G).
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.findNotification)) { _ in
             guard isKeyWindow else { return }
+            isReplaceVisible = false
+            openFind()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.findReplaceNotification)) { _ in
+            guard isKeyWindow else { return }
+            isReplaceVisible = true
             openFind()
         }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.findNextNotification)) { _ in
@@ -866,8 +875,44 @@ struct ReaderScreen: View {
     private var findBar: some View {
         VStack(spacing: 0) {
             findBarContent
+            if isReplaceVisible {
+                Divider().opacity(0.5)
+                replaceBarContent
+            }
             Divider()
         }
+    }
+
+    private var replaceBarContent: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.2.squarepath")
+                .foregroundStyle(.secondary)
+            TextField("Replace with", text: $replaceText)
+                .textFieldStyle(.plain)
+                .focused($replaceFieldFocused)
+                .onSubmit { replaceCurrent() }
+                .onExitCommand { closeFind() }
+            Button("Replace") { replaceCurrent() }
+                .disabled(matchCount == 0)
+            Button("All") { replaceAll() }
+                .disabled(matchCount == 0)
+                .help("Replace every match (one undo)")
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.bar)
+    }
+
+    private func replaceCurrent() {
+        guard !searchQuery.isEmpty else { return }
+        _ = model.replaceNextMatch(
+            of: searchQuery, with: replaceText, fromByteOffset: model.caretByteOffset)
+    }
+
+    private func replaceAll() {
+        guard !searchQuery.isEmpty else { return }
+        _ = model.replaceAllMatches(of: searchQuery, with: replaceText)
     }
 
     private var findBarContent: some View {
@@ -912,7 +957,9 @@ struct ReaderScreen: View {
 
     private func closeFind() {
         isFindVisible = false
+        isReplaceVisible = false
         searchQuery = ""
+        replaceText = ""
         activeMatch = 0
     }
 

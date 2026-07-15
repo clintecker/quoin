@@ -167,6 +167,9 @@ private struct EditCommands: Commands {
                 Button("Find in Document…") { post(AppDelegate.findNotification) }
                     .keyboardShortcut("f", modifiers: .command)
                     .disabled(hasDocument != true)
+                Button("Find & Replace…") { post(AppDelegate.findReplaceNotification) }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+                    .disabled(hasDocument != true)
                 Button("Find Next") { post(AppDelegate.findNextNotification) }
                     .keyboardShortcut("g", modifiers: .command)
                     .disabled(hasDocument != true)
@@ -344,6 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let toggleQuickOpenNotification = Notification.Name("quoin.toggleQuickOpen")
     static let toggleLibrarySearchNotification = Notification.Name("quoin.toggleLibrarySearch")
     static let findNotification = Notification.Name("quoin.find")
+    static let findReplaceNotification = Notification.Name("quoin.findReplace")
     static let findNextNotification = Notification.Name("quoin.findNext")
     static let findPreviousNotification = Notification.Name("quoin.findPrevious")
     static let goBackNotification = Notification.Name("quoin.goBack")

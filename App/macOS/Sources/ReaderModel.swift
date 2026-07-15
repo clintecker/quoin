@@ -574,6 +574,47 @@ final class ReaderModel {
         }
     }
 
+    /// Find & Replace (#85): replace operates on the RAW SOURCE (a replace
+    /// changes what the file says), computed against the model's current
+    /// truth and routed through the atomic edit pipeline. Returns whether a
+    /// replacement was made so the find bar can report it.
+    @discardableResult
+    func replaceNextMatch(of query: String, with replacement: String, fromByteOffset: Int) -> Bool {
+        guard !query.isEmpty,
+              let (edit, next) = SourceReplace.replaceNextEdit(
+                of: query, with: replacement, in: document.source,
+                fromByteOffset: fromByteOffset)
+        else { return false }
+        applyAbsolute(edit, caretUTF8: next)
+        return true
+    }
+
+    /// Replace every match as ONE atomic edit (one undo restores all).
+    /// Returns the count replaced.
+    @discardableResult
+    func replaceAllMatches(of query: String, with replacement: String) -> Int {
+        guard !query.isEmpty else { return 0 }
+        let count = SourceReplace.matches(of: query, in: document.source).count
+        guard count > 0,
+              let edit = SourceReplace.replaceAllEdit(
+                of: query, with: replacement, in: document.source)
+        else { return 0 }
+        applyAbsolute(edit, caretUTF8: nil)
+        return count
+    }
+
+    /// The caret's current absolute byte offset, so "Replace" acts on the
+    /// match at or after where you are.
+    var caretByteOffset: Int {
+        guard let activeBlockID,
+              let block = document.blocks.first(where: { $0.id == activeBlockID }),
+              let caret = caretInActiveBlock,
+              let slice = document.source.substring(in: block.range),
+              let caretUTF8 = EditMapping.utf8Offset(inText: slice, utf16Offset: caret)
+        else { return 0 }
+        return block.range.offset + caretUTF8
+    }
+
     /// The "something happened, HERE" pulse (user ask): after a resolution
     /// applies, the view rings the spliced location. Generation-fired.
     private(set) var resolutionFlashOffset: Int?
