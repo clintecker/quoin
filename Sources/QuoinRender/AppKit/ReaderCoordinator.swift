@@ -1146,8 +1146,21 @@ extension MarkdownReaderView {
             }
             // No rendered mark at that offset — the RESOLUTION case (the
             // mark was just spliced away): pulse the block it happened in.
-            if charRange == nil, let fallbackBlockID {
-                charRange = parent.rendered.blockRanges[fallbackBlockID]
+            // Trimmed to CONTENT: the block range includes its trailing
+            // separator, whose empty line fragment made the ring tall and
+            // narrow (live report — a one-word paragraph pulsed as a
+            // portrait rectangle).
+            if charRange == nil, let fallbackBlockID,
+               var blockRange = parent.rendered.blockRanges[fallbackBlockID],
+               NSMaxRange(blockRange) <= storage.length {
+                let text = storage.string as NSString
+                while blockRange.length > 0 {
+                    let last = text.character(at: blockRange.location + blockRange.length - 1)
+                    guard let scalar = Unicode.Scalar(last),
+                          CharacterSet.whitespacesAndNewlines.contains(scalar) else { break }
+                    blockRange.length -= 1
+                }
+                if blockRange.length > 0 { charRange = blockRange }
             }
             guard let charRange,
                   let textRange = nsTextRange(charRange, in: contentStorage) else { return }
