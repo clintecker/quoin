@@ -1351,9 +1351,14 @@ public struct AttributedRenderer {
     }
 
     private func renderFrontMatter(yaml: String, editable: Bool = true) -> NSAttributedString {
-        // Compact metadata chip above the H1 (spec): the fields collapse to
-        // one truncated caption line; clicking the block reveals the full
-        // YAML source for editing (block activation).
+        // Front matter renders as a FIELD GRID (redlined 2026-07-15: the
+        // one-line "a · b · c" soup was unreadable): one row per top-level
+        // key — key in small caps at a fixed column, value in ink beside
+        // it. Nested/indented lines render as raw continuations under
+        // their key. Clicking still reveals the full YAML 1:1 (activation).
+        if editable {
+            return renderFrontMatterFields(yaml: yaml)
+        }
         let condensed = yaml
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -1400,6 +1405,92 @@ public struct AttributedRenderer {
         edit[.toolTip] = "Edit Source (⌘↩)" as NSString
         #endif
         output.append(NSAttributedString(string: "   ·   ‹/› edit", attributes: edit))
+        return output
+    }
+
+    /// The #59 field grid. Key column at a fixed tab stop; values wrap
+    /// aligned under themselves; nested YAML lines render as raw mono
+    /// continuations. The trailing `‹/› edit` affordance keeps the
+    /// reveal discoverable.
+    private func renderFrontMatterFields(yaml: String) -> NSAttributedString {
+        let keyColumn: CGFloat = 96
+        let output = NSMutableAttributedString()
+
+        func rowStyle() -> NSMutableParagraphStyle {
+            let style = paragraphStyle()
+            style.lineHeightMultiple = 1.25
+            style.paragraphSpacing = 2
+            style.firstLineHeadIndent = 8
+            style.headIndent = keyColumn
+            style.tailIndent = -8
+            style.tabStops = [NSTextTab(textAlignment: .left, location: keyColumn)]
+            style.lineBreakMode = .byWordWrapping
+            return style
+        }
+        var keyAttributes = bodyAttributes()
+        keyAttributes[.font] = PlatformFont.systemFont(ofSize: 10, weight: .semibold)
+        keyAttributes[.foregroundColor] = theme.tertiaryTextColor
+        keyAttributes[.kern] = 0.5
+        var valueAttributes = bodyAttributes()
+        valueAttributes[.font] = theme.captionFont()
+        valueAttributes[.foregroundColor] = theme.secondaryTextColor
+        var rawAttributes = valueAttributes
+        rawAttributes[.font] = theme.inlineCodeFont()
+        rawAttributes[.foregroundColor] = theme.tertiaryTextColor
+
+        var first = true
+        for rawLine in yaml.replacingOccurrences(of: "\r\n", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            if !first { output.append(NSAttributedString(string: "\n")) }
+            first = false
+            let style = rowStyle()
+            let indented = line.hasPrefix(" ") || line.hasPrefix("\t")
+            if !indented, let colon = trimmed.firstIndex(of: ":"),
+               trimmed[..<colon].allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }) {
+                let key = String(trimmed[..<colon]).uppercased()
+                let value = String(trimmed[trimmed.index(after: colon)...])
+                    .trimmingCharacters(in: .whitespaces)
+                var keyed = keyAttributes
+                keyed[.paragraphStyle] = style
+                output.append(NSAttributedString(string: key + "\t", attributes: keyed))
+                var valued = valueAttributes
+                valued[.paragraphStyle] = style
+                output.append(NSAttributedString(string: value, attributes: valued))
+            } else {
+                // Nested/odd line: raw continuation in the value column.
+                var raw = rawAttributes
+                raw[.paragraphStyle] = style
+                output.append(NSAttributedString(string: "\t" + trimmed, attributes: raw))
+            }
+        }
+        if output.length == 0 {
+            // Empty front matter: keep a single faint marker line.
+            var attributes = rawAttributes
+            attributes[.paragraphStyle] = rowStyle()
+            output.append(NSAttributedString(string: "front matter", attributes: attributes))
+        }
+
+        // Air inside the chip: first row's top, last row's bottom.
+        mutateParagraphStyles(in: output, range: NSRange(location: 0, length: 1)) { style, _ in
+            style.paragraphSpacingBefore = 6
+        }
+        // Trailing `‹/› edit` on the last row, same grammar as everywhere.
+        var edit = valueAttributes
+        if let url = QuoinLink.editURL {
+            edit[.link] = url
+        }
+        #if canImport(AppKit)
+        edit[.toolTip] = "Edit Source (⌘↩)" as NSString
+        #endif
+        output.append(NSAttributedString(string: "   ·   ‹/› edit", attributes: edit))
+        padLastLine(in: output, spacing: theme.paragraphSpacing)
+        output.addAttribute(
+            QuoinAttribute.blockDecoration,
+            value: BlockDecoration(kind: .chip(fill: theme.inlineCodeFill)),
+            range: NSRange(location: 0, length: output.length))
         return output
     }
 
