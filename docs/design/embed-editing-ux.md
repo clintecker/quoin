@@ -1,268 +1,317 @@
-# Embed editing UX — design brief
+# Editing embeds: code, diagrams, math, and tables
 
-*2026-07-09. Synthesis of a four-expert design panel (Apple-platform motion
-engineering, macOS HIG/accessibility, writing-tools product strategy,
-text-interaction research), each briefed on the live codebase, the Graphite
-handoff, and the viewport-invariant work. This is the blueprint for the
-"embed editing" milestone: how entering/editing/exiting code, diagram, math,
-and table blocks should look, move, and feel.*
+Most of a Quoin document is prose, and prose edits with no ceremony: put the
+caret in a paragraph and it reveals its own markdown source, character for
+character, right where you're reading. The caret *is* the mode. There is no
+button to press and nothing to enter or leave.
 
-**Status (2026-07-10): all four phases implemented and shipped**, plus
-tooltips and a stateful Format menu. Deltas from spec, each deliberate:
-chips are always-visible (matching `⧉ copy`; hover-gating deferred — no
-tracking machinery exists), the `✓ done` chip is decoration-drawn (a text
-run would break the revealed source's 1:1 mapping), the motion mechanism
-uses two slices (block crossfade + below-content slide; content above the
-pinned anchor never moves, so it is never covered), and the
-object-selection ring / Enter-to-open grammar remains queued. Bugs found
-by building it: embed caret hints were double-mapped (fixed with typed
-`CaretHint`), html-block hints off by one, `BlockDecoration` compared by
-pointer identity.
+A few block types can't work that way. A Mermaid diagram, a LaTeX equation,
+and a syntax-highlighted code block are all *projections* of markdown that
+looks nothing like the thing you see — a rendered flowchart has no
+per-character correspondence to its `graph TD` source, and an integral sign
+is not editable text. These are **embeds**, and they get a deliberate,
+visible editing affordance instead of silent caret-driven reveal.
 
-## The bar we are building to
+This document explains what an embed is, how you edit one, and how the
+machinery behind it upholds Quoin's core promise: the markdown file is the
+source of truth, the editor is a live projection, and nothing on screen ever
+jumps, disappears, or asks what mode you're in.
 
-Hovering a diagram frames it softly and shows a quiet edit chip; opening it
-(click the chip, double-click, or Enter) leaves the diagram exactly where it
-is while its markdown source unfolds beneath, caret ready at the point you
-aimed at. Every keystroke re-renders the diagram in real time, natively,
-without flicker; broken source keeps the last good render and lights one calm
-note in the gutter. Escape, click-away, or Done closes the source — the
-diagram simply remains, updated, never having moved a pixel. Undo works
-across the whole session like ordinary typing. At no point does anything on
-screen disappear, jump, or ask what mode you're in.
+## What counts as an embed
 
-## Non-negotiable principles (from all four reports)
-
-1. **Commit on exit, always.** Escape/click-away/Done all mean "done" —
-   never revert. Every keystroke is already in the file (live-commit
-   architecture); a reverting exit is a data-loss bug. Backing out is ⌘Z's
-   job, and undo works identically in both representations.
-2. **The 1:1 mapping and the viewport invariant are untouchable.** Any
-   animation is cosmetic — an overlay over an instantly-committed truth.
-   Nothing may write to storage or scroll position on an animation's behalf.
-3. **Prose stays instant, forever.** Caret-driven syntax reveal is the
-   editor's Raskin-clean quasimode (the caret *is* the mode). No animation,
-   no affordance chrome, no change. Embeds are the exception, which is why
-   affordances on them mean something.
-4. **Never let the preview flicker.** Hold the last good render until a new
-   frame is committed; debounce error states (~400ms); a 5ms re-render that
-   blinks reads slower than a 50ms one that crossfades.
-5. **Motion restraint.** Two verbs (*dissolve*, *slide*), one animated
-   gesture in the whole app (the embed flip), 260ms ceiling, damping ratio
-   exactly 1.0 (text never overshoots), any user input truncates to zero,
-   Reduce Motion collapses to a 120ms crossfade or instant.
-6. **Mode is announced at the locus of attention, in shape** — chrome, not
-   tint alone. The 5% wash stays, but the open block's frame changes form
-   (label + Done), because peripheral indicators don't prevent mode errors.
-
-## Phase 1 — Interaction correctness (small; do first)
-
-Fixes for contract violations that exist today, from the interaction report:
-
-- **The swallowed keystroke.** Typing on a rendered embed currently flips it
-  and DROPS the character. Contract: typing reveals the source AND inserts
-  the character at the mapped position, atomically (replay after
-  activation).
-- **Reverse caret mapping on flip-back.** Closing source currently leaves
-  the caret unspecified. Contract: the caret lands at the rendered image of
-  its source position, rounded BACKWARD to visible content (never forward
-  into the next block); the flip-back viewport pin keys on the block's TOP
-  EDGE (line counts don't survive the flip; block-top is the only geometry
-  present in both representations).
-- **Selection through a flip.** A selection straddling a flipping block
-  remaps both endpoints through the alignment mapper, or collapses to a
-  caret at the activation point. Never a clamped garbage range.
-- **Regression armor** (invariants nothing in the type system protects):
-  double-click on an already-open embed word-selects (the
-  `id != activeBlockID` gate); `activateBlock` never touches the undo stack;
-  undo past the active block's creation deactivates rather than crashes.
-
-## Phase 2 — Affordances + keyboard grammar
-
-**The chip** (HIG report; extends the existing `⧉ copy` idiom exactly):
-
-- `‹/› edit` — SF Symbol `chevron.left.forwardslash.chevron.right` (~9pt) +
-  lowercase mono label, 10.5pt SF Mono, 45% ink (45% white on the code
-  canvas), radius 6, 2×6 padding, ≥28pt hit target, tooltip
-  "Edit Source (⌘↩)".
-- **Visible when the pointer is over the block OR the caret/selection is
-  inside it** (the caret condition is what makes a confused single-click
-  produce the affordance, serves keyboard users, and ports to touch).
-  Fade in 150ms; hard cut under Reduce Motion.
-- Placement: code → header row beside copy (`‹/› edit  ⧉ copy`); mermaid →
-  top-right inside the frame, 8pt inset; math → right edge of the column,
-  centered on the equation band; table → right-aligned in the band above,
-  joining the specced add-row/column edge controls; front matter → append
-  `· edit` inside the existing chip on hover.
-- **Open state: `✓ done` in accent, always visible** (mode indicators are
-  never hover-gated), plus a 1.5pt accent border on the block — the same
-  editing-state token the sidebar rename field uses. Done = commit + close.
-- NOT a pencil (promises direct manipulation; `‹/›` promises source, which
-  is the truth). No chrome on prose/inline spans/images. No first-run hints.
-
-**Keyboard grammar** (interaction report):
-
-- Arrow keys treat a rendered embed as **one selectable atom** with a
-  visible object-selection ring (ProseMirror-style node selection) — never
-  auto-reveal on caret transit.
-- **Enter or ⌘↩ on a selected embed opens it**; caret at body start
-  (entering from above) / body end (from below). ⌘↩ also closes when open.
-  Plain Return in text keeps inserting newlines — never overloaded.
-- **Escape while editing: commit, close, reselect the block** (so
-  Enter/edit/Escape/Enter round-trips eyes-free). Escape on a selected
-  closed embed: drop to caret. Two stages, one meaning each.
-- Menu: Format ▸ "Edit Source" (⌘↩) ↔ "Done Editing". Context menu: "Edit
-  Source", "Copy Markdown Source" (+ "Copy Code"/"Copy Image" where apt).
-- VoiceOver: embeds are single elements with descriptive labels
-  ("Diagram, mermaid flowchart, 8 nodes"); "Edit Source" as a custom action
-  in the rotor; announce entry ("Editing diagram source…") and exit; never
-  strand focus on a control that disappeared.
-- Fallback if hover tracking proves fragile (none exists in QuoinTextView
-  today): ship caret-visibility-only first — 80% of the value, no tracking
-  machinery, same visual design.
-
-## Phase 3 — Motion system
-
-**Mechanism** (motion report): pre-splice viewport snapshot (+600pt
-overscan below) → frozen cover held through the splice/pin/settle turn
-(which also HIDES the settle correction — improving today's worst frame) →
-three-slice clip-space choreography (above/block/below) converging on the
-real post-settle geometry → overlay removal as an unconditional epilogue
-(with a 500ms watchdog; a stuck cover is the worst failure). New
-`FlipTransitionController` owned by `QuoinTextView`; capture hooks at the
-`flipPending` branch of `updateNSView`, run enqueued `main.async` (after the
-settle turn by queue order). Never a storage placeholder; never animate real
-layout.
-
-**Specs, keyed to height delta** (motion + interaction reports agree):
-
-| Case | Treatment |
-|---|---|
-| \|Δh\| ≤ ~40pt (typical code flip) | **Instant or 140ms block-only crossfade** — this is a habituated high-frequency loop; ≥100ms mediation taxes every check-the-render cycle |
-| Large Δh (diagram/math ↔ source) | Block crossfades in place 160–180ms `.easeOut`; above/below content **slides** its true reflow 220–240ms on `(0.2, 0.0, 0.0, 1.0)` (or critically-damped spring, stiffness 420 / damping 41); fade lands before the slide so the transition ends on one event |
-| Flip-back (expanding) | Same reversed, 260ms/180ms — the incoming render needs a beat to be received |
-| Δh > half the viewport | Full-viewport 200ms crossfade (sliding most of a screen reads as scrolling — a lie) |
-| Reduce Motion / >200k chars / offscreen | 120ms crossfade / crossfade / nothing |
-
-Slide the reflow rather than masking it: the reflow is *real*, and animating
-a true layout change lets users track what moved (Bederson & Boltman);
-motion radiates outward from the pinned caret line, which itself never
-moves. **Never animate:** the caret, the pin correction, the mode
-chrome/tint (binary signals that fade read as uncertainty), scale, blur, or
-anything in prose. Cancel-to-end on any storage mutation, user scroll
-(live-scroll notification / scrollWheel — NOT boundsDidChange, which the pin
-itself fires), resize, appearance change, or re-flip.
-
-## Phase 4 — Preview-anchored reveal (the flagship)
-
-For mermaid and math only (product + interaction reports): while the source
-is open, the **rendered preview stays visible**, anchored where the diagram
-already was, with the source unfolding below it.
-
-- The artifact never moves: the viewport invariant pins the PREVIEW;
-  the source panel expands downward; exit is the removal of the source
-  lines with the preview untouched — nothing at the anchor changes on exit.
-- Live re-render per keystroke (the native engine is ms-fast; hold the
-  previous frame until the new one commits — anti-flicker; keep frame size
-  stable across re-renders where possible).
-- Broken source: last good render stays; one calm amber note in the panel
-  gutter pointing at the offending line, debounced ~400–500ms. Never blank,
-  never flash per keystroke.
-- The preview is first-class and crisp (never dimmed — a grayed diagram
-  reads as broken); the SOURCE panel carries the editing identity (recessed
-  background, mono, the `✓ done` chip). Clicking the preview while open
-  focuses the source.
-- v1 fence: attachment embeds only (mermaid, math); the preview is inert;
-  code and tables are explicitly out. This phase largely obsoletes Phase 3's
-  large-delta case for diagrams (the tall content never disappears), so
-  Phase 3's motion budget partially folds into this phase's open/close
-  height tween.
-
-## §6b refinement — live-editing choreography (2026-07-10, implemented)
-
-Second three-expert panel (HIG perfectionist, motion engineer, HCI
-researcher on live-programming feedback), convened on the side-by-side
-panel specifically. The synthesis, all shipped:
-
-**The governing asymmetry.** Good news is instant: renders are NEVER
-debounced — the engine is ms-fast, latency is the product, and the
-morphing artifact is the feedback (Keynote-inspector class, not
-Xcode-Previews class). Bad news is patient: the paused badge appears
-only after **500ms of typing idle while invalid** (the grace timer
-resets on every keystroke, so mid-word transits never flash anything);
-recovery clears synchronously with the fixing keystroke. Motion only
-where it informs: swaps inside typing cadence (<500ms since the last
-swap) are hard cuts (crossfades at typing speed smear); an ISOLATED
-swap whose size changed, and the first swap after an admitted pause
-(change blindness eats hard cuts), dissolve via a 120ms ghost of the
-outgoing artifact. All of it is a pure decision table
-(`PreviewPanelChoreographer`, clock-injected, 12 pinned cases).
-
-**Presentation.** The panel wears the diagram's own chrome (hairline,
-radius 8) — it IS the artifact, not new UI. Image scale locks per
-session, anchored top-leading (steady frame: the node you're watching
-must not drift as the bounding box changes per keystroke). Paused is a
-material capsule badge (SF Symbol + "Preview paused") overlaid on the
-PANEL's corner — never stealing image height (the first cut rescaled
-the diagram at the exact moment of the warning); the held artifact
-stays full-opacity, always. The editing frame's stroke turns amber
-while paused is admitted — ambient liveness at the locus's edge, no
-saccade needed; state changes cut, never fade. Panel entrance: the
-flip cover owns it when the flip animates (`isCovering`); otherwise a
-140ms fade. Exit: always instant (the cover carries it). Narrow
-windows: the panel yields below a 340pt source column. The panel's
-whole vocabulary is dissolve; slide stays the text's verb.
-
-**Next tranche (specced, not yet built), in priority order:**
-1. **Commit-while-broken safety (HCI failure mode #1, HIGH severity):**
-   closing a session whose slice has an unbalanced fence can swallow
-   following blocks into a code block, and a committed-broken diagram
-   dissolves into prose with no path back but unlabeled undo. Fix:
-   heal the fence the session itself opened on close, and render a
-   committed-broken block in READ mode as a held-image card with an
-   error line + edit chip, persisting the last-good image beyond the
-   session.
-2. Open/close match-move (HIG): the artifact travels from its inline
-   position to the panel and back — full object permanence. Requires
-   choreographing with the flip cover; the cover-crossfade approximates
-   it today.
-3. Reserve-at-open frame height (tall diagrams currently scale small
-   against short source) + structural lane-gating of swaps via
-   MermaidKit scene-IR diff (label edits swap per keystroke; node/edge
-   churn commits on token boundary or idle) + provisional dashed
-   styling for unclosed constructs (Hazel-style) — MermaidKit v-next.
-4. Off-main preview render with generation token + a perf budget test
-   pinning keystroke echo independent of diagram complexity.
-5. Longest-valid-prefix gutter dot on the offending source line.
-
-## Declined, with reasons
-
-- **Line-scoped reveal** (only the caret's line shows source): this is
-  Obsidian Live Preview, whose embed behavior is its most-complained-about
-  feature; it is category-inapplicable to diagrams (a rendered image has no
-  per-line decomposition); highest cost on the table for value that
-  preview-anchored reveal + affordances already capture. Off the roadmap.
-- **Structured table editing** is the industry-unanimous eventual answer for
-  tables (Typora, Bear, Obsidian all converged there) — a future initiative
-  of its own, not a reveal change.
-- **Pencil icon** (wrong promise), **Enter overload in text**, **per-block
-  child NSTextViews** (the single-first-responder architecture is why
-  IME/focus never break), **reverting Escape** (data-loss bug by
-  definition), **min-height reservation for diagrams** (lies about content,
-  defers the jump to exit), **popover/modal editors** (Notion's proven
-  container mistake; says "you left the document"), **coach marks**.
-
-## Sequencing and effort
-
-| Phase | Scope | Effort |
+| Block type | Rendered as | Editable source is… |
 |---|---|---|
-| 1. Interaction correctness | keystroke replay, reverse mapping, selection, armor tests | ~1 session |
-| 2. Affordances + grammar | chips, ⌘↩/Enter/Escape, object selection, menus, VO | ~1–2 sessions |
-| 3. Motion system | FlipTransitionController + specs above | ~1 session |
-| 4. Preview-anchored reveal | mermaid + math live preview | ~2 sessions (flagship) |
+| Fenced code | Highlighted canvas (12 themes) | The code between the fences |
+| Mermaid | A drawn diagram (via MermaidKit) | The `mermaid` fence body |
+| Math | A typeset equation (via Vinculum) | The `$$…$$` / `\[…\]` body |
+| Table | Ruled grid | The pipe-and-dash markdown |
+| Front matter | The Properties chip | The YAML key/value block |
 
-Phases 1–2 are pure wins with no design risk. Phase 3 and 4 interact:
-if Phase 4 ships first for diagrams/math, Phase 3's large-delta choreography
-applies mainly to tables and outsized code blocks — building Phase 3's
-mechanism (snapshot overlay) is still worthwhile because Phase 4's
-open/close tween uses the same machinery.
+What unites them: the rendered form **hides that it is markdown**. You
+cannot see, and could not usefully place a caret inside, the source. So each
+one carries an explicit invitation to edit — the `‹/› edit` chip — and each,
+when open, wears an unmistakable editing frame.
+
+## The promise
+
+Hover an embed and a quiet `‹/› edit` chip is there. Open it and the
+rendered artifact stays exactly where it is while its markdown source unfolds
+beneath, caret ready at the point you aimed at. For diagrams and math, the
+rendered image *stays on screen* the whole time, re-rendering live as you
+type. Broken source keeps the last good render and lights one calm note —
+never a blank, never a flash. Escape, click away, or press Done and the
+source folds away; the artifact simply remains, updated, never having moved a
+pixel. Undo works across the whole thing like ordinary typing.
+
+Four ideas make that possible, and they are non-negotiable:
+
+1. **Commit on exit, always.** Every keystroke is already in the file — Quoin
+   is a live-commit editor, so there is no "save" and no draft buffer.
+   Escape, click-away, and Done all mean *done*; none of them reverts.
+   Backing out is what `⌘Z` is for, and undo behaves identically whether the
+   block is open or rendered. A reverting exit would be a data-loss bug by
+   definition.
+2. **The 1:1 mapping is untouchable.** When a block is open, its revealed
+   text is byte-for-byte the file's source. Edits mutate that source
+   directly. Nothing — no animation, no affordance — is allowed to write to
+   storage or move the scroll position on its own behalf.
+3. **The viewport invariant holds through every flip.** The line you're
+   working on does not move on screen when a block opens or closes. Motion
+   radiates outward from that pinned line; the line itself is still.
+4. **Rendering is native and instant.** Diagrams and equations render
+   through CoreGraphics/CoreText in milliseconds, so the live preview can
+   re-render on *every keystroke* with no webview, no worker, no debounce on
+   success. Latency is the product.
+
+## The edit flow
+
+```mermaid
+flowchart TD
+    R["Rendered embed<br/>(diagram / equation / code)"]
+    R -->|"hover"| Chip["‹/› edit chip appears"]
+    Chip -->|"click chip · ⌘↩ · type a character"| Open
+
+    subgraph Open["Open for editing"]
+        direction LR
+        Src["Revealed source<br/>1:1 with the file<br/>recessed · mono · ✓ done chip"]
+        Src <-.->|"live re-render<br/>every keystroke"| Prev["Preview panel<br/>(mermaid / math)<br/>artifact stays put"]
+    end
+
+    Open -->|"Escape · click away · ✓ done · ⌘↩"| Commit["Commit + close"]
+    Commit --> R2["Rendered embed, updated<br/>— never moved a pixel"]
+```
+
+### Opening
+
+Three gestures open an embed, and they all funnel through one activation
+path so the behavior is identical:
+
+- **Click the `‹/› edit` chip.** Every embed shows one. On a code block it
+  sits in the header row beside `⧉ copy` (`‹/› edit    ⧉ copy`); on a
+  diagram or equation it's a quiet right-aligned caption line inside the
+  frame; on a table it's in the band above the grid; on front matter it's
+  appended to the Properties chip as `· ‹/› edit`. Its tooltip is
+  **"Edit Source (⌘↩)"**.
+- **Press `⌘↩`** with the caret on or the selection touching the block.
+  `⌘↩` also *closes* an open block — it's a toggle.
+- **Just start typing** on a rendered block. The keystroke both reveals the
+  source *and* is inserted at the mapped caret position, atomically. Typing
+  on an embed never drops the character that opened it.
+
+The chip is intentionally `‹/›`, not a pencil. A pencil promises direct
+manipulation of the rendered thing; `‹/›` promises the *source*, which is the
+truth you're actually editing.
+
+### Editing
+
+The open block reveals its source with an unmistakable editing identity: a
+recessed background, monospaced text, an accent frame, and a `✓ done` chip in
+the top-right corner. The frame and chip are the mode indicator, announced
+right at the locus of attention — chrome, not tint alone, because a
+peripheral color wash doesn't reliably prevent mode errors.
+
+The revealed text is the file's bytes, 1:1. There is no separate editable
+buffer to keep in sync — the fragment you're typing into *is* the source
+slice.
+
+### Closing
+
+Escape, clicking away, `⌘↩`, or the `✓ done` chip all commit and close. The
+document was never out of sync, so "commit" just means the block flips back
+to its rendered form. The caret lands at the rendered image of wherever it
+was in the source, rounded backward to visible content so it never jumps
+forward into the next block.
+
+## The live preview panel (diagrams and math)
+
+For Mermaid and math embeds, the rendered artifact does not disappear while
+you edit. It stays on screen in a **side panel** beside the source, anchored
+where the diagram already was. The source unfolds below; the panel holds the
+image.
+
+```mermaid
+flowchart LR
+    subgraph Editing["Open math / diagram block"]
+        direction LR
+        S["Source column<br/>$$ \int_0^1 x^2 dx $$<br/>mono · editable · 1:1"]
+        P["Preview panel<br/>rendered artifact<br/>full opacity, crisp"]
+        S ==>|"every keystroke"| P
+    end
+```
+
+This is the centerpiece of embed editing, and it exists because a diagram is
+tall. If the rendered image vanished the moment you opened the source, the
+whole page below would jump up to fill the gap, then jump back down on close
+— exactly the disorientation the viewport invariant exists to prevent. By
+pinning the *preview* in place and expanding the source panel downward, the
+tall content never disappears, so there is nothing to jump.
+
+### Holding the last good render
+
+The engine re-renders on every keystroke. But a diagram source spends a lot
+of its editing life *temporarily unparseable* — you're halfway through typing
+a node name, a fence is unbalanced, a brace is open. Blanking the panel on
+every such transit would make editing a strobe light.
+
+So the panel **holds the last successful render** and never blinks:
+
+- A valid keystroke swaps the new image in **instantly**. Good news is never
+  debounced — the morphing artifact *is* the feedback.
+- An invalid keystroke changes nothing visible. The held image stays at full
+  opacity — a grayed-out diagram reads as "broken," which is a lie when the
+  last render is perfectly good.
+- Brokenness is admitted only after **half a second of typing idle** while
+  still invalid. A small material badge — "Preview paused — showing the last
+  good render" — appears in the panel's corner, and the editing frame's
+  stroke turns amber. The grace timer resets on every keystroke, so
+  mid-word transits through invalid states never flash anything.
+- Recovery is synchronous: the fixing keystroke clears the badge and swaps
+  the good render in the same frame.
+
+The retention is session state. Each editing session owns exactly one held
+preview (there is only ever one open block at a time), and it is cleared the
+instant a different block activates — a stale artifact can never appear over a
+foreign block's source. The retained state travels through the render passes
+as an explicit value, so the renderer itself holds no hidden mutable state.
+
+The panel wears the diagram's own chrome — the same hairline and corner
+radius the rendered artifact has — because it *is* the artifact, not a new
+piece of UI. Image scale locks for the session, anchored top-leading, so the
+node you're watching doesn't drift as the bounding box grows and shrinks per
+keystroke. When the window is too narrow for a side-by-side layout (below a
+~340pt source column) the panel yields to a stacked layout below the source.
+
+The panel's whole motion vocabulary is *dissolve*. Swaps that land inside
+typing cadence are hard cuts — a crossfade at typing speed just smears. An
+isolated swap whose size changed, or the first swap after a paused episode
+(the resume you must not blink-miss), dissolves via a brief ghost of the
+outgoing image. This presentation logic is a pure decision table with an
+injected clock — deterministic and testable in isolation.
+
+## Caret and coordinate handling
+
+The subtle correctness problem in embed editing is that an embed lives in
+*two coordinate spaces at once*, and a caret offset means something different
+in each:
+
+- **Rendered space** — an offset into the projected text the reader sees,
+  where delimiters and prefixes the projection dropped (`**`, `### `, hard-
+  break spaces, entity source) simply aren't present.
+- **Source space** — an offset into the raw file slice, 1:1 with the bytes
+  on disk.
+
+For prose, the caret lands in rendered space and gets aligned to source
+through the projection mapper. For an embed *body*, the source is already 1:1
+with what you'll edit, so the offset is a source offset and must be used
+verbatim. Feeding a source offset through the rendered mapper (or vice versa)
+lands the caret a few characters off — early in a code body by the width of
+the header run.
+
+Quoin makes the coordinate space explicit in the type system rather than
+trusting every call site to remember:
+
+```swift
+public enum CaretHint: Equatable, Sendable {
+    case rendered(Int)   // offset into the block's projected text
+    case source(Int)     // offset directly into the block's source slice
+}
+```
+
+Every activation carries a `CaretHint`. Embed clicks resolve to
+`.source(offset)`; prose clicks resolve to `.rendered(offset)`. The
+activation path pattern-matches on the case — `.source` is clamped and used
+directly, `.rendered` is run through the mapper — so the space is honored by
+construction and the two can never be confused.
+
+The revealed fragment carries its own invariant: **the editable source
+starts at offset 0 of the fragment.** The fragment *is* the editable source —
+there is no leading chrome inside the text to skip past (the preview lives in
+the side panel, not inline), so only the fragment's length is meaningful.
+
+## Commit-on-exit and fence healing
+
+Because exit always commits, closing a block whose source is currently
+*broken* needs a safety net. The dangerous case is an unbalanced code fence:
+if a block committed without its closing ` ``` `, it would swallow every
+following block into one giant code block.
+
+So on close, if the block's own source is missing the fence it opened with,
+Quoin heals it — appending the closing fence as an ordinary, undoable,
+byte-honest session edit *before* the projection flips back. The fix goes
+through the same edit path as your typing, so `⌘Z` steps through it like
+anything else.
+
+## Motion
+
+Opening and closing a block changes its height — a one-line `$E=mc^2$` and
+its typeset form are different sizes. Rather than hard-cutting between them,
+the flip is choreographed so it reads as one continuous change.
+
+The choreography is **cosmetic by construction.** The real layout applies
+*instantly* — splice the new fragment, pin the caret line, settle the
+viewport — with nothing written to storage or scroll position. Just before
+the splice, the current pixels are frozen into an overlay covering the
+viewport; after the settle pass, the overlay is dismantled in slices that
+converge on the real geometry:
+
+- The old block's region **crossfades** out over the new block already laid
+  out beneath it.
+- Everything below the block **slides** its true reflow distance — sliding
+  the *real* reflow rather than masking it, so the eye can track what moved.
+- Content above the pinned line never moves at all, so it is never covered.
+
+The treatment is keyed to how far the height changed:
+
+| Height delta | Treatment |
+|---|---|
+| ≤ 40pt (a typical code flip) | **Instant** — this is a high-frequency check-the-render loop; any mediation taxes every cycle |
+| Moderate | Block crossfade + below-content slide |
+| More than half the viewport | Full-viewport crossfade — sliding most of a screen would read as scrolling, which is a lie |
+| Reduce Motion | Collapse to a 120ms crossfade |
+| Very large documents / offscreen | No motion |
+
+Any user input or a newer projection truncates the animation to its end
+state immediately, and an unconditional watchdog removes the overlay after
+500ms — a stuck cover is the worst possible failure, so it is the one thing
+guaranteed not to happen. The caret, the pin correction, and the mode chrome
+are **never** animated: those are binary signals, and a faded binary signal
+reads as uncertainty.
+
+## Why it works this way
+
+**Why not just reveal the source inline, like prose?** A rendered image has
+no per-line decomposition — there is no "the caret's line" in a diagram to
+selectively reveal. Line-scoped reveal is category-inapplicable to the exact
+blocks that most need a good editing story.
+
+**Why a side panel and not an inline preview run?** An inline preview would
+be a text run, and a text run inside the revealed source breaks the 1:1
+mapping the entire edit model depends on. The panel keeps the source pristine
+and the artifact anchored.
+
+**Why never revert on exit?** Because every keystroke is already committed to
+the file. There is no draft to discard. A "cancel" that threw away your
+typing would be silently destroying data the file already holds; that job
+belongs to undo, where it is visible and reversible.
+
+**Why hold the last good render instead of showing errors?** Because you're
+*mid-edit* — transient brokenness is the normal state of typing, not an error
+worth shouting about. The held render plus a patient, debounced badge tells
+you the truth (nothing new rendered) without punishing every intermediate
+keystroke.
+
+**Why a single first-responder text view instead of child editors per
+block?** Nested `NSTextView`s per embed would each fight for IME and focus.
+Quoin's whole document is one text view; that is why input methods, focus,
+and selection never break across a flip.
+
+### Deliberately not done
+
+- **A pencil icon** — promises direct manipulation of the render; `‹/›`
+  correctly promises the source.
+- **Reverting on Escape** — a data-loss bug by definition (see above).
+- **Popover or modal source editors** — they say "you have left the
+  document." The source unfolds *in place* instead.
+- **Overloading Return** — plain Return in text always inserts a newline;
+  opening an embed is `⌘↩` or the chip, never a naked keystroke that would
+  collide with typing.
