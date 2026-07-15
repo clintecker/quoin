@@ -204,7 +204,10 @@ private struct ViewCommands: Commands {
             Toggle("Status Bar", isOn: $showStatusBar)
             Divider()
             Toggle("Focus Mode", isOn: $isFocusMode)
-                .keyboardShortcut("f", modifiers: [.command, .option])
+                // ⌃⌘F — ⌥⌘F is the Find & Replace convention, which wins
+                // the F chord; Focus Mode (app-specific, no convention)
+                // takes control-command instead.
+                .keyboardShortcut("f", modifiers: [.command, .control])
             Toggle("Sentence Focus", isOn: $isSentenceFocus)
                 .disabled(!isFocusMode)
             Toggle("Typewriter Scrolling", isOn: $isTypewriter)

@@ -97,7 +97,7 @@ of being duplicated (and silently drifting) in Quoin's docs.
 Both follow the same shape:
 
 - A **platform-free layout half** — `MermaidLayout`, `VinculumLayout` — parses
-  and computes device-independent geometry (`MermaidScene`, `MathScene`).
+  and computes device-independent geometry (`DiagramScene`, `MathScene`).
   `QuoinCore` `@_exported import`s these, so `import QuoinCore` still exposes
   `MermaidParser`, `MathParser`, and friends.
 - A **drawing half** — `MermaidRender`, `VinculumRender` — draws that geometry
@@ -113,13 +113,16 @@ here. Engine changes are validated by the engine's own CI, not Quoin's.
 Vinculum's coverage is large (~400 commands); the exhaustive matrix lives in
 Vinculum's `docs/COVERAGE.md` / `docs/COMMANDS.md`.
 
-### MermaidKit Linux rasterization
+### Linux rendering
 
-MermaidKit can rasterize on Linux via PureSwift/Silica (Cairo/FreeType). That
-backend is opt-in behind a package trait, by design: Quoin's macOS build must
-never drag in Cairo, so the default MermaidKit graph Quoin consumes stays
-Silica-free on Apple platforms. Quoin draws diagrams natively via
-`MermaidRender` regardless — the Linux backend matters only to non-Apple hosts.
+On Apple platforms the diagram and math engines draw natively through
+CoreGraphics/CoreText (`MermaidRender`, `VinculumRender`). The layout halves
+(`MermaidLayout`, `VinculumLayout`) are platform-free, so `QuoinCore` builds
+and tests on Linux today — but rasterizing a diagram or equation there needs a
+CoreGraphics substitute. The forward path is a PureSwift/Silica
+(Cairo/FreeType) backend in the engine packages, kept strictly opt-in so a
+macOS build never pulls Cairo. Quoin's macOS product does not depend on it;
+it matters only to non-Apple hosts.
 
 ## Sparkle (justified, not yet wired)
 

@@ -1,101 +1,88 @@
-# Docs map
+# Documentation map
 
-Where to look, by question. (House rule: every doc names its evidence — an
-invariant cites its test, an ADR cites its commit, a claim cites file:line.)
-
-The tree is organized by audience:
+Where to look, by question. The tree is organized by audience:
 
 ```
 docs/
-  PRODUCT.md          capability spec (the source of truth for "what it does")
-  guide/              user-facing: the feature tour + screenshot manifest
-  reference/          contributor machinery: architecture, invariants, ADRs, budgets
-  design/             design specs: handoff, editor modes, review loop, embeds, roadmap
-  history/            historical records: ledgers, roadmaps, engine-extraction notes
-  archive/            legacy specs superseded by the handoff (PRD, TRD)
+  PRODUCT.md          capability spec — the reference for "what it does"
+  guide/              for users: getting started, the feature tour
+  reference/          for developers: architecture, invariants, ADRs, deps, performance
+  design/             how the major systems work + the design language
   context/            code-verified feature packs for marketing/website work
+  archive/            legacy specs kept for reference
+  internal/           development records (ledgers, plans) — not reader documentation
   images/             the images the docs and README embed
 ```
 
-## "What is Quoin, and what does it do?"
-- **[PRODUCT.md](PRODUCT.md)** — the reference-grade capability spec: what
-  Quoin is and does, every claim backed by a test, doc, or CI screenshot.
-  The capability source of truth; downstream surfaces (marketing, website)
-  lift from here. Stays at the top level because it is externally referenced.
-- `../README.md` — the public overview + support matrix, leading with the
-  review/commenting loop. Engine details defer to the engine repos.
-- **[guide/features.md](guide/features.md)** — the user-facing feature tour,
-  organized by what you *do* (write, review, organize, read). The "what's in
-  my hands" complement to PRODUCT.md's data spec.
+## New here? Start with the guide
 
-## "What are the rules?"
-- **[reference/invariants.md](reference/invariants.md)** — the constitution:
-  every rule the codebase enforces, each with its guarding test. Read this
-  first.
-- **[reference/adr/](reference/adr/README.md)** — why the non-obvious roads
-  were chosen and which plausible roads were REJECTED (don't re-attempt
-  keep-alive tabs; see 0005).
-- `../CLAUDE.md` — working conventions, build/debug recipes, hard-won
-  pitfalls (agent- and contributor-facing).
+- **[guide/getting-started.md](guide/getting-started.md)** — open Quoin, pick a
+  library folder, edit your first document, learn the essential shortcuts.
+- **[guide/features.md](guide/features.md)** — the full feature tour, organized
+  by what you *do*: write, review, organize, read.
 
-## "How does it work?"
-- **[reference/architecture.md](reference/architecture.md)** — the contributor
-  machinery map: parse → session → project → display, editing model, testing
-  strategy.
-- **[design/editor-modes.md](design/editor-modes.md)** +
-  **[design/editor-modes-plan.md](design/editor-modes-plan.md)** — the
-  presentation-state model (rendered + 3 editing flavors), its diagnosis
-  history, and the shipped 4-phase implementation with as-built deviations.
-- **[design/embed-editing-ux.md](design/embed-editing-ux.md)** — the embed
-  editing interaction grammar (implemented).
+## What is Quoin, and what does it do?
 
-## "How does the review / commenting loop work?"
+- **[PRODUCT.md](PRODUCT.md)** — the reference-grade capability spec; every
+  claim backed by a test, doc, or screenshot. The source of truth for
+  capabilities; downstream surfaces (marketing, website) lift from here.
+- `../README.md` — the public overview and support matrix.
+
+## How does the review & commenting system work?
+
 - **[design/suggestions.md](design/suggestions.md)** — the differentiator:
-  tracked changes, comments, and review as literal bytes in the file
-  (CriticMarkup marks + RDFM metadata). Design, format decision, and the
-  staged plan; **S1–S3 shipped**, S4 (replies, agent handoff) is next.
-  The README's Review section is the user-facing summary.
+  tracked changes and comments as literal marks in your `.md` file, an
+  agent-writable review loop, and byte-safe accept/reject. The best starting
+  point for the feature that makes Quoin unique.
 
-## "What should it look like?"
-- **[design/handoff.md](design/handoff.md)** (+ the `.dc.html` doc) — THE
-  visual/interaction spec, canonical down to point sizes and alpha values.
-- [archive/TRD.html](archive/TRD.html) / [archive/PRD.html](archive/PRD.html)
-  — architecture + original product spec, superseded by the handoff (it wins
-  on conflict); kept for the performance budgets and privacy stance.
+## How does it work (for developers)?
 
-## "What's the plan / what happened?"
-- **[design/road-to-1.0.md](design/road-to-1.0.md)** — the single sequencing
-  document from here to PUBLIC and 1.0 (license, docs overhaul, feature gaps,
-  distribution, Swift 6, platform expansion, the 1.0 gate).
-- **[design/platforms.md](design/platforms.md)** — the iPhone/iPad and Linux
-  direction (five-squad-debated); post-1.0, gated by the dogfood experiment.
-- [history/launch-ledger.md](history/launch-ledger.md) — pre-launch review
-  ledger (BLOCKERs, statuses, war stories).
-- [history/rendering-roadmap.md](history/rendering-roadmap.md) — COMPLETE;
-  historical.
-- [history/rendering-ledger.md](history/rendering-ledger.md),
-  [reference/performance.md](reference/performance.md),
-  [reference/dependencies.md](reference/dependencies.md) — supporting records.
-- [guide/screenshots.md](guide/screenshots.md) — the screenshot manifest:
-  every CI shot, its launch args, and the `docs/images/` path README/PRODUCT
-  reference. Shots regenerate on every push (automated, never hand-captured).
-- [history/math-extraction.md](history/math-extraction.md),
-  [history/diagram-engine-handoff.md](history/diagram-engine-handoff.md) — how
-  Vinculum and MermaidKit were extracted (historical stubs; the engine repos
-  are the source of truth for capability).
+- **[reference/architecture.md](reference/architecture.md)** — the machinery
+  map: markdown string + AST as source of truth → parse → session → project →
+  display; the editing model; the review subsystem; the engine seams.
+- **[reference/invariants.md](reference/invariants.md)** — the guarantees that
+  keep Quoin correct (byte-lossless round-trip, the caret/viewport invariant,
+  projection equivalence, atomic edits) and how the code enforces them.
+- **[reference/adr/](reference/adr/README.md)** — the key architectural
+  decisions and *why* they were made.
+- **[reference/dependencies.md](reference/dependencies.md)** — the
+  one-third-party-dependency philosophy and the full graph.
+- **[reference/performance.md](reference/performance.md)** — how Quoin stays
+  fast: incremental parsing, patch rendering, viewport-lazy layout.
 
-## "What can it render?"
-- `../README.md` — the public support matrix (summaries; engine details
-  defer to the engines).
-- **Engines:** [MermaidKit](https://github.com/clintecker/MermaidKit) and
-  [Vinculum](https://github.com/clintecker/Vinculum) document themselves —
-  Vinculum's `docs/COVERAGE.md` / `docs/COMMANDS.md` and both repos' CI
-  galleries are the sources of truth. Quoin docs deliberately do NOT
-  duplicate their matrices (they drift; see the 23-vs-30 lesson in
-  [reference/adr/0003](reference/adr/0003-first-party-engines.md)).
-- [history/diagram-gallery.md](history/diagram-gallery.md) — rendered examples
-  from Quoin's own pipeline (a stub pointing at MermaidKit for the full type
-  matrix).
-- [context/quoin-features.md](context/quoin-features.md) /
-  [context/mermaidkit-features.md](context/mermaidkit-features.md) —
-  code-verified feature packs for marketing/website work.
+## How does editing work?
+
+- **[design/editor-modes.md](design/editor-modes.md)** — the projection model:
+  the document is a live rendering of the source; clicking a block reveals its
+  literal markdown; the caret line never moves.
+- **[design/embed-editing-ux.md](design/embed-editing-ux.md)** — editing code,
+  math, and diagram embeds with a live side-panel preview.
+
+## What does it look like, and where does it run?
+
+- **[design/handoff.md](design/handoff.md)** — Quoin's visual and interaction
+  design language (the Graphite aesthetic, type ramp, spacing, principles).
+- **[design/platforms.md](design/platforms.md)** — Quoin across platforms:
+  macOS today, and the iPhone/iPad and Linux directions.
+- **[guide/screenshots.md](guide/screenshots.md)** — the screenshot manifest:
+  every shot, its launch args, and where it's used. Shots regenerate on every
+  push.
+
+## What can it render?
+
+- `../README.md` — the public support matrix.
+- **Engines:** [MermaidKit](https://github.com/clintecker/MermaidKit) (diagrams)
+  and [Vinculum](https://github.com/clintecker/Vinculum) (math) document
+  themselves — their repos are the source of truth for coverage. Quoin's docs
+  deliberately don't duplicate those matrices (they drift; see
+  [ADR 0003](reference/adr/0003-first-party-engines.md)).
+- **[context/quoin-features.md](context/quoin-features.md)** /
+  **[context/mermaidkit-features.md](context/mermaidkit-features.md)** —
+  code-verified feature packs for marketing and website work.
+
+## Contributor conventions
+
+- `../CLAUDE.md` — working conventions, build/debug recipes, and hard-won
+  pitfalls.
+- `internal/` — development records (ledgers, plans, extraction notes). Useful
+  history, but not part of the reader-facing documentation.

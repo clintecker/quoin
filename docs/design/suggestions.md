@@ -305,10 +305,10 @@ Resolving does two things at once: it changes the prose (the mark's
 replacement) **and** it updates the endmatter (the entry gains `status:
 resolved` and a `resolved:` summary like `accepted · precise` or `rejected ·
 kept old over new`). Both happen in **one** splice — from the mark's first byte
-to the endmatter's last — so a single ⌘Z restores both together. Splitting
-them into two edits once left a chimera after one undo: the mark back in the
-text while the metadata still said resolved, cards visible but inert. One
-atomic edit makes that state unrepresentable.
+to the endmatter's last — so a single ⌘Z restores both together. Were the prose
+edit and the metadata edit separate, one undo could restore the mark while
+leaving the metadata saying resolved — a card visible but inert. A single
+atomic edit makes that inconsistent state unrepresentable.
 
 Every resolution is recorded, even for a mark that carried no `{#id}` and even
 in a document that had no endmatter: an id is synthesized and an endmatter is
