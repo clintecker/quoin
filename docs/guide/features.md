@@ -1,102 +1,282 @@
 # What you can do with Quoin
 
-A feature tour organized by what you *do*, not how it's built. The
-capability spec (`docs/PRODUCT.md`) and the public overview (`README.md`)
-are the companions; this is the "what's in my hands" doc. Every feature
-names its shortcut and cites where it lives.
+A tour of Quoin organized by what you *do* — write, review, organize, read,
+reference — not by how it's built. Every feature names its keyboard shortcut
+and describes the real behavior you'll see.
+
+Quoin is a native macOS WYSIWYG editor for plain `.md` files. The file on disk
+is the source of truth; what you see is a live projection of it. There is no
+web view, no JavaScript at runtime, and nothing leaves your machine. When you
+edit, you're editing the markdown — the rendered view just re-projects it.
+
+```mermaid
+flowchart LR
+    file[("your .md file<br/>on disk")] -->|parse| ast["Markdown + AST<br/>(source of truth)"]
+    ast -->|project| view["Rendered document<br/>(what you see)"]
+    view -->|you type / click| edit["Edit"]
+    edit -->|mutate source| ast
+    ast -->|save, byte-lossless| file
+```
+
+Because the file *is* the document, any tool that writes markdown — a
+collaborator, a script, or an AI agent — writes Quoin documents. That is the
+foundation of the review loop, the feature nothing else quite does.
+
+---
 
 ## Write
 
-Quoin is WYSIWYG on a plain `.md` file — the rendered document *is* the
-editor, and the file on disk stays clean markdown you own.
+Quoin is WYSIWYG on plain markdown. The rendered document *is* the editor, and
+the file on disk stays clean markdown you own.
 
-- **Rich rendering as you read** — headings, emphasis, lists, tables,
-  task lists, callouts (`> [!NOTE]` … 5 types), highlights, footnotes,
-  code with syntax highlighting, math, and Mermaid diagrams, all native
-  (no web view, no JavaScript).
-- **Edit in place** — click into any block and it reveals its literal
-  markdown source, character-for-character with the file; edit, click
-  away, it re-renders. The line you're on never jumps on screen.
-- **Formatting** — bold ⌘B, italic ⌘I, link ⌘K, highlight ⇧⌘H (cycles a
-  palette). All write real markdown to the source.
-- **Task lists** — click a checkbox; it toggles and writes back to the
+- **Rich rendering as you read** — headings, emphasis, lists, tables, task
+  lists, callouts, highlights, footnotes, code with syntax highlighting, math,
+  and Mermaid diagrams, all drawn natively (no web view, no JavaScript).
+- **Edit in place** — click into any block and it reveals its literal markdown
+  source, character-for-character with the file. Edit it, click away, it
+  re-renders. The line you're on never jumps on screen.
+- **Formatting that writes real markdown** — every command below edits the
+  source, so the file stays clean and portable:
+
+  | Action | Shortcut | What it writes |
+  | :--- | :--- | :--- |
+  | Bold | ⌘B | `**text**` |
+  | Italic | ⌘I | `*text*` |
+  | Highlight | ⇧⌘H | `==text==` (cycles a color palette) |
+  | Add Link | ⌘K | `[text](url)` |
+  | Edit Source / Done Editing | ⌘↩ | toggles the caret block into raw markdown |
+  | Move Block Up / Down | ⌥⌘↑ / ⌥⌘↓ | reorders whole blocks byte-exactly |
+
+- **Task lists** — click a checkbox; it toggles and writes `- [x]` back to the
   file.
-- **Byte-lossless** — anything you don't touch is saved exactly as it was.
-  (`docs/reference/invariants.md`.)
+- **Block operations** — right-click any block for **Duplicate Block**,
+  **Delete Block**, **Move Block Up/Down**, and (on a table) **Add Table Row**
+  and **Add Table Column**. Each is a byte-exact source splice.
+- **Byte-lossless** — anything you don't touch is saved exactly as it was, down
+  to whitespace and delimiter style. See
+  [invariants](../reference/invariants.md).
+
+### Why the file is the source of truth
+
+Most editors keep an internal model — an attributed string, an HTML DOM — and
+treat markdown as an import/export format. That makes round-trips lossy: open a
+file, save it, and the byte layout shifts. Quoin never holds a second
+representation. The markdown string and its parsed AST *are* the document; the
+view is a pure projection. This is why an untouched paragraph survives edit →
+save unchanged, and why an agent's edits and yours compose cleanly — you're
+both writing to the same file.
+
+---
 
 ## Review — the thing nothing else does
 
-Suggestions and comments live *in the markdown file* (RDFM /
-CriticMarkup), so an agent or collaborator can propose edits anywhere and
-you triage them in a real UI — byte-safely. Design:
-`docs/design/suggestions.md`; internals: `docs/reference/architecture.md`.
+Suggestions and comments live *inside the markdown file* using RDFM /
+CriticMarkup syntax. A collaborator or an AI agent can propose edits anywhere in
+the document, and you triage them in a real UI — where every accept and reject
+is one atomic, byte-safe edit to the file. Design notes:
+[suggestions](../design/suggestions.md).
 
-- **See tracked changes** — `{++insert++}`, `{--delete--}`,
-  `{~~old~>new~~}`, `{>>comment<<}`, `{==highlight==}` render as tracked
-  changes; the raw delimiters never show.
-- **The Review inspector** — a sidebar mode (beside Outline) listing every
-  mark as a card with author and time. **Accept**, **Reject**, or
-  **Dismiss** per card, or **Accept All / Reject All** — each one atomic
-  edit, one undo. Resolved items move to a history list (recorded in the
-  file, never lost).
-- **Card ↔ document** — click a card to scroll its mark into view and
-  flash it; put the caret in a mark to highlight its card. A resolution
-  pulses where it landed.
-- **Suggest without editing the prose** — select text and:
-  **Add Comment…** (⇧⌘M), **Suggest Replacement…** (⇧⌘R), **Suggest
-  Deletion**, **Highlight**. Each wraps the selection byte-exactly; the
-  document only changes when someone accepts.
-- **Comment on code, tables, diagrams, math** — right-click →
-  **Comment on Block…** drops a comment paragraph beside the block
-  (marks can't live inside runnable content, so they live next to it).
-- **Review Mode** (⌃⌘R) — flip it on and your typing *becomes* suggestions
-  instead of edits: insertions, deletions, and replacements land as marks.
-  A **SUGGESTING** chip shows while it's on.
-- **Agent handoff** — because it's all just marks in the file, an agent
-  (e.g. Claude Code) writes suggestions into your document and the cards
-  appear in your panel. The review loop is the interface.
+```mermaid
+sequenceDiagram
+    participant A as Agent / collaborator
+    participant F as Your .md file
+    participant Q as Quoin
+    participant You
+
+    A->>F: writes marks, e.g. {~~old~>new~~}, {>>comment<<}
+    F->>Q: Quoin re-parses the file
+    Q->>You: renders each mark as a card in the Review inspector
+    You->>Q: Accept / Reject / Dismiss
+    Q->>F: one atomic, byte-safe splice (one undo)
+    Note over F: The prose only changes when you accept.
+```
+
+### The marks
+
+Five kinds of mark render as tracked changes. The raw delimiters never appear in
+the read view — you see the *change*, not the syntax.
+
+| You (or an agent) write | Renders as |
+| :--- | :--- |
+| `{++inserted++}` | proposed insertion |
+| `{--deleted--}` | proposed deletion |
+| `{~~old~>new~~}` | proposed replacement |
+| `{>>comment<<}` | a comment |
+| `{==highlight==}` | a highlight |
+
+### The Review inspector
+
+The right-hand inspector has three modes — **Outline**, **Review**, and
+**Properties** — toggled with ⌥⌘0. In **Review** mode, every mark in the
+document is a card showing its author and relative time.
+
+```mermaid
+flowchart TB
+    subgraph win["Quoin window"]
+        direction LR
+        sidebar["Library sidebar<br/>(⌘0)"]
+        doc["Document<br/>marks render inline<br/>as tracked changes"]
+        subgraph insp["Inspector (⌥⌘0)"]
+            direction TB
+            o["Outline"]
+            r["Review — cards"]
+            p["Properties"]
+        end
+    end
+    doc <-->|click card ⇄ caret in mark| r
+```
+
+- **Per-card actions** — **✓ Accept**, **✕ Reject**, or **✕ Dismiss**. Bulk
+  actions **✓ Accept All** and **✕ Reject All** sit at the top. Each resolution
+  is one atomic edit, so one ⌘Z undoes it.
+- **Card ↔ document linkage** — click a card to scroll its mark to center and
+  flash an accent ring around it; put the caret inside a mark and its card
+  highlights. When you resolve something offscreen, the view scrolls to where
+  the change landed and pulses it.
+- **History that's never lost** — resolved items are recorded in the file
+  itself as RDFM endmatter (`status: resolved`), so the record is portable and
+  agent-readable, and the Review tab stays available once any history exists.
+
+### Suggest without touching the prose
+
+Select text and use the **Format ▸ Review** menu (or right-click) to annotate
+without changing what the document says. The prose only changes when someone
+accepts the mark.
+
+| Gesture | Shortcut | Effect |
+| :--- | :--- | :--- |
+| Add Comment… | ⇧⌘M | wraps the selection in `{>>…<<}` |
+| Suggest Replacement… | ⇧⌘R | proposes `{~~old~>new~~}` |
+| Suggest Deletion | — | proposes `{--…--}` |
+| Highlight for Review | — | wraps the selection in `{==…==}` |
+| Suggest Edits (mode) | ⌃⌘R | see below |
+
+**Comment on opaque blocks** — code, tables, diagrams, and math can't hold
+inline marks (marks must never be injected into runnable content). Right-click
+one and choose **Comment on Block…**; Quoin drops a `{>>comment<<}` paragraph
+next to the block instead.
+
+### Suggest Edits mode
+
+Toggle **Suggest Edits** (⌃⌘R) and your ordinary typing *becomes* suggestions
+instead of edits. Insertions land as `{++…++}`, deletions as `{--…--}`, and
+overwrites as `{~~old~>new~~}`. A single keystroke grows the current mark rather
+than minting a fresh one each time. An accent **SUGGESTING** chip shows while
+the mode is on, so you always know your edits are being tracked.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: mark created (you or an agent)
+    Pending --> Accepted: ✓ Accept
+    Pending --> Rejected: ✕ Reject
+    Pending --> Dismissed: ✕ Dismiss
+    Accepted --> History: recorded in file
+    Rejected --> History: recorded in file
+    Dismissed --> History: recorded in file
+    History --> [*]
+```
+
+### Why marks in the file matter
+
+Because suggestions are just text in your markdown, there's no proprietary
+review database and no service to sync with. The review loop *is* the agent
+interface: point an agent (like Claude Code) at your document, it writes marks,
+and the cards appear in your panel. Every resolution is computed inside the
+document session at apply time against the current file — if the underlying text
+has drifted, Quoin refuses rather than splicing stale offsets. Candidate edits
+are re-parsed and rejected unless exactly the expected mark comes back, so a
+resolution can never quietly corrupt the document.
+
+---
 
 ## Organize
 
-- **Library** — pick a folder; its tree is your sidebar (⌘0). Folders are
-  directories, documents are plain files. **Open Folder in New Window**
-  gives each window its own folder, restored on relaunch.
-- **Outline** — a live heading tree (⌥⌘0); manual collapse sticks, and the
-  current-section highlight follows your reading position.
-- **Properties** — a third inspector mode editing YAML front matter as a
-  key/value panel with type-appropriate editors (date picker, toggle,
-  number, comma-list) and an *Edit as Text* escape hatch. The in-document
-  view shows front matter as a tidy field grid.
-- **Find** — in-document find (⌘F) with match highlighting and ⌘G cycling;
-  library-wide search (⇧⌘F); quick open; recents; daily note (⌘D).
-- **Tabs & navigation** — document tabs (⌘1–9), jump history (⌘[ / ⌘]),
-  breadcrumb path, footnote click-to-jump with hover preview and ↩
-  backlinks.
+- **Library** — pick a folder and its tree becomes your sidebar (⌘0). Folders
+  are directories; documents are plain files. **Open Folder in New Window** (in
+  the File menu) gives each window its own folder, restored on relaunch.
+- **Outline** — a live heading tree (⌥⌘0, Outline mode). Manual collapse sticks,
+  and the current-section highlight follows your reading position; when you
+  collapse an ancestor, Quoin highlights that ancestor instead of re-expanding.
+- **Properties** — the third inspector mode edits YAML front matter as a
+  key/value panel with type-appropriate editors — date picker, toggle, number
+  field, comma-separated list — plus an **Edit as Text** escape hatch. It's
+  byte-conservative: a value that doesn't parse cleanly as its type stays a
+  string, and typed writes preserve the original precision. In the document,
+  front matter renders as a tidy field grid.
+- **Find & search**:
+
+  | Action | Shortcut |
+  | :--- | :--- |
+  | Find in Document… | ⌘F |
+  | Find & Replace… | ⌥⌘F |
+  | Find Next / Previous | ⌘G / ⇧⌘G |
+  | Search Library… | ⇧⌘F |
+  | Quick Open… | ⇧⌘O |
+  | Daily Note | ⌘D |
+
+- **Tabs & navigation** — document tabs (⌘1–9 select by position), jump history
+  **Back** ⌘[ and **Forward** ⌘], a breadcrumb path, and footnote
+  click-to-jump with a hover preview and an ↩ backlink to return.
+
+---
 
 ## Read comfortably
 
-- **Focus mode** — everything but the current block (or sentence) dims.
-- **Typewriter scrolling**, **word-count goals**, a **reading-progress**
-  hairline, and **12 selectable code themes** (default follows the app's
-  light/dark appearance).
+| Feature | Shortcut | What it does |
+| :--- | :--- | :--- |
+| Focus Mode | ⌥⌘F | dims everything but the current block |
+| Sentence Focus | — | narrows the focus to the current sentence (needs Focus Mode) |
+| Typewriter Scrolling | ⌥⌘T | keeps the active line vertically centered |
+| Status Bar | — | word count, reading progress, and goals |
+
+Twelve selectable code themes are available for fenced code blocks; the default
+follows the app's light/dark appearance. A reading-progress hairline and
+word-count goals live in the status bar.
+
+---
 
 ## Reference: math & diagrams
 
-Rendered natively — no MathJax, no KaTeX, no Mermaid.js. Quoin edits them
-in place with a live side-panel preview; unsupported constructs degrade to
-a labeled source card (never a blank, never a crash). The engines are
-first-party packages with their own full documentation:
+Math and diagrams are rendered natively — no MathJax, no KaTeX, no Mermaid.js.
+Quoin edits them in place with a live side-panel preview: the source reveals
+beside a rendered pane, and the last good render is held while your mid-edit
+source is temporarily invalid, so the panel never flashes blank. Anything
+unsupported degrades to a labeled source card with a specific reason — never a
+blank, never a crash.
 
-- **Math** — LaTeX via **[Vinculum](https://github.com/clintecker/Vinculum)**
-  (TeX-style typesetting; ~400 commands). Full coverage matrix in
-  Vinculum's docs.
+```mermaid
+flowchart LR
+    src["Edit source<br/>(⌘↩ on a math/diagram block)"] --> preview["Live side-panel<br/>preview"]
+    src -. mid-edit, source invalid .-> held["Last-good render held"]
+    preview --> done["Done — re-render inline"]
+```
+
+- **Math** — LaTeX via
+  **[Vinculum](https://github.com/clintecker/Vinculum)**, Quoin's own
+  TeX-style typesetting engine (~400 commands: fractions, roots, scripts, big
+  operators with correct limits, matrices, alignment environments). Inline
+  `$…$` and `\(…\)`, display `$$…$$` and `\[…\]`. The full coverage matrix
+  lives in Vinculum's docs.
 - **Diagrams** — Mermaid via
-  **[MermaidKit](https://github.com/clintecker/MermaidKit)**. Full
-  diagram-type catalog in MermaidKit's docs.
+  **[MermaidKit](https://github.com/clintecker/MermaidKit)**, parsed and laid
+  out natively (flowcharts, sequence, state, and more). Front-matter
+  `title`/`config` and `accTitle`/`accDescr` are supported. The full
+  diagram-type catalog lives in MermaidKit's docs.
+
+### Why native rendering, not a web view
+
+A web view would mean bundling a JavaScript engine, shipping third-party
+renderers, and paying a startup and memory cost on every diagram and equation —
+plus a privacy surface Quoin refuses. Native first-party engines keep everything
+local, fast, and consistent with the rest of the document's typography, and they
+degrade predictably instead of failing in an opaque sandbox.
+
+---
 
 ## Export & interop
 
-- Export to Markdown (round-trip), plain text, or HTML.
-- Everything is a plain file: any tool that writes markdown (or RDFM /
-  CriticMarkup) produces Quoin documents. There is no lock-in and no
-  service — files on disk are the whole story.
+- Export to **Markdown** (round-trip), **plain text**, or **HTML** (via
+  **Export…**, ⇧⌘E), and **Print…** with ⌘P.
+- Everything is a plain file. Any tool that writes markdown — or RDFM /
+  CriticMarkup — produces Quoin documents. There is no lock-in and no service:
+  files on disk are the whole story.
