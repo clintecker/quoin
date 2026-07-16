@@ -48,7 +48,7 @@ struct AboutView: View {
 
             VStack(spacing: 4) {
                 HStack(spacing: 14) {
-                    Link("MermaidKit on GitHub", destination: URL(string: "https://github.com/clintecker/MermaidKit")!)
+                    Link("MermaidKit on GitHub", destination: URL(string: "https://github.com/2389-research/MermaidKit")!)
                     Button("Acknowledgements") { isAcknowledgementsVisible = true }
                         .buttonStyle(.link)
                 }
@@ -91,7 +91,7 @@ struct AboutView: View {
         let url = Bundle.main.url(forResource: "Acknowledgements", withExtension: "md")
             ?? Bundle.main.url(forResource: "Acknowledgements", withExtension: "md", subdirectory: "Resources")
         guard let url, let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return "swift-markdown © Apple Inc., Apache License 2.0 — https://github.com/swiftlang/swift-markdown\nMermaidKit © 2026 Clint Ecker — https://github.com/clintecker/MermaidKit"
+            return "swift-markdown © Apple Inc., Apache License 2.0 — https://github.com/swiftlang/swift-markdown\nMermaidKit © 2026 Clint Ecker — https://github.com/2389-research/MermaidKit"
         }
         return text
     }

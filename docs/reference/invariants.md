@@ -298,8 +298,8 @@ equivalence corpus catches any consumer that re-derives and drifts.
 ### 8. A revealed fragment's editable range starts at 0
 
 **Guarantees.** For an embed (math, rendered by the first-party
-[Vinculum](https://github.com/clintecker/Vinculum) engine, or a diagram,
-rendered by the first-party [MermaidKit](https://github.com/clintecker/MermaidKit)
+[Vinculum](https://github.com/2389-research/Vinculum) engine, or a diagram,
+rendered by the first-party [MermaidKit](https://github.com/2389-research/MermaidKit)
 engine — see [dependencies.md](dependencies.md) for why both are separate
 packages), the editable source *is* the fragment —
 `RevealedFragment.editableRange.location == 0`. The live preview renders in a

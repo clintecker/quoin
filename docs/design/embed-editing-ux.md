@@ -25,8 +25,8 @@ you're in.
 | Block type | Rendered as | Editable source is… |
 |---|---|---|
 | Fenced code | Highlighted canvas (12 themes) | The code between the fences |
-| Mermaid | A drawn diagram (via [MermaidKit](https://github.com/clintecker/MermaidKit)) | The `mermaid` fence body |
-| Math | A typeset equation (via [Vinculum](https://github.com/clintecker/Vinculum)) | The `$$…$$` / `\[…\]` body |
+| Mermaid | A drawn diagram (via [MermaidKit](https://github.com/2389-research/MermaidKit)) | The `mermaid` fence body |
+| Math | A typeset equation (via [Vinculum](https://github.com/2389-research/Vinculum)) | The `$$…$$` / `\[…\]` body |
 | Table | Ruled grid | The pipe-and-dash markdown |
 | Front matter | The Properties chip | The YAML key/value block |
 
@@ -164,11 +164,11 @@ flowchart LR
 ```
 
 The two engines behind that preview cover a wide surface each: the
-[Vinculum](https://github.com/clintecker/Vinculum) math gallery —
+[Vinculum](https://github.com/2389-research/Vinculum) math gallery —
 
 ![A gallery of LaTeX math notation rendered by Vinculum, from simple fractions to multi-line aligned equations](../images/gallery-math.png)
 
-— and the [MermaidKit](https://github.com/clintecker/MermaidKit) diagram
+— and the [MermaidKit](https://github.com/2389-research/MermaidKit) diagram
 gallery:
 
 ![A gallery of Mermaid diagram types rendered by MermaidKit, including flowcharts, sequence diagrams, and state diagrams](../images/gallery-diagrams.png)
@@ -390,8 +390,8 @@ and selection never break across a flip.
   round-trip, the 1:1 revealed-source guarantee, the viewport invariant, and
   caret coordinate spaces.
 - [Dependencies](../reference/dependencies.md) — the policy behind consuming
-  [MermaidKit](https://github.com/clintecker/MermaidKit) and
-  [Vinculum](https://github.com/clintecker/Vinculum) as exempt first-party
+  [MermaidKit](https://github.com/2389-research/MermaidKit) and
+  [Vinculum](https://github.com/2389-research/Vinculum) as exempt first-party
   packages.
 - [Product spec](../PRODUCT.md) — where embeds sit in the overall capability
   map.

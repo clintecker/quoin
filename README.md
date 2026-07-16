@@ -15,8 +15,8 @@ file, editing one paragraph, and saving leaves every untouched byte identical.
 Tables, callouts, footnotes, and a full review / suggestions loop all render
 natively with TextKit 2 — and math and diagrams get best-in-class native
 rendering from two first-party partner projects,
-**[Vinculum](https://github.com/clintecker/Vinculum)** (TeX-quality LaTeX) and
-**[MermaidKit](https://github.com/clintecker/MermaidKit)** (native Mermaid),
+**[Vinculum](https://github.com/2389-research/Vinculum)** (TeX-quality LaTeX) and
+**[MermaidKit](https://github.com/2389-research/MermaidKit)** (native Mermaid),
 drawn with CoreText and CoreGraphics. Both are consumed under Quoin's
 [dependency policy](docs/reference/dependencies.md) like any other package.
 There is no embedded browser, no JS bridge, and no network at runtime.
@@ -151,11 +151,11 @@ Quoin's math and diagram rendering is best-in-class *and* fully native, powered
 by two first-party partner projects it develops and ships as standalone Swift
 packages:
 
-- **[Vinculum](https://github.com/clintecker/Vinculum)** — a TeX-quality math
+- **[Vinculum](https://github.com/2389-research/Vinculum)** — a TeX-quality math
   typesetter (~400 LaTeX commands: inter-atom spacing classes, stacked
   big-operator limits, radicals with indices, auto-sized fences, `matrix` /
   `cases` / `aligned` grids), drawn with CoreText. No MathJax, no KaTeX.
-- **[MermaidKit](https://github.com/clintecker/MermaidKit)** — a native Mermaid
+- **[MermaidKit](https://github.com/2389-research/MermaidKit)** — a native Mermaid
   engine (Sugiyama-style layering, orthogonal elbow routing, cycle-safe layout,
   UML markers, composite states, front-matter `title`/`config`), drawn with
   CoreGraphics. No Mermaid.js, no headless browser.
@@ -285,7 +285,7 @@ Dracula, side by side:
 
 ## Math (LaTeX)
 
-Math is powered by **[Vinculum](https://github.com/clintecker/Vinculum)** —
+Math is powered by **[Vinculum](https://github.com/2389-research/Vinculum)** —
 Quoin's own native TeX-style typesetter (no MathJax, no KaTeX). LaTeX is parsed
 into a TeX-style atom tree and laid out with real inter-atom spacing classes,
 stacked big-operator limits, radicals with indices, auto-sized fences, and grid
@@ -294,8 +294,8 @@ CoreText. Inline `$…$` `\(…\)` and display `$$…$$` `\[…\]` are both supp
 
 Coverage is large (~400 commands). Quoin does not restate the command table —
 a duplicated list drifts. The always-current matrix is in Vinculum's own
-docs: [COVERAGE.md](https://github.com/clintecker/Vinculum/blob/main/docs/COVERAGE.md)
-and [COMMANDS.md](https://github.com/clintecker/Vinculum/blob/main/docs/COMMANDS.md).
+docs: [COVERAGE.md](https://github.com/2389-research/Vinculum/blob/main/docs/COVERAGE.md)
+and [COMMANDS.md](https://github.com/2389-research/Vinculum/blob/main/docs/COMMANDS.md).
 Unsupported commands fall back to a named source card.
 
 A gallery of Vinculum's typesetting — fractions, integrals with limits, big
@@ -305,7 +305,7 @@ operators, radicals, auto-sized fences, and aligned/matrix environments:
 
 ## Diagrams (Mermaid)
 
-Diagrams are powered by **[MermaidKit](https://github.com/clintecker/MermaidKit)**
+Diagrams are powered by **[MermaidKit](https://github.com/2389-research/MermaidKit)**
 — Quoin's own native Mermaid engine (no Mermaid.js, no network). Sources are
 parsed and laid out with Sugiyama-style layering, orthogonal elbow routing,
 cycle-safe layering, UML relationship markers, and recursive composite states;
@@ -436,8 +436,8 @@ to the `ci-screenshots` branch on every push.
 One third-party code dependency:
 [swift-markdown](https://github.com/swiftlang/swift-markdown) (Apple's cmark-gfm
 wrapper, pinned `from: 0.8.0`).
-[MermaidKit](https://github.com/clintecker/MermaidKit) (`from: 0.10.0`) and
-[Vinculum](https://github.com/clintecker/Vinculum) (`from: 0.23.0`) are
+[MermaidKit](https://github.com/2389-research/MermaidKit) (`from: 1.0.0`) and
+[Vinculum](https://github.com/2389-research/Vinculum) (`from: 1.4.1`) are
 **first-party** — Quoin's own published engines, consumed from GitHub like any
 host app would, and exempt from the policy. Anything new requires written
 justification; the default answer is no. See
@@ -477,6 +477,6 @@ The docs tree is organized by audience — full index in
   [`docs/design/embed-editing-ux.md`](docs/design/embed-editing-ux.md) (embed
   editing) · [`docs/design/platforms.md`](docs/design/platforms.md)
   (macOS/iOS/Linux directions).
-- **Engines:** [MermaidKit](https://github.com/clintecker/MermaidKit) (diagram
-  capability matrix) · [Vinculum](https://github.com/clintecker/Vinculum) (math
+- **Engines:** [MermaidKit](https://github.com/2389-research/MermaidKit) (diagram
+  capability matrix) · [Vinculum](https://github.com/2389-research/Vinculum) (math
   coverage).

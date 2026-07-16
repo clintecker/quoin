@@ -331,8 +331,8 @@ You're productive now. When you want more:
   you want the ground truth of what's implemented.
 - **Math and diagrams** — write LaTeX with `$…$` / `$$…$$` and Mermaid in a
   ` ```mermaid ` fence; both render natively via the
-  [Vinculum](https://github.com/clintecker/Vinculum) and
-  [MermaidKit](https://github.com/clintecker/MermaidKit) engines — first-party
+  [Vinculum](https://github.com/2389-research/Vinculum) and
+  [MermaidKit](https://github.com/2389-research/MermaidKit) engines — first-party
   packages under Quoin's own
   [dependency policy](../reference/dependencies.md). Click into an
   embed to [edit its source with a live side-panel

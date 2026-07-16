@@ -93,8 +93,8 @@ The shipping product is the macOS app: a `SwiftUI` shell around an
 `NSTextView` subclass (`QuoinTextView`) that draws Quoin's decorations behind
 the text using TextKit 2 fragment frames. It is the full editor —
 CommonMark + GFM, callouts, highlights, footnotes, front-matter Properties,
-code with twelve themes, native LaTeX math ([Vinculum](https://github.com/clintecker/Vinculum))
-and Mermaid diagrams ([MermaidKit](https://github.com/clintecker/MermaidKit)),
+code with twelve themes, native LaTeX math ([Vinculum](https://github.com/2389-research/Vinculum))
+and Mermaid diagrams ([MermaidKit](https://github.com/2389-research/MermaidKit)),
 and the complete review loop. Both engines are first-party dependencies —
 see `docs/reference/dependencies.md` for how that fits Quoin's one-dependency
 policy. Everything the rest of this document describes as a "direction" is

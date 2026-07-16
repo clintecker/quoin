@@ -298,7 +298,7 @@ flowchart LR
 ```
 
 - **Math** — LaTeX via
-  **[Vinculum](https://github.com/clintecker/Vinculum)**, Quoin's own
+  **[Vinculum](https://github.com/2389-research/Vinculum)**, Quoin's own
   TeX-style typesetting engine (~400 commands: fractions, roots, scripts, big
   operators with correct limits, matrices, alignment environments). Inline
   `$…$` and `\(…\)`, display `$$…$$` and `\[…\]`. The full coverage matrix
@@ -307,7 +307,7 @@ flowchart LR
   ![Gallery of LaTeX math rendered natively by Vinculum: fractions, roots, matrices, alignment environments](../images/gallery-math.png)
 
 - **Diagrams** — Mermaid via
-  **[MermaidKit](https://github.com/clintecker/MermaidKit)**, parsed and laid
+  **[MermaidKit](https://github.com/2389-research/MermaidKit)**, parsed and laid
   out natively (flowcharts, sequence, state, and more). Front-matter
   `title`/`config` and `accTitle`/`accDescr` are supported. The full
   diagram-type catalog lives in MermaidKit's docs.

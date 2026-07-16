@@ -43,11 +43,11 @@ behind it live in [`dependencies.md`](dependencies.md):
 | Package | Version | Role | Policy |
 | --- | --- | --- | --- |
 | `swift-markdown` (swiftlang) | `from: 0.8.0` | CommonMark/GFM parse via cmark-gfm | the one allowed third-party dep |
-| `MermaidKit` (clintecker) | `from: 0.10.0` | Mermaid diagrams (`MermaidLayout` + `MermaidRender`) | first-party, exempt |
-| `Vinculum` (clintecker) | `from: 0.23.0` | LaTeX math (`VinculumLayout` + `VinculumRender`) | first-party, exempt |
+| `MermaidKit` (2389-research) | `from: 1.0.0` | Mermaid diagrams (`MermaidLayout` + `MermaidRender`) | first-party, exempt |
+| `Vinculum` (2389-research) | `from: 1.4.1` | LaTeX math (`VinculumLayout` + `VinculumRender`) | first-party, exempt |
 
-[MermaidKit](https://github.com/clintecker/MermaidKit) and
-[Vinculum](https://github.com/clintecker/Vinculum) are Quoin's own published
+[MermaidKit](https://github.com/2389-research/MermaidKit) and
+[Vinculum](https://github.com/2389-research/Vinculum) are Quoin's own published
 packages, consumed from GitHub exactly like any other host app would — their
 engines are versioned and CI-tested on their own, so they are exempt from the
 dependency policy (the policy script allowlists them). The
@@ -525,7 +525,7 @@ This is [ADR 0003](adr/0003-first-party-engines.md).
 ### Math (Vinculum)
 
 Math lives in **Vinculum**
-([`github.com/clintecker/Vinculum`](https://github.com/clintecker/Vinculum)). It
+([`github.com/2389-research/Vinculum`](https://github.com/2389-research/Vinculum)). It
 ships `VinculumLayout` (Foundation-only, builds/tests on Linux — parsing, macros, all
 typesetting geometry, the OpenType MATH-table constants, the device-independent
 `MathScene` IR) and `VinculumRender` (Apple-only — measuring, drawing via
@@ -570,7 +570,7 @@ version here.
 ### Diagrams (MermaidKit)
 
 Diagrams live in **MermaidKit**
-([`github.com/clintecker/MermaidKit`](https://github.com/clintecker/MermaidKit))
+([`github.com/2389-research/MermaidKit`](https://github.com/2389-research/MermaidKit))
 and split the same way: `MermaidLayout` (platform-free parser + layout + scene IR +
 geometry linter, Linux-clean) and `MermaidRender` (CoreGraphics/CoreText
 drawing behind a `DiagramTheme` seam). QuoinCore `@_exported import`s

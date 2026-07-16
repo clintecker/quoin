@@ -45,7 +45,7 @@ justification in the TRD first; the default answer is no.
 
 - Mermaid rendering comes from **MermaidKit**, Quoin's own published
   package, consumed FROM GITHUB like any host app would:
-  github.com/clintecker/MermaidKit (`from: "0.10.0"`, first-party — exempt
+  github.com/2389-research/MermaidKit (`from: "1.0.0"`, first-party — exempt
   from the one-third-party-dependency policy; the policy script allowlists
   it). It is no longer vendored in this repo. MermaidLayout is the
   platform-free parser + layout + scene IR + geometry linter; MermaidRender
@@ -58,7 +58,7 @@ justification in the TRD first; the default answer is no.
   tag, and bump the version here. Diagram engine changes are tested by
   MermaidKit's own CI, not Quoin's.
 - LaTeX math comes from **Vinculum**, Quoin's own published package, consumed
-  FROM GITHUB the same way: github.com/clintecker/Vinculum (`from: "1.4.1"`,
+  FROM GITHUB the same way: github.com/2389-research/Vinculum (`from: "1.4.1"`,
   first-party — same policy exemption/allowlist as MermaidKit). No longer
   vendored here. VinculumLayout is the platform-free parser + typesetting
   geometry → device-independent `MathScene`; VinculumRender draws via

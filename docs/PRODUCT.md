@@ -21,7 +21,7 @@ Feature groups are labeled **G1–G9** and referenced by shorthand throughout.
 | Platforms | macOS 14+ (primary). `QuoinCore` is platform-free and builds + tests on Linux; iOS/iPadOS reader exists behind a UIKit path. |
 | Language / runtime | Swift 6.0 tools (QuoinCore in Swift 6 language mode), SwiftUI + TextKit 2. Zero JavaScript at runtime; local-only. |
 | Rendering | Native attributed-string projection + drawn-ink decorations. No web view, no MathJax/KaTeX, no Mermaid.js. |
-| Dependencies | One third-party package (swift-markdown / cmark-gfm) — see [`docs/reference/dependencies.md`](reference/dependencies.md) for the full policy and graph. Two first-party engine packages consumed from GitHub: [MermaidKit](https://github.com/clintecker/MermaidKit) (`from: 0.10.0`) and [Vinculum](https://github.com/clintecker/Vinculum) (`from: 0.23.0`). |
+| Dependencies | One third-party package (swift-markdown / cmark-gfm) — see [`docs/reference/dependencies.md`](reference/dependencies.md) for the full policy and graph. Two first-party engine packages consumed from GitHub: [MermaidKit](https://github.com/2389-research/MermaidKit) (`from: 1.0.0`) and [Vinculum](https://github.com/2389-research/Vinculum) (`from: 1.4.1`). |
 | Verification | A comprehensive package test suite (600+ tests) passes with zero failures; the platform-free core suite also runs headless on Linux. |
 | Origin | Built as a WYSIWYG markdown editor whose source of truth is the markdown string + AST, so that any tool writing markdown — including agents — writes Quoin documents. |
 
@@ -85,8 +85,8 @@ flowchart TB
     Seam --> Render["AttributedRenderer projection"]
 ```
 
-See [MermaidKit](https://github.com/clintecker/MermaidKit) and
-[Vinculum](https://github.com/clintecker/Vinculum) on GitHub for the full
+See [MermaidKit](https://github.com/2389-research/MermaidKit) and
+[Vinculum](https://github.com/2389-research/Vinculum) on GitHub for the full
 capability matrices, and
 [`docs/reference/dependencies.md`](reference/dependencies.md) for why they're
 first-party packages instead of vendored code or third-party libraries.
@@ -150,8 +150,8 @@ support matrix in [`README.md`](../README.md).
 | Callouts | The five GFM alert types — note, tip, important, warning, caution (`> [!NOTE]`); `danger`/`error` are recognized as aliases of the caution severity. |
 | Extended inline | Highlights `==text==` with palette cycling; footnotes `[^id]` with click-to-jump, hover preview, and ↩ backlinks; `[TOC]` live table-of-contents. |
 | Code | Syntax highlighting for Swift, Python, JS/TS, Go, Rust, Ruby, C/C++/ObjC, Java/Kotlin, shell, SQL, YAML/TOML, JSON, HTML/XML/CSS. 12 selectable canvas themes; default follows the app appearance. |
-| Math (LaTeX) | ~400 classed symbols, fractions, roots, scripts, big operators with correct limits, matrices, alignment environments; inline `$…$` `\(…\)` and display `$$…$$` `\[…\]`. Powered by [Vinculum](https://github.com/clintecker/Vinculum) (native TeX-style typesetting; no MathJax/KaTeX). |
-| Diagrams (Mermaid) | Parsed and laid out natively by [MermaidKit](https://github.com/clintecker/MermaidKit) (no Mermaid.js); front-matter `title`/`config` and `accTitle`/`accDescr` supported. |
+| Math (LaTeX) | ~400 classed symbols, fractions, roots, scripts, big operators with correct limits, matrices, alignment environments; inline `$…$` `\(…\)` and display `$$…$$` `\[…\]`. Powered by [Vinculum](https://github.com/2389-research/Vinculum) (native TeX-style typesetting; no MathJax/KaTeX). |
+| Diagrams (Mermaid) | Parsed and laid out natively by [MermaidKit](https://github.com/2389-research/MermaidKit) (no Mermaid.js); front-matter `title`/`config` and `accTitle`/`accDescr` supported. |
 | Front matter | YAML front matter rendered as a field grid; editable via the Properties panel (G5). |
 | Degrade, never break | Unsupported LaTeX commands and Mermaid diagram types render as a labeled source card with a specific reason, never a blank or a crash. Raw HTML blocks show as labeled source cards (no HTML engine, by design). |
 
@@ -351,8 +351,8 @@ refresh automatically.
 | [`docs/design/embed-editing-ux.md`](design/embed-editing-ux.md) | Embed reveal + side-panel preview UX |
 | [`docs/design/platforms.md`](design/platforms.md) | iPhone/iPad and Linux direction |
 | `docs/archive/TRD.html`, `docs/archive/PRD.html` | Architecture and original scoped PRD |
-| [MermaidKit repo](https://github.com/clintecker/MermaidKit) | Diagram engine capability matrix + docs |
-| [Vinculum repo](https://github.com/clintecker/Vinculum) | Math engine coverage (`COVERAGE.md`, `COMMANDS.md`) + docs |
+| [MermaidKit repo](https://github.com/2389-research/MermaidKit) | Diagram engine capability matrix + docs |
+| [Vinculum repo](https://github.com/2389-research/Vinculum) | Math engine coverage (`COVERAGE.md`, `COMMANDS.md`) + docs |
 
 ---
 

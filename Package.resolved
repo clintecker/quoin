@@ -1,13 +1,13 @@
 {
-  "originHash" : "b8db95c1b9e0abe15500444f13fc97bc9daa7af9a8a87a7379d4766fd7033e8e",
+  "originHash" : "0f26af905d9aa52ed72c1a5c0646c7379b69a6b8e5411b4a0ebeaac3a0f25ab0",
   "pins" : [
     {
       "identity" : "mermaidkit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/clintecker/MermaidKit.git",
+      "location" : "https://github.com/2389-research/MermaidKit.git",
       "state" : {
-        "revision" : "3e2ae5806fb22795c8bf8de6ade84911b087c6c3",
-        "version" : "0.12.0"
+        "revision" : "b1b633b0ecc9b4d6d12b34e3055932a639396366",
+        "version" : "1.0.0"
       }
     },
     {
@@ -31,9 +31,9 @@
     {
       "identity" : "vinculum",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/clintecker/Vinculum.git",
+      "location" : "https://github.com/2389-research/Vinculum.git",
       "state" : {
-        "revision" : "bd8f700b216260911b0dc7acd08e0dfd05bac9e2",
+        "revision" : "e83b68ff7b4c78474c83f98d9dd3dedf5cb4e96a",
         "version" : "1.4.1"
       }
     }

@@ -257,10 +257,10 @@ flowchart TD
   add-row / add-column controls at the edges.
 - **Math** — inline `$…$` / `\(…\)`, display `$$…$$` / `\[…\]` centered with 16
   above/below. Typeset natively by
-  **[Vinculum](https://github.com/clintecker/Vinculum)** (TeX-style geometry,
+  **[Vinculum](https://github.com/2389-research/Vinculum)** (TeX-style geometry,
   no MathJax/KaTeX).
 - **Mermaid** — laid out natively by
-  **[MermaidKit](https://github.com/clintecker/MermaidKit)** (no Mermaid.js)
+  **[MermaidKit](https://github.com/2389-research/MermaidKit)** (no Mermaid.js)
   inside a radius-8 bordered block.
 - **Images** — max-width 100%, radius 8; drag-drop or paste copies the asset
   into the library; alt text renders as an 11pt centered caption.

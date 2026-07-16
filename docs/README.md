@@ -96,8 +96,8 @@ flowchart LR
 ## What can it render?
 
 - **[`../README.md`](../README.md)** — the public support matrix.
-- **Engines:** [MermaidKit](https://github.com/clintecker/MermaidKit) (diagrams)
-  and [Vinculum](https://github.com/clintecker/Vinculum) (math) document
+- **Engines:** [MermaidKit](https://github.com/2389-research/MermaidKit) (diagrams)
+  and [Vinculum](https://github.com/2389-research/Vinculum) (math) document
   themselves — their repos are the source of truth for coverage, described in
   more depth in [reference/dependencies.md](reference/dependencies.md). Quoin's
   docs deliberately don't duplicate those matrices (they drift; see

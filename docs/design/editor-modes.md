@@ -58,8 +58,8 @@ truth?
   same `.md` and you triage them — the [review loop](suggestions.md) is
   byte-safe because the substrate is bytes.
 - **Native rendering, no webview.** Math (via the first-party
-  [Vinculum](https://github.com/clintecker/Vinculum) package), diagrams (via
-  first-party [MermaidKit](https://github.com/clintecker/MermaidKit)), code,
+  [Vinculum](https://github.com/2389-research/Vinculum) package), diagrams (via
+  first-party [MermaidKit](https://github.com/2389-research/MermaidKit)), code,
   and tables are drawn with CoreText/CoreGraphics, not HTML — see
   [dependencies](../reference/dependencies.md) for the policy. There is zero
   JavaScript at runtime and nothing leaves the machine.

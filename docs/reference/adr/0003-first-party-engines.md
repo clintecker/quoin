@@ -8,8 +8,8 @@ and vendoring them in-repo made their test suites drag Quoin CI while hiding
 them from other potential hosts.
 
 ## Decision
-MermaidKit (github.com/clintecker/MermaidKit) and Vinculum
-(github.com/clintecker/Vinculum) are Quoin-owned published packages,
+MermaidKit (github.com/2389-research/MermaidKit) and Vinculum
+(github.com/2389-research/Vinculum) are Quoin-owned published packages,
 consumed from GitHub like any host would (`from:` pins). Each is
 layout/render split (platform-free geometry behind a theme seam). They are
 exempt from the one-third-party-dependency policy; engine changes are tested

@@ -11,7 +11,7 @@ laid out, and drawn with CoreGraphics/CoreText inside the editor.
 
 ## The full diagram catalog lives in MermaidKit
 
-The parser, layout, and drawing all come from **[MermaidKit](https://github.com/clintecker/MermaidKit)**,
+The parser, layout, and drawing all come from **[MermaidKit](https://github.com/2389-research/MermaidKit)**,
 Quoin's own first-party published package (pinned in `Package.swift`;
 `from: "0.10.0"`). The complete, always-current list of supported diagram
 types — and the rendered gallery of each in a simple and complex form — is

@@ -1,7 +1,7 @@
 # Math engine — extracted to Vinculum
 
 Quoin's native LaTeX math typesetter is no longer in this repo. It was
-extracted into **[Vinculum](https://github.com/clintecker/Vinculum)**, a
+extracted into **[Vinculum](https://github.com/2389-research/Vinculum)**, a
 Quoin-owned first-party package consumed from GitHub (`Package.swift`,
 `from: "0.23.0"`). The parser, the box-model typesetter, the CoreText drawing,
 and the exhaustive command coverage (~400 commands) all live there now, tested

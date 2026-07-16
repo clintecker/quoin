@@ -1,7 +1,7 @@
 # Diagram engine — extracted to MermaidKit
 
 Quoin's native Mermaid engine is no longer in this repo. It was extracted
-into **[MermaidKit](https://github.com/clintecker/MermaidKit)**, a Quoin-owned
+into **[MermaidKit](https://github.com/2389-research/MermaidKit)**, a Quoin-owned
 first-party package consumed from GitHub (`Package.swift`, `from: "0.10.0"`).
 The parser, the Sugiyama/Brandes–Köpf layout, the dummy-node edge routing, and
 the CoreGraphics drawing — plus the engine's own handoff brief, diagram-type

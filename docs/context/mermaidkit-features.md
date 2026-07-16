@@ -1,7 +1,7 @@
 # MermaidKit — features context pack
 
 *Everything someone evaluating MermaidKit should know. Verified against the
-package source at v0.9.0 on 2026-07-10 (github.com/clintecker/MermaidKit).
+package source at v0.9.0 on 2026-07-10 (github.com/2389-research/MermaidKit).
 Companion pack: `quoin-features.md`.*
 
 ## One paragraph

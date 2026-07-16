@@ -154,8 +154,8 @@ fenced block's slice, with two extra guards specific to fences:
 
 ![Math and diagrams rendered side by side in one viewport](../images/native-engines.png)
 
-This is why a document dense with [Vinculum](https://github.com/clintecker/Vinculum)
-math and [MermaidKit](https://github.com/clintecker/MermaidKit) diagrams —
+This is why a document dense with [Vinculum](https://github.com/2389-research/Vinculum)
+math and [MermaidKit](https://github.com/2389-research/MermaidKit) diagrams —
 see [dependencies.md](dependencies.md) for how both are consumed — doesn't cost
 extra to *edit*: each embed's revealed source is its own fenced block, so
 typing inside one only ever re-parses and re-renders that one slice. The

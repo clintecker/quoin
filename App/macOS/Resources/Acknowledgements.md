@@ -30,4 +30,4 @@ limitations under the License.
 Copyright © 2026 Clint Ecker. First-party package (native Mermaid diagram
 parsing, layout, and rendering).
 
-- https://github.com/clintecker/MermaidKit
+- https://github.com/2389-research/MermaidKit

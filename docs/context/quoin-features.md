@@ -77,8 +77,8 @@ locks type into the chase.
 ## Math (native TeX-style typesetter via Vinculum — no MathJax/KaTeX)
 
 Math is drawn by **Vinculum** (Quoin's own first-party CoreText/CoreGraphics
-math engine, consumed from GitHub like MermaidKit — `github.com/clintecker/
-Vinculum`, `from: "0.23.0"`). It now covers **~400 commands** (404 symbol-table
+math engine, consumed from GitHub like MermaidKit — `github.com/2389-research/
+Vinculum`, `from: "1.4.1"`). It now covers **~400 commands** (404 symbol-table
 entries + 37 function-name operators), each carrying its correct TeX atom class
 so inter-atom spacing is real. Delimiters `$…$`, `$$…$$`, `\(…\)`, `\[…\]`.
 Core: Greek/operators/relations/arrows, fractions, `\sqrt[n]{}`,
